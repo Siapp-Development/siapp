@@ -50,7 +50,18 @@ Region: **`asia-southeast1` (Singapore)** for every GCP service we provision (D-
 ### Frontend stack
 
 - **Decision:** React + TypeScript + Vite. Single app, single repo (D-005).
-- **Routing:** Two route trees — `/app/*` (firm) and `/p/*` (client portal). Each is its own lazy-loaded bundle; the client portal must not pull in firm-side components.
+- **URL surfaces (D-036):**
+
+  | Surface | URL | Audience | Auth |
+  |---|---|---|---|
+  | Marketing | `siapp.app/` | Public | none |
+  | Firm app | `dashboard.siapp.app/{workspaceSlug}/*` | Firm staff | Firebase Auth (password/Google; MFA for owner/admin at Business+) |
+  | Client portal | `siapp.app/p/{token}/*` | Clients | Magic-link JWT, project-scoped |
+  | Collaborator page | `siapp.app/t/{token}` | Collaborators | Magic-link JWT, task-scoped |
+  | Siapp admin | `admin.siapp.app/*` | Siapp staff only | Google SSO + MFA hard-required, IP-allowlisted |
+
+  The split is deliberate: **WA-delivered links live on the apex** (`/p`, `/t`) — shortest possible URL in a WhatsApp bubble, and the recipient's trust check ("is this the company's real domain?") lands on the bare domain. **Authenticated surfaces live on subdomains** (`dashboard.`, `admin.`) — each is its own origin, its own Firebase Hosting site, its own deploy. The workspace slug in the firm-app path keeps the URL as workspace context (multi-workspace switching later is a path change, not a session mutation).
+- **Routing:** Three deploys — (1) apex: marketing + the `/p/*` and `/t/*` external bundles (lazy-loaded route trees; must not pull in firm-side components), (2) `dashboard.siapp.app`: the firm app, (3) `admin.siapp.app`: Siapp admin. Subdomain-per-surface gives hard origin isolation (cookies, storage, service workers, CSP scope per-origin), physically enforced bundle separation, and independent deploy/rollback per surface. The `/admin/workspaces/:id` paths referenced under Billing live on `admin.siapp.app`.
 - **Why:** Hiring pool, ecosystem maturity, alignment with `.github/copilot-instructions.md`.
 - **PWA:** installable, web push where supported. No native apps in v1.
 
@@ -60,7 +71,7 @@ Region: **`asia-southeast1` (Singapore)** for every GCP service we provision (D-
 - **Firm users:** email + password with optional Google sign-in; TOTP MFA for owner/admin roles at Business+.
 - **Client portal:** **magic link** (Firebase Auth email link sign-in). One-tap from a WhatsApp link → short-TTL session → revisit re-sends.
 - **Authorization (roles):** stored in **custom claims** (small) + a `members/{userId}` doc per workspace (rich).
-- **Bearer tokens (D-007):** Firebase ID tokens, ~1h TTL, refreshed by the Firebase Web SDK. Held in memory; refresh token managed by the SDK. Strict CSP; no third-party scripts on `/p/*`.
+- **Bearer tokens (D-007):** Firebase ID tokens, ~1h TTL, refreshed by the Firebase Web SDK. Held in memory; refresh token managed by the SDK. Strict CSP; no third-party scripts on `/p/*` or `/t/*`.
 
 ### Backend stack
 

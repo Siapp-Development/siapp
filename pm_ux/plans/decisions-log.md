@@ -12,6 +12,32 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-07-12 — URL surfaces: firm app on `dashboard.siapp.app`, WA-delivered links on the apex (D-036)
+
+**Decision:** Siapp's web surfaces split across subdomains and the apex:
+
+| Surface | URL |
+|---|---|
+| Marketing | `siapp.app/` |
+| Firm app | `dashboard.siapp.app/{workspaceSlug}/*` |
+| Client portal | `siapp.app/p/{token}/*` |
+| Collaborator page | `siapp.app/t/{token}` |
+| Siapp admin | `admin.siapp.app/*` |
+
+**Why:**
+
+- **No "app" redundancy** — `siapp.app/app` and `app.siapp.app` both stutter; `dashboard.` reads cleanly.
+- **Subdomains for authenticated surfaces** give hard origin isolation (cookies, storage, service workers, CSP are scoped per-origin), physically enforced bundle separation (separate Firebase Hosting site = separate build artifact — firm/admin code can never leak into client bundles), and independent deploy/rollback per surface.
+- **Apex for WA-delivered links** (`/p`, `/t`) — these URLs are sent, never typed or bookmarked, so shortest wins; and the recipient's phishing check lands on the bare `siapp.app` domain.
+
+**Consequences:** Three Firebase Hosting sites + matching Cloud Run/CDN config. Firebase Auth `authDomain` must be allow-listed per subdomain (one-time setup). Local dev needs multi-site emulation mapping. CORS already required (API on Cloud Run) — no new cost.
+
+**Reversal cost:** Low pre-launch (config + docs). Medium post-launch (redirects for bookmarked firm-app URLs; WA links unaffected since tokens are re-sent per notification).
+
+**Revisit when:** Firm users report confusion finding the login URL, or a white-label/custom-domain tier is planned (which would generalise the subdomain scheme anyway).
+
+---
+
 ## 2026-07-12 — WhatsApp/Messaging is outbound-notification-only at MVP; all user responses happen in the portals (D-035)
 
 **Decision:** Siapp's messaging service (Twilio WhatsApp Business API + SMS fallback) sends **outbound notifications only** at MVP. Inbound replies to Siapp's sender number are **not** processed into tasks or note threads. All client and collaborator responses happen directly in their respective web surfaces:
