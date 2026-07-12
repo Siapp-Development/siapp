@@ -1,7 +1,7 @@
 ---
 title: "Brand Identity & Narrative"
 status: draft
-updated: 2026-06-27
+updated: 2026-07-12
 ---
 
 # Brand Identity & Narrative
@@ -83,6 +83,8 @@ Forbidden words/phrases (default ban): "revolutionary," "synergize," "delight," 
 | Client portal | Spacious, warm, summary-first, mobile-default, light-mode default | Clients visit briefly, need instant orientation |
 
 Designing these as two products is intentional and a differentiator.
+
+**Clarification (2026-07-12):** two personalities ≠ two design systems. Both surfaces share one component library, one semantic token schema, one type family, one icon set, and one interaction grammar; the personalities are expressed as two *theme + density* value sets on the same system. The internal Siapp Admin surface (Z1–Z3) does **not** get a third personality — it rides the firm theme with a visible "Siapp Admin" environment marker. See [23-design-system-research.md](./23-design-system-research.md) for the token/theming model.
 
 ## Brand presence in product
 

@@ -37,6 +37,7 @@ All non-code, decision-shaping documents for Siapp live here. See [.github/instr
 | [20-access-control-departments.md](./20-access-control-departments.md) | Internal access control via Departments (D-025); resolves internal half of Q11 |
 | [21-cost-estimation.md](./21-cost-estimation.md) | Product & service cost model (infra + 3rd-party only, no people): per-workspace COGS, scale projections, and reconciliation with pricing model |
 | [22-wireframe-review.md](./22-wireframe-review.md) | UX review of `designs/screens-wireframes.excalidraw` — issues, fixes, missing flows before hi-fi |
+| [23-design-system-research.md](./23-design-system-research.md) | Component library / design system evaluation — shadcn/ui + Radix + Tailwind recommended, with decision matrix and companion libs |
 | [decisions-log.md](./decisions-log.md) | Append-only record of resolved decisions; supersedes question rows when closed |
 | [firestore-data-model.md](./firestore-data-model.md) | Firestore collection structure, security model, indexes, triggers (closes Q44 / D-021) |
 | [figma-make-design-prompt.md](./figma-make-design-prompt.md) | Paste-ready prompt for Figma Make to generate firm + client + collaborator screens |
