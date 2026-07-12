@@ -54,10 +54,10 @@ If any of those steps requires a phone call to us, v1 isn't done.
 
 ### Messaging
 - **WhatsApp** via BSP (start with one; abstract for future swap)
-  - Outbound templated messages, approved by Meta
+  - **Outbound notifications only (D-035)** — templated messages, approved by Meta
   - Variables auto-filled from task/project
   - Delivery + read receipts logged
-  - Inbound replies attach to the task's note thread
+  - **No inbound reply processing.** Replies to Siapp's number get a static auto-reply pointing to the sender's portal link + the firm's own WhatsApp number. STOP/opt-out keywords are processed (legal requirement). All user responses happen in the portals: collaborators via the magic-link task page (status, reason, notes, photos), clients via the portal (document upload) or the firm's own WhatsApp.
 - **SMS fallback** for clients who haven't opted in to WhatsApp
 - **No email notifications in MVP** — WhatsApp + SMS only (aligned with Q13). Auth/magic-link, team invites, and founder-issued billing emails are operational and stay.
 

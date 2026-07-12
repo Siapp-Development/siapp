@@ -177,6 +177,7 @@ End-customer contacts. **Free** — do not count against any limit.
   companyName?: string,
   language: 'en' | 'ms',
   notes?: string,
+  notificationsOptOut?: boolean, // set by STOP keyword on inbound webhook (D-035); suppresses all outbound WA/SMS
   createdAt: Timestamp,
   createdBy: string
 }
@@ -196,6 +197,7 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   trade?: string,             // "Electrician", "Surveyor"
   type: 'individual' | 'company',
   status: 'active' | 'archived',
+  notificationsOptOut?: boolean, // set by STOP keyword on inbound webhook (D-035); suppresses all outbound WA/SMS
   createdAt: Timestamp,
   invitedBy: string,          // uid
   lastTaskAt?: Timestamp      // for sorting "frequently used"
@@ -310,7 +312,7 @@ Append-only. Drives task page activity feed, audit, and notifications.
   authorType: 'user' | 'collaborator' | 'client' | 'system',
   authorId: string,
   authorNameDenorm: string,
-  source: 'web' | 'whatsapp' | 'system',
+  source: 'web' | 'system',      // 'whatsapp' reserved post-MVP — inbound WA is not processed at MVP (D-035)
   action:
     | 'status_change'
     | 'eta_change'

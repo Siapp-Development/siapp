@@ -29,7 +29,7 @@ Everything below is cash the product itself burns to **run** — i.e. what shoul
 | Active projects | 8 | discovery hypothesis |
 | Active tasks / project | 60 | from seeded residential starter project (D-031) |
 | WhatsApp conversations / mo | 250 (50 × 5 seats) | Standard pooled allowance |
-| Inbound WA replies / mo | 50 | ~20% reply rate |
+| Inbound WA auto-replies / mo | ~25 | D-035: inbound not processed; static auto-reply, rate-limited 1/sender/24h |
 | Documents stored | 200 files × ~1 MB = 200 MB | estimated |
 | Firestore reads / day | ~50,000 | listener-heavy boards |
 | Firestore writes / day | ~5,000 | tasks, notes, audit, metrics |

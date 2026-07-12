@@ -9,7 +9,7 @@ updated: 2026-06-27
 ## TL;DR — three things only Siapp does for this buyer
 
 1. **Client-visible by default.** Every project ships with a branded client tracker; firms don't have to "set up" client visibility.
-2. **WhatsApp-native notifications.** Per-task toggle, templated, two-way, with delivery receipts — not a Zapier hack.
+2. **WhatsApp-native notifications.** Per-task toggle, templated, with delivery receipts — not a Zapier hack. The response loop is structured: recipients tap through to their portal to act (D-035), so every response is clean data, not free-text chat.
 3. **Vertical templates for SEA firms.** Pre-built workflows for MY construction and legal (and expanding), not blank canvases.
 
 ## Detailed strengths

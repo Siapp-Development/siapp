@@ -113,7 +113,7 @@ A5. Task detail (side panel over timeline)
     - Default copy: "Pick one or more departments" — the selector is always visible when the viewer has permission; the seed vertical template (D-025) creates 5 departments at onboarding so this control is populated from day 1.
     - When the current viewer is **not** authorized, render the detail body as a single empty-state card: "This task contains restricted content visible to: Finance. Ask an admin for access if you need it." — do not silently hide.
 - Notification preview banner when a collaborator is assigned: "Ahmad (Tiler) will receive a WhatsApp with a magic link to update this task. Cost: 1 WhatsApp conversation."
-- Activity feed (on the **Activity** tab): chronological updates from users, collaborators (with source label "via WhatsApp" or "via web"), and system events. Deleted documents render as a muted strikethrough row ("Ahmad deleted invoice.pdf · 1h ago").
+- Activity feed (on the **Activity** tab): chronological updates from users, collaborators, clients (document uploads), and system events. Collaborator and client entries all arrive via their web surfaces — **do not render a "via WhatsApp" source label** (inbound WA is not processed at MVP per [D-035](./decisions-log.md)). Deleted documents render as a muted strikethrough row ("Ahmad deleted invoice.pdf · 1h ago").
 - Right column: attached photos thumbnails + documents list
 
 A5b. Collaborator picker (modal launched from A5)

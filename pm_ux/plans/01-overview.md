@@ -47,7 +47,7 @@ A **firm-facing workspace** plus a **lightweight client portal** plus **automate
 
 - Per-task toggle. When a task hits a configured state (e.g. *completed*, *approaching due*, *blocked*), Siapp sends the client a templated **WhatsApp** message (primary channel in MY) or **SMS** fallback.
 - Templates are firm-branded and editable; variables auto-fill from the task.
-- Two-way: client replies surface back into the task's note thread.
+- The response loop is structured, not chat (D-035): recipients act via their web surface — collaborators on the magic-link task page, clients on the portal — and those actions land in the task's activity stream. Inbound WA replies are not parsed at MVP.
 - Delivery + read receipts logged for accountability.
 
 ## Why now

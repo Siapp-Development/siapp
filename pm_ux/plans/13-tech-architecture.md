@@ -139,7 +139,11 @@ Built once, used by every route. Documented in [decisions-log D-022](./decisions
   3. Cloud Run handler sends via Twilio with idempotency key.
   4. Twilio status callback → webhook → updates the message doc with delivery + read state.
 - **Lifecycle transitions trigger one-time messages:** `draft → published` fires a welcome WA to the client + first-assignment WA to pre-assigned collaborators; `published → completed` fires a handover WA. Idempotent on `project.publishedAt` / `project.completedAt` so re-runs are safe.
-- **Inbound:** Twilio webhook → match to workspace via sender number → append to the task's note thread → realtime push to firm UI via Firestore listener.
+- **Inbound (D-035 — notification-only at MVP):** inbound messages to Siapp's sender number are **not** routed into tasks. The Twilio inbound webhook does exactly three things:
+  1. **Status callbacks** — delivery/read receipts update the message doc (unchanged).
+  2. **STOP/opt-out keywords** — set `notificationsOptOut: true` on the matching client/collaborator and suppress future sends (legal requirement).
+  3. **Everything else** — send a single static auto-reply ("This number sends updates only. To respond, use your project link, or contact {firm.name} directly: {firm.wa_phone}."), rate-limited to once per sender per 24 h. No content parsing, no task writes.
+  All user responses happen in the web surfaces: collaborators via the magic-link task page, clients via the portal (document upload) or the firm's own WhatsApp number.
 - **Quality monitoring:** per-workspace sender quality metric stored daily from Twilio's reporting; auto-throttle on downgrade signal.
 
 ### Background jobs
@@ -209,7 +213,7 @@ Built once, used by every route. Documented in [decisions-log D-022](./decisions
   - `i18next-browser-languagedetector` — installed but pinned to `en` at v1; full URL/cookie/`navigator.language` order activates at v1.5.
   - `i18next-http-backend` — lazy-loads namespace JSON. `ms` namespace files exist as empty placeholders at v1 so the loader contract doesn't change for v1.5.
 - **ICU MessageFormat:** enabled via `i18next-icu` at v1 (cheap, removes a v1.5 migration). Matters for BM noun forms once strings land.
-- **WhatsApp templates** are managed in Twilio Content Templates per locale (not in i18next JSON) — Meta requires pre-approved templates. EN templates submitted for v1; BM templates submitted alongside the v1.5 UI release. i18next handles only in-app strings and dynamic message body composition for non-template messages (e.g. session reply bodies).
+- **WhatsApp templates** are managed in Twilio Content Templates per locale (not in i18next JSON) — Meta requires pre-approved templates. EN templates submitted for v1; BM templates submitted alongside the v1.5 UI release. i18next handles only in-app strings; the single static auto-reply body (D-035) is also a pre-approved template, not composed dynamically.
 - WhatsApp templates duplicated per locale once BM ships; messages routed by the recipient's preferred language.
 
 ### Accessibility

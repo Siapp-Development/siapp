@@ -12,6 +12,42 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-07-12 — WhatsApp/Messaging is outbound-notification-only at MVP; all user responses happen in the portals (D-035)
+
+**Decision:** Siapp's messaging service (Twilio WhatsApp Business API + SMS fallback) sends **outbound notifications only** at MVP. Inbound replies to Siapp's sender number are **not** processed into tasks or note threads. All client and collaborator responses happen directly in their respective web surfaces:
+
+- **Collaborators** respond via the magic-link task page ([C1]): status buttons, Need-help reason ([C1d]), notes, photos, documents.
+- **Clients** respond via the client portal ([B2]): document upload (D-034). For free-form conversation, the portal's "Message on WhatsApp" deep link opens the **firm's own** WhatsApp number — person-to-person chat between client and firm, entirely outside Siapp's pipeline.
+
+**Scope boundary (what still exists on the inbound webhook):**
+
+1. **Delivery/read status callbacks** — required for receipts, usage counting, and quality monitoring. Unchanged.
+2. **STOP / opt-out keyword processing** — legally required ([14-legal-compliance.md](./14-legal-compliance.md)); sets `notificationsOptOut` on the client/collaborator and suppresses future sends. Kept.
+3. **Static auto-reply** — any other inbound message to Siapp's number gets a single templated auto-reply: *"This number sends updates only. To respond, use your project link, or contact {firm.name} directly: {firm.wa_phone}."* Rate-limited to once per sender per 24 h. No content parsing, nothing written to tasks.
+
+**Why:**
+
+- **Cuts the hardest part of the messaging build.** Inbound routing (matching sender → workspace → project → task, handling media, handling ambiguity when one phone number spans several tasks/projects) is the most complex and failure-prone part of the pipeline. The magic-link page already gives collaborators a structured, unambiguous way to respond — richer than free-text WA parsing could ever be.
+- **Structured data beats chat parsing.** A status button press on [C1] writes a clean `status_change` update; an inbound "ok siap boss 👍" needs NLP guesswork. MVP should not gamble the audit trail on parsing.
+- **The client conversation already lives in the firm's own WhatsApp.** Firms don't want Siapp intermediating their client relationships — the portal deep-links to the firm's human number by design ([11-mvp-scope.md](./11-mvp-scope.md): no in-app chat).
+- **Cost + quality rating protection.** No session-message handling means no accidental conversation-window charges and no sender-quality risk from unanswered inbound threads.
+
+**Consequences:**
+
+- [13-tech-architecture.md](./13-tech-architecture.md): inbound pipeline reduced from "append to task note thread + realtime push" to the 3-item webhook scope above.
+- [11-mvp-scope.md](./11-mvp-scope.md): "Inbound replies attach to the task's note thread" removed; replaced by portal-response framing.
+- [firestore-data-model.md](./firestore-data-model.md): `updates.source` narrows to `'web' | 'system'` (`'whatsapp'` arm reserved, post-MVP); `clients`/`collaborators` gain `notificationsOptOut: boolean`.
+- [01-overview.md](./01-overview.md) / [04-product-strengths.md](./04-product-strengths.md): "two-way" messaging claims reworded — the two-way loop is *notification out → structured response in via portal*, not WA chat.
+- [21-cost-estimation.md](./21-cost-estimation.md): inbound-reply processing assumption replaced by auto-reply volume (negligible cost).
+- Wireframes/Figma prompt: task activity feed source labels drop "via WhatsApp" (collaborator updates only arrive "via web" now).
+- v1.1+ upgrade path: the auto-reply webhook is the natural place to later add real inbound handling; nothing in this decision blocks it.
+
+**Reversal cost:** Low — inbound processing is purely additive later. The outbound pipeline, templates, and portal response surfaces are unchanged.
+
+**Revisit when:** discovery interviews show collaborators refusing the magic-link page and defaulting to replying on WA (measure: auto-reply fire rate > 30% of outbound sends), or a paying customer asks for WA-reply capture with budget attached.
+
+---
+
 ## 2026-07-12 — Client portal gets shared documents (upload + list), project start date, and a timespan visualization (D-034)
 
 **Decision:** Extend the client portal ([B2]) with three additions:
