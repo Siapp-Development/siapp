@@ -19,11 +19,47 @@
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "9e1c8b3103f92fa8092568a44fe64858de7c5c9dc65ce4bea8f168080e889cfd"
     },
+    "firebase-auth-basics": {
+      "source": "firebase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/firebase-auth-basics/SKILL.md",
+      "computedHash": "f4850f578bacdda96cacaa57b5e1121ec047e99bf7d389033042b1975af91040"
+    },
+    "firebase-firestore": {
+      "source": "firebase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/firebase-firestore/SKILL.md",
+      "computedHash": "be5ed12b7402b1f36364e20d4f9ccd2caac90302e23427395a02570db9f1434a"
+    },
+    "firebase-hosting-basics": {
+      "source": "firebase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/firebase-hosting-basics/SKILL.md",
+      "computedHash": "fd0fede590512379a3103b74a7c1e612e38e6948b08e763a75962cd8c7f5b8e2"
+    },
+    "firebase-security-rules-auditor": {
+      "source": "firebase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/firebase-security-rules-auditor/SKILL.md",
+      "computedHash": "7d05c33d2e00c1d26cbd99ae174272fdd962e63b67c801e2fc050cc63e681723"
+    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "twilio-messaging-overview": {
+      "source": "twilio/ai",
+      "sourceType": "github",
+      "skillPath": "skills/twilio/twilio-messaging-overview/SKILL.md",
+      "computedHash": "35e82ef298a2029dac60e1ea0b30c8450e0b3ccc599c9ba0ef6b009687baaf0a"
+    },
+    "twilio-webhook-architecture": {
+      "source": "twilio/ai",
+      "sourceType": "github",
+      "skillPath": "skills/twilio/twilio-webhook-architecture/SKILL.md",
+      "computedHash": "552caace9670451c413491e58abdeb8abea83f0f34514dfa781e14084a0793dc"
     },
     "ui-ux-pro-max": {
       "source": "nextlevelbuilder/ui-ux-pro-max-skill",
