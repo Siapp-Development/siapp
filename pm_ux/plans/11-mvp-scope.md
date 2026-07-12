@@ -1,7 +1,7 @@
 ---
 title: "MVP Scope"
 status: draft
-updated: 2026-06-27
+updated: 2026-07-12
 ---
 
 # MVP Scope (v1)
@@ -46,7 +46,8 @@ If any of those steps requires a phone call to us, v1 isn't done.
 
 ### Client portal
 - Magic-link access (no password required for v1)
-- Per-project page: project name, firm branding, current phase, % complete, next milestone with date, recent updates feed, shared documents
+- Per-project page: project name, firm branding, **project start date + target date**, **timespan bar** showing elapsed vs remaining with a "today" marker (D-034), current phase, % complete, next milestone with date, recent updates feed, shared documents
+- **Client document upload** (D-034): clients can upload files (PDF / image / DOCX up to 10 MB per file) into the project's shared documents. Uploads are always visible to the firm; firm-side activity feed records `client_document_uploaded` events.
 - Mobile-first
 - English-only at v1 (BM/EN auto-detect + user override deferred)
 - Footer: "Powered by Siapp" (free + Team tiers) or firm-branded (Business+)

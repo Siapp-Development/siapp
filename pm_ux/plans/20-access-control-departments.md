@@ -56,7 +56,7 @@ A task with `restrictedToDepartments: ["finance"]`:
 
 | Surface | Non-Finance member sees | Finance member (or owner/admin) sees |
 |---|---|---|
-| Task in project list / kanban | ✅ title, status, assignee, due date, % complete contribution | ✅ everything |
+| Task in project list / timeline | ✅ title, status, assignee, due date, % complete contribution | ✅ everything |
 | Task detail page | ⚠️ header only + a "Restricted — Finance" badge | ✅ full page |
 | `description` field | 🚫 hidden | ✅ visible |
 | `updates/*` (notes, comments, status-change history) | 🚫 hidden, replaced with "Restricted content — Finance only" | ✅ visible |

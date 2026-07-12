@@ -1,7 +1,7 @@
 ---
 title: "Firestore Data Model"
 status: draft
-updated: 2026-06-21
+updated: 2026-07-12
 ---
 
 # Firestore Data Model
@@ -232,7 +232,7 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   ownerUid: string,
   ownerNameDenorm: string,
 
-  startDate?: Timestamp,
+  startDate: Timestamp,         // required in MVP for the client-portal timespan visualization (D-034)
   targetEndDate?: Timestamp,
   actualEndDate?: Timestamp,
 
@@ -286,9 +286,8 @@ External parties (subcontractors, vendors). **Free** — do not count against an
     | { type: 'collaborator', id: string, name: string, phone: string }
   >,
 
-  requiresPhoto: boolean,
-  requiresFirmApproval: boolean,   // default false. When true, collaborator's `Mark Done` moves task to status='done' with pendingApproval=true; client-facing milestone WA + portal update are held until a PM approves.
-  pendingApproval: boolean,        // default false. Set true only after collaborator marks done AND requiresFirmApproval=true. Cleared on PM approve/reject.
+  // NOTE: `requiresPhoto`, `requiresFirmApproval`, and `pendingApproval` were removed in D-032.
+  // Existing docs with these fields are ignored (Firestore is schemaless). Do not read them in new code.
 
   visibleToClient: boolean,        // default from project.visibility.clientCanSee
   visibleToCollaboratorIds: string[], // empty = all assigned collaborators see it
@@ -341,27 +340,34 @@ Append-only. Drives task page activity feed, audit, and notifications.
   name: string,
   mimeType: string,
   sizeBytes: number,
-  storagePath: string,           // Firebase Storage path
+  storagePath: string,           // Firebase Storage path. Client uploads land under `.../projects/{projId}/client-uploads/{uuid}-{filename}` per D-034.
   scope: 'project' | 'task',
   scopeId: string,
-  uploadedBy: string,            // uid or colid
-  uploadedByType: 'user' | 'collaborator',
+  uploadedBy: string,            // uid, colid, or cid (client)
+  uploaderType: 'firm_member' | 'collaborator' | 'client',  // D-034: client uploads via portal are always `uploaderType: 'client'`, `scope: 'project'`, `visibleToClient: true`.
   uploadedAt: Timestamp,
-  visibleToClient: boolean,      // for task-scoped docs: defaults to the parent task's `visibleToClient` at upload time. Applies equally to user and collaborator uploads (D-029).
+  visibleToClient: boolean,      // for task-scoped docs: defaults to the parent task's `visibleToClient` at upload time. Applies equally to firm and collaborator uploads (D-029). Client-uploaded docs are always true.
   visibleToCollaboratorIds: string[],
-  restrictedToDepartments: string[], // inherits task restriction; can be set directly for project-scoped docs
+  restrictedToDepartments: string[], // inherits task restriction; can be set directly for project-scoped docs. Client uploads always start with `[]` (unrestricted within the firm).
   scanStatus: 'pending' | 'clean' | 'infected',
   retentionUntil?: Timestamp,    // for Q54 — set on project close
   deletedAt?: Timestamp,         // soft delete; see deletion rules below (D-029)
-  deletedBy?: string,            // uid or colid
-  deletedByType?: 'user' | 'collaborator'
+  deletedBy?: string,            // uid, colid, or cid
+  deletedByType?: 'firm_member' | 'collaborator' | 'client'
 }
 ```
 
-**Deletion rules (D-029):**
+**Upload size caps:**
+
+- Firm members: 25 MB per file.
+- Collaborators: 25 MB per file.
+- Clients (D-034): **10 MB per file.** Prevents accidental video dumps from mobile.
+
+**Deletion rules (D-029 + D-034):**
 
 - Firm users (owner / admin / pm with project access) can soft-delete any document.
-- A collaborator can soft-delete a document **only if** all of: `uploadedByType == 'collaborator'`, `uploadedBy == request.colid`, `scope == 'task'`, `scopeId` is a task they are currently assigned to, and `scanStatus != 'infected'` (infected files stay quarantined regardless).
+- A collaborator can soft-delete a document **only if** all of: `uploaderType == 'collaborator'`, `uploadedBy == request.colid`, `scope == 'task'`, `scopeId` is a task they are currently assigned to, and `scanStatus != 'infected'` (infected files stay quarantined regardless).
+- A client (D-034) can soft-delete a document **only if** all of: `uploaderType == 'client'`, `uploadedBy == request.cid`, `scope == 'project'`, `scopeId` is the client's own project, and the document was uploaded < 24 hours ago (grace window for wrong-file recovery). After 24h, only firm members can delete.
 - Soft delete only sets `deletedAt` / `deletedBy` / `deletedByType` and hides the doc from listings; the Storage object and activity record (`action: 'doc_added'`) remain for audit.
 - Hard purge is performed by the retention job once `retentionUntil` passes; no UI exposes hard delete.
 - A successful delete writes a corresponding `updates/{updid}` entry with `action: 'doc_deleted'` so the firm sees it in the activity feed.
@@ -499,7 +505,7 @@ Define in `firestore.indexes.json`. List view → index mapping:
 | View | Collection group | Index |
 |---|---|---|
 | Workspace project list | `projects` | `status ASC, summary.lastActivityAt DESC` |
-| Kanban column | `tasks` | `status ASC, order ASC` |
+| Timeline board (grouped by status within phase) | `tasks` | `status ASC, order ASC` |
 | Overdue tasks | `tasks` | `status ASC, dueDate ASC` |
 | My tasks (across projects) | `tasks` (collection group) | `assignees.id ASC, status ASC, dueDate ASC` |
 | Task activity feed | `updates` | `createdAt DESC` (single-field; default) |
@@ -654,7 +660,7 @@ Storage rules use the same `request.auth.token.workspaces[wid]` check; collabora
 - **Q57** (virus scan choice) — affects `documents.scanStatus` flow
 - **Q54** (retention period) — sets `retentionUntil` value
 - **Q56** (collaborator visibility to peers) — read rules on `tasks`
-- **Q51** (client sees live collaborator updates vs approval-gated) — `tasks.pendingApproval` + rule
+- **Q51** (client sees live collaborator updates vs approval-gated) — **Closed by D-032**: the approval gate was removed from MVP. Collaborator `Mark Done` fires the client-facing WA immediately, subject only to D-027 lifecycle and per-task `visibleToClient`.
 
 These are model-compatible; no schema change needed when answered.
 

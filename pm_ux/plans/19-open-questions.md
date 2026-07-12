@@ -117,7 +117,7 @@ When an item is decided, also append the answer + date to [decisions-log.md](./d
 
 | \# | Question | Type | How we answer | Owner | Due | Riza's answer |
 | --- | --- | --- | --- | --- | --- | --- |
-| Q51 | Should clients see collaborator updates live, or only after PM approval? | ⚠️ | Default OFF (live). Per-task toggle to require PM approval for high-stakes work. | Founder | Pre-launch, Month 4 | *Closed (D-028): default OFF — collaborator `Mark Done` flows through to client immediately. PMs opt in per-task for sign-off-critical work.* |
+| Q51 | Should clients see collaborator updates live, or only after PM approval? | ⚠️ | Default OFF (live). Per-task toggle to require PM approval for high-stakes work. | Founder | Pre-launch, Month 4 | *Closed (D-028, superseded by D-032): the approval toggle is removed from MVP entirely — collaborator `Mark Done` always flows through to the client immediately, gated only by D-027 lifecycle and per-task `visibleToClient`.* |
 | Q52 | What happens when collaborator's phone number changes mid-project? | ⚠️ | PM can resend magic link to new number; old links revoked | Founder | Pre-launch, Month 5 | *PM-controlled re-issue* |
 | Q53 | Should magic-link task page work offline (PWA) for site engineers in bad signal? | 💭 | Defer to v1.5; MVP is online-only | Founder | Phase 1 end | *Online-only at MVP* |
 | Q54 | Photo & document retention — keep forever, or expire 12 months after project close? | ⚠️ | Affects Storage COGS; align with PDPA stance | Founder + counsel | Month 6 | *TBD — likely 24mo post-close, then archive* |

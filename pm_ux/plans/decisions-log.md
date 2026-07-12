@@ -1,7 +1,7 @@
 ---
 title: "Decisions Log"
 status: living
-updated: 2026-06-27
+updated: 2026-07-12
 ---
 
 # Decisions Log
@@ -9,6 +9,98 @@ updated: 2026-06-27
 Append-only record of resolved decisions. New decisions go at the **top**. Each entry: what, why, consequences, reversal cost, when to revisit.
 
 When superseded, do not delete — add a new entry that supersedes the old one (link both ways).
+
+---
+
+## 2026-07-12 — Client portal gets shared documents (upload + list), project start date, and a timespan visualization (D-034)
+
+**Decision:** Extend the client portal ([B2]) with three additions:
+
+1. **Project start date** displayed alongside the existing target completion date in the project header.
+2. **Timespan visualization** — a horizontal timeline bar from `project.startDate` → `project.targetDate`, with a "today" marker and phase transition markers. Gives the client a single-glance answer to "how long is this project and where are we in it?" without needing to scroll the milestones list.
+3. **Shared documents** section — the client can (a) view documents the firm has marked `visibleToClient: true` and (b) upload their own documents (e.g. signed contracts, ID copies, payment proofs). Client uploads land in the same project documents collection with `uploaderType: 'client'` and are always visible to the firm.
+
+**Why:**
+
+- **Trust the wedge with more data.** [01-overview.md](./01-overview.md) principle 2 is "the client portal is the wedge". Withholding the start date and visual timespan while showing a % complete is inconsistent — clients ask "when did this actually start?" in every discovery call.
+- **Two-way document exchange closes a real support gap.** Firms today receive client documents over WhatsApp (photos of signed docs) and lose them in the thread. Letting the client upload directly into the project keeps every artifact in one place and cuts one "please send that to me again" round-trip.
+- **Timespan bar is cheaper than a Gantt.** A horizontal bar with start / today / target + phase markers gives 80% of Gantt value for a client audience that would never use a full timeline (per [10-customer-discovery-plan.md](./10-customer-discovery-plan.md) H2).
+
+**Consequences:**
+
+- `projects/{pid}` schema: `startDate: Timestamp` becomes required (was implicit / derived).
+- `projects/{pid}/documents/{did}` schema: `uploaderType: 'firm_member' | 'collaborator' | 'client'` added; `uploaderId` still points to the underlying user/collaborator/client doc.
+- Firestore security rules: clients (magic-link JWT with `audience: 'client'`) get `create` permission on `documents/*` scoped to their project. Documents created by clients are automatically `visibleToClient: true`.
+- Storage rules mirror the security rules; client uploads land under `gs://{bucket}/workspaces/{wsId}/projects/{projId}/client-uploads/{uuid}-{filename}` for easy audit/moderation.
+- Upload size cap: 10 MB per file for clients (vs 25 MB for firm members). Prevents accidental video dumps.
+- Virus scanning: client uploads flow through the same Cloud Storage → scan → quarantine pipeline as firm uploads (see [13-tech-architecture.md](./13-tech-architecture.md)).
+- Firm-side activity feed shows `client_document_uploaded` events; the firm's audit trail is unchanged.
+- Wireframes: [B2] gains a header start-date row, a timespan bar between the progress circle and Next milestone, and a compact Documents section (last 3 shared documents + upload button) above the WhatsApp CTA.
+
+**Reversal cost:** Medium — removing client upload requires a security rule tightening and would leave already-uploaded client documents orphaned (accessible only to the firm, which is acceptable). Removing start-date + timespan is a UI change only.
+
+**Revisit when:** Client uploads become a spam vector (auto-attach random files to WhatsApp forwards) or a moderation load. Consider a per-workspace "clients can upload" toggle if so — but ship it on by default.
+
+**Affects:** [firestore-data-model.md](./firestore-data-model.md), [figma-make-design-prompt.md](./figma-make-design-prompt.md), [13-tech-architecture.md](./13-tech-architecture.md), [20-access-control-departments.md](./20-access-control-departments.md), [22-wireframe-review.md](./22-wireframe-review.md) (item #4 client portal empty/error states now applies to Documents too), wireframes ([B2]).
+
+---
+
+## 2026-07-12 — Timeline is the only project board view in MVP; Kanban is deferred (D-033)
+
+**Decision:** Remove the Kanban board view ([A3]) from MVP. The project board has a single view: the timeline ([A4], now relabelled [A3]). Task cards are still clickable to open the task detail; the "Board" tab is removed from the project detail tab bar.
+
+**Why:**
+
+- **Kanban duplicates a status column already visible on every task card.** In construction and legal projects, tasks are gated by dates and dependencies, not by pull-based workflow — a Kanban column ("To do / In progress / Blocked / Done") tells the PM less than a timeline showing "this is late, this starts next week". Timeline is closer to the ground truth of how these firms think.
+- **Fewer views to build and maintain.** Two board views mean two states to keep in sync, two empty states, two loading skeletons, two mobile responsive stories. Cutting one halves the ongoing surface area.
+- **Timeline scales to 18-month builds; Kanban collapses.** A 60-task residential build in Kanban means 15-20 cards per column with no phase grouping. On timeline, phase rows keep the structure intact.
+- **We can still ship Kanban later without data migration.** The `tasks.status` field remains; a future Kanban view is a pure UI addition. Deferring today doesn't foreclose it.
+
+**Consequences:**
+
+- [A3] wireframe elements are removed. The existing [A4] timeline is relabelled [A3] and becomes "the project board". Cross-references to "A3 (Kanban)" in older docs (e.g. [22-wireframe-review.md](./22-wireframe-review.md) item #2) are now obsolete — the review's overloaded-card critique no longer applies since timeline rows carry a different affordance model.
+- Project detail tab bar: **Board** tab removed. Remaining tabs: Timeline (default), Documents, Activity, Settings.
+- Task cards on the timeline still show: title, assignees, due date, restrict-to badge, collaborator badge — but no `P` (photo) or `A` (approval) indicators, since those toggles are being removed per [D-032](#2026-07-12--remove-requires-photo--requires-firm-approval-toggles-from-mvp-d-032).
+- Figma prompt: A3 section rewritten as "Project board (Timeline — only view)"; the old A3 Kanban section is deleted.
+
+**Reversal cost:** Low — Kanban is pure UI (no schema changes). Rebuilding it takes ~2 sprint-days if a customer asks.
+
+**Revisit when:** A paying customer asks for a Kanban view AND we can point to at least one internal workflow inside that firm that maps cleanly to columns. Neither of the two design partners has asked for one.
+
+**Affects:** [figma-make-design-prompt.md](./figma-make-design-prompt.md), [11-mvp-scope.md](./11-mvp-scope.md), [22-wireframe-review.md](./22-wireframe-review.md) (item #2 obsolete), wireframes ([A3] deleted, [A4] relabelled to [A3]).
+
+---
+
+## 2026-07-12 — Remove `Requires photo` and `Requires firm approval` toggles from MVP (D-032, supersedes D-028)
+
+**Decision:** Remove both per-task toggles from MVP:
+
+1. `tasks.requiresPhoto` and `tasks.requiresFirmApproval` are dropped from the task schema.
+2. `tasks.pendingApproval` is dropped (no longer meaningful without the approval toggle).
+3. The A5 task detail no longer renders these two toggle rows.
+4. The A5d "Pending review" pill and the `P` / `A` indicators on task cards are removed.
+5. **Supersedes [D-028](#2026-06-27--collaborator-mark-done-flows-straight-through-firm-approval-is-opt-in-d-028)** — the "collaborator Mark Done flows straight through" behaviour is now the *only* behaviour, not the default. There is no opt-in.
+
+**Why:**
+
+- **D-028 already rendered these toggles low-value.** With `requiresFirmApproval` defaulting to false and provisioning-seed audits keeping it off for < 10% of tasks, the toggle was live-toggled by PMs rarely enough to not justify the design + engineering weight in the task detail UI. Removing it entirely removes the ambiguity.
+- **`requiresPhoto` conflates two workflows.** It suggests the collaborator *cannot* mark done without a photo — but the [C1] collaborator screen never enforced this (the collaborator can always tap Done). A soft "please attach a photo" nudge is better handled at the WhatsApp template layer or as a status-change validation, not as a persistent per-task flag.
+- **A5 hierarchy issue in [22-wireframe-review.md](./22-wireframe-review.md) item #3.** The review flagged "11 zones with no hierarchy". Removing two zones is the cheapest correction.
+- **Consistent with the D-031 direction** — MVP kills speculative surface until customer evidence justifies it.
+
+**Consequences:**
+
+- `tasks` schema loses 3 boolean fields (`requiresPhoto`, `requiresFirmApproval`, `pendingApproval`). This is a subtractive schema change; existing docs with these fields set are ignored (Firestore is schemaless).
+- Provisioning seeds (`functions/src/provisioning/seeds/*.ts`) stop emitting these fields on `taskDef` entries.
+- Notification pipeline simplifies: no "hold-and-wait-for-approval" branch. Every collaborator `Mark Done` fires the client-facing WA immediately (subject to the D-027 lifecycle gate and per-task `visibleToClient`).
+- Message previews on [A9]: "Task blocked / Need help" template stays; a hypothetical "Task awaiting approval" template that was never authored is confirmed out of scope.
+- [22-wireframe-review.md](./22-wireframe-review.md) items #2 (P/A indicators on cards) and #3 (approval toggle in drawer) become obsolete. Item #5 (Need help recovery path) is unaffected.
+
+**Reversal cost:** Low. Both fields are additive if we re-introduce them. No data migration needed at re-introduction (default to `false`).
+
+**Revisit when:** A paying customer's PM explicitly asks "how do I make the system wait for me to review this before the client sees it?" — and a manual "hold the task in `in_progress` until you're ready to mark it done" workaround is not enough. That would be evidence D-028's original concern was real. Until then, keep it out.
+
+**Affects:** [firestore-data-model.md](./firestore-data-model.md), [figma-make-design-prompt.md](./figma-make-design-prompt.md), [19-open-questions.md](./19-open-questions.md) (Q51 remains closed; now closed by removal rather than opt-in), [22-wireframe-review.md](./22-wireframe-review.md), wireframes ([A5], [A5d], [A5f]).
 
 ---
 
@@ -116,7 +208,9 @@ The rule: **structure carries, content clears.** Anything you'd rebuild by hand 
 
 ---
 
-## 2026-06-27 — Collaborator `Mark Done` flows straight through; firm approval is opt-in (D-028)
+## 2026-06-27 — Collaborator `Mark Done` flows straight through; firm approval is opt-in (D-028) [SUPERSEDED by D-032]
+
+> **Superseded 2026-07-12 by [D-032](#2026-07-12--remove-requires-photo--requires-firm-approval-toggles-from-mvp-d-032).** The `requiresFirmApproval` toggle is removed from MVP entirely — the "flows straight through" behaviour below is now the only behaviour. Kept here for the reasoning trail.
 
 **Decision:** `tasks.requiresFirmApproval` defaults to **`false`**. When a collaborator taps **Mark Done**, the task moves to `status: 'done'` and the client-facing milestone WhatsApp + portal update fire immediately (subject to D-027 lifecycle gate and the per-task `visibleToClient` flag). Firms can opt-in to approval-before-broadcast per task (and per provisioning-seed `taskDef`) for sign-off-critical work.
 
