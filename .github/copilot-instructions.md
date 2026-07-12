@@ -52,6 +52,7 @@ Every change must keep `build`, `lint`, `typecheck`, and `test` green.
 ## Conventions
 
 - **All planning/research/ideation docs go in [/plans/](plans/).** Never in repo root or `/docs`. See [.github/instructions/plans-folder.instructions.md](.github/instructions/plans-folder.instructions.md).
+- **Delivery pipeline:** features/fixes ship via the `/ship` prompt → Feature Lead agent (Planner → Builder → Tester → Validator → Shipper → GitHub PR). Agents live in [.github/agents/](.github/agents/). Never commit directly to `main`; see [.github/instructions/git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md).
 - **Accessibility is not optional.** See [.github/instructions/accessibility.instructions.md](.github/instructions/accessibility.instructions.md).
 - **No console.log in committed code.** Use a logger or remove before commit.
 - **Errors:** throw `Error` (or a subclass) with a message; never throw strings. At system boundaries (fetch, parse, user input), validate and surface a typed error.
