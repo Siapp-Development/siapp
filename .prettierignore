@@ -4,3 +4,6 @@ coverage/
 package-lock.json
 pm_ux/
 .agents/
+*.md
+.github/
+skills-lock.json
