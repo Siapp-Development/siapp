@@ -1,0 +1,10 @@
+rules_version = '2';
+
+// Deny-by-default baseline. Real access rules land with ticket #6.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

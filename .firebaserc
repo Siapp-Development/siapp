@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "siapp-prod"
+  },
+  "targets": {
+    "siapp-prod": {
+      "hosting": {
+        "apex": ["siapp-prod"],
+        "dashboard": ["siapp-prod-dashboard"],
+        "admin": ["siapp-admin"]
+      }
+    }
+  }
+}
