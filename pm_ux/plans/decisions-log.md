@@ -12,6 +12,29 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-07-12 — pnpm + Turborepo monorepo; backend under `backend/` (D-037)
+
+**Decision:** The single repo (D-005) is structured as a **pnpm workspaces + Turborepo** monorepo:
+
+```
+apps/web/            # Vite + React frontend (all three route surfaces)
+backend/api/         # Express 5 → Cloud Run
+backend/functions/   # Cloud Functions gen2 (Firestore triggers)
+packages/shared/     # shared TS types: Firestore doc types, enums, notification payloads
+```
+
+`pnpm-workspace.yaml` + `turbo.json` at root; per-workspace `build/lint/typecheck/test` orchestrated by Turbo.
+
+**Why:** Founder preference for pnpm's install speed + strict dependency linking (no phantom deps) and Turbo's task graph/caching. Shared types package keeps Firestore document shapes in sync between web, api, and functions.
+
+**Consequences:** `.github/copilot-instructions.md` package-manager rule flips to pnpm (pnpm-lock.yaml becomes the trigger). CI uses pnpm setup + Turbo. `firebase deploy --only functions` needs the pnpm-compat isolation setting (`node-linker` or predeploy bundling) — known papercut, handled in ticket #3. Frontend scaffold from #1/#2 moves to `apps/web/` as part of #3.
+
+**Reversal cost:** Low→Medium. Layout is tool-agnostic; converting back to npm workspaces is mechanical.
+
+**Revisit when:** Functions deploy friction with pnpm costs more than a day; or repo consolidates to a single runtime.
+
+---
+
 ## 2026-07-12 — URL surfaces: firm app on `dashboard.siapp.app`, WA-delivered links on the apex (D-036)
 
 **Decision:** Siapp's web surfaces split across subdomains and the apex:

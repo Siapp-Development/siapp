@@ -49,7 +49,7 @@ Region: **`asia-southeast1` (Singapore)** for every GCP service we provision (D-
 
 ### Frontend stack
 
-- **Decision:** React + TypeScript + Vite. Single app, single repo (D-005).
+- **Decision:** React + TypeScript + Vite. Single repo (D-005) structured as a **pnpm + Turborepo monorepo** (D-037): `apps/web`, `backend/api`, `backend/functions`, `packages/shared`.
 - **URL surfaces (D-036):**
 
   | Surface | URL | Audience | Auth |

@@ -7,7 +7,8 @@ A React + TypeScript application. These guidelines apply to every change in this
 - **Language:** TypeScript (strict mode)
 - **UI:** React 18+ with function components and hooks
 - **Module system:** ES modules
-- **Package manager:** npm (use `npm` commands unless `pnpm-lock.yaml` or `yarn.lock` is present)
+- **Package manager:** pnpm with workspaces + Turborepo (D-037). Use `pnpm` commands; task orchestration via `turbo`.
+- **Monorepo layout (D-037):** `apps/web` (frontend), `backend/api` (Express 5 → Cloud Run), `backend/functions` (Cloud Functions gen2), `packages/shared` (shared types).
 
 If a tool/framework isn't yet configured, prefer widely-used defaults: Vite for bundling, Vitest + React Testing Library for tests, ESLint + Prettier for lint/format.
 
@@ -39,13 +40,15 @@ If a tool/framework isn't yet configured, prefer widely-used defaults: Vite for 
 When scripts exist in `package.json`, prefer them:
 
 ```bash
-npm install
-npm run dev       # local dev server
-npm run build     # production build (must pass before merge)
-npm run lint      # ESLint
-npm run typecheck # tsc --noEmit
-npm test          # unit/component tests
+pnpm install
+pnpm dev        # local dev server
+pnpm build      # production build (must pass before merge)
+pnpm lint       # ESLint
+pnpm typecheck  # tsc --noEmit
+pnpm test       # unit/component tests
 ```
+
+Root scripts fan out through Turborepo; scope to one workspace with `pnpm --filter <workspace> <script>`.
 
 Every change must keep `build`, `lint`, `typecheck`, and `test` green.
 
