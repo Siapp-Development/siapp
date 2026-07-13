@@ -6,10 +6,9 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', '**/node_modules/**', '**/.turbo/**'] },
-  // Frontend — browser globals + React rules
+  { ignores: ['dist', 'coverage', 'node_modules'] },
   {
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
@@ -23,22 +22,6 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-console': 'error',
-    },
-  },
-  // Backend — Node globals, no React rules
-  {
-    files: ['backend/**/*.ts', 'packages/**/*.ts'],
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    languageOptions: {
-      ecmaVersion: 2022,
-      globals: globals.node,
-    },
-    rules: {
-      'no-console': 'error',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-      ],
     },
   },
   prettier,

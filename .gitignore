@@ -11,3 +11,9 @@ logs/
 
 # keep the example env committed
 !.env.example
+
+# pnpm (replace npm lock file)
+package-lock.json
+
+# turbo
+.turbo/

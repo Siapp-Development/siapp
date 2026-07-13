@@ -1,7 +1,7 @@
 ---
 title: "Decisions Log"
 status: living
-updated: 2026-07-12
+updated: 2026-07-13
 ---
 
 # Decisions Log
@@ -9,6 +9,36 @@ updated: 2026-07-12
 Append-only record of resolved decisions. New decisions go at the **top**. Each entry: what, why, consequences, reversal cost, when to revisit.
 
 When superseded, do not delete — add a new entry that supersedes the old one (link both ways).
+
+---
+
+## 2026-07-13 — Monorepo structure: pnpm workspaces + Turborepo (D-037)
+
+**Decision:** Convert the single-package repo to a **pnpm workspace + Turborepo monorepo** with the following layout:
+
+```
+apps/web/          @siapp/web   — Vite + React + TS (firm/client/admin frontends)
+backend/api/       @siapp/api   — Express 5 on Cloud Run
+backend/functions/ @siapp/functions — Cloud Functions 2nd gen
+packages/shared/   @siapp/shared — Cross-cutting TS types (Firestore doc types, enums, notification payloads)
+```
+
+Root pipeline: `pnpm turbo build | lint | typecheck | test` orchestrates all workspaces with caching.
+
+**Why:**
+- **Shared TS types without a separate npm package.** `@siapp/shared` exports Firestore document types and notification payload shapes as `workspace:*`. Both frontend and backend consume the same types with no duplication and no publish step.
+- **Isolated builds with explicit dependency order.** Turbo's `dependsOn: ["^build"]` ensures shared is built before its consumers; caching means unchanged packages don't re-run.
+- **Physical bundle isolation.** Each `apps/*` and `backend/*` has its own `node_modules`, `tsconfig`, and build output. The client-portal `/p` and collaborator `/t` bundles (ticket #5) will share no imports with the firm-side tree by construction.
+- **Single repo, multiple deployment targets.** Cloud Run + Cloud Functions deploy from the same repo without monorepo-induced friction — pnpm's workspace linking makes `@siapp/shared` available to the backend without publishing.
+
+**Consequences:**
+- Root `package-lock.json` replaced by `pnpm-lock.yaml` (committed).
+- `pnpm` is now the required package manager; npm commands at root will fail (wrong lock file). CI (#4) must `pnpm install` not `npm ci`.
+- Turbo remote cache (not yet configured) is a future optimization.
+
+**Reversal cost:** Medium — reverting to a flat npm package means moving all the workspace files back to the root and de-duplicating the shared types.
+
+**Revisit when:** A backend service needs a fundamentally different build chain (e.g. Rust) or client-portal bundle isolation requires a separate repo.
 
 ---
 
