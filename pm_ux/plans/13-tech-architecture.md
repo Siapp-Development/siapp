@@ -80,7 +80,7 @@ Region: **`asia-southeast1` (Singapore)** for every GCP service we provision (D-
 - **One service at v1.** Split only when a domain proves a different scaling profile (likely: outbound messaging worker first).
 - **Cold-start mitigation:** set `min-instances=1` on the API Cloud Run service once paying customers exist (~USD $5/mo) to keep p95 webhook latency predictable.
 
-#### Standard library layer (`apps/api/src/lib/`)
+#### Standard library layer (`backend/api/src/lib/`)
 
 Built once, used by every route. Documented in [decisions-log D-022](./decisions-log.md):
 
