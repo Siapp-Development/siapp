@@ -5,9 +5,9 @@ import { createApp } from './index.js';
 
 const app = createApp();
 
-describe('GET /healthz', () => {
+describe('GET /health', () => {
   it('returns 200 with status ok', async () => {
-    const res = await supertest(app).get('/healthz');
+    const res = await supertest(app).get('/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
