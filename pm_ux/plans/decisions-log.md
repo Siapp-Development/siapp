@@ -12,6 +12,45 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-07-13 — Brand palette v1 finalized (D-039)
+
+**Decision:** Finalize the v1 semantic color palette (implements the direction in [09-brand-identity.md](./09-brand-identity.md) — indigo/slate primary, terracotta accent, dual neutral sets):
+
+| Token | Base | Deep/hover | Tint |
+|---|---|---|---|
+| Primary (slate-indigo) | `#3E4C77` | `#2C3759` | `#EEF1F8` |
+| Accent (terracotta) | `#C4553D` | `#A33F2B` | `#FBEAE5` |
+| Warning (amber) | `#B8860B` | — | `#FFF7E0` |
+| Success | `#2E7D4F` | — | `#E6F4EC` |
+| Danger | `#B3372F` | — | `#FCEBEA` |
+| Firm neutrals (cool) | text `#101321` | — | bg `#F7F8FA` |
+| Portal neutrals (warm) | text `#2A2622` | — | bg `#FAF8F5` |
+
+All text/background pairs meet WCAG AA (≥ 4.5:1). Full scales derived with Radix Colors methodology inside `packages/ui` tokens (D-038).
+
+**Why:** Ticket #5 ships design tokens; shipping placeholders would force a rename-free but value-churn PR later. The direction was already fixed in the brand doc — only hex selection remained.
+
+**Consequences:** Tokens in `packages/ui` are the single source; no hardcoded hex in components. A future designer pass may adjust values (cheap — semantic names are the contract).
+
+**Reversal cost:** Low — value swap in one file.
+
+---
+
+## 2026-07-13 — Design system lives in `packages/ui`; Tailwind + shadcn/ui adopted now (D-038)
+
+**Decision:** Create a **`packages/ui` (@siapp/ui)** workspace holding the design system: semantic design tokens (CSS custom properties + Tailwind theme), shadcn/ui-based shared components, global styles, and the two surface themes (`firm`, `portal`) per 09-brand-identity's "one system, two personalities" model. **Tailwind CSS + shadcn/ui are adopted now** (ticket #5), not deferred. `packages/shared` stays **pure TypeScript types only** — no React, no CSS.
+
+**Why:**
+- Backend workspaces (`backend/api`, `backend/functions`) import `@siapp/shared`; mixing React/Tailwind into it would drag frontend deps into backend builds.
+- Adopting Tailwind/shadcn at shell time (before any real UI exists) is the cheapest possible moment — zero migration.
+- One component library + one token schema across firm/portal/admin surfaces, expressed as theme value sets (see 23-design-system-research).
+
+**Consequences:** `apps/web` depends on `@siapp/ui` (workspace:*). Tokens/components never defined in app code. Admin surface rides the firm theme with an environment marker.
+
+**Reversal cost:** Low-medium — package boundary is cheap to collapse; Tailwind removal would be costly once components accumulate.
+
+---
+
 ## 2026-07-13 — Monorepo structure: pnpm workspaces + Turborepo (D-037)
 
 **Decision:** Convert the single-package repo to a **pnpm workspace + Turborepo monorepo** with the following layout:
