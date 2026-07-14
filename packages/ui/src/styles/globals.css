@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Tailwind must scan this package's components for used utilities. */
+@source '../';
+
+/* Map semantic tokens (tokens.css) into Tailwind theme utilities. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--surface-card);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-deep: var(--primary-deep);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --radius-md: var(--radius);
+}
+
+@layer base {
+  html {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+
+  body {
+    margin: 0;
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible focus for keyboard users; never removed without replacement. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important; /* gate non-essential motion per a11y guidelines */
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Skip link: visually hidden until focused, always first in tab order. */
+  .skip-link {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 100;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    transform: translateY(-200%);
+  }
+
+  .skip-link:focus-visible {
+    transform: translateY(0);
+  }
+}
