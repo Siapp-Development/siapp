@@ -1,0 +1,63 @@
+name: CI
+
+on:
+    pull_request:
+        branches: [main]
+    push:
+        branches: [main]
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    # Required status check for branch protection on `main`.
+    # If you rename this job, update the branch-protection required check too.
+    ci:
+        name: CI
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v4
+              # version is resolved from the "packageManager" field in package.json
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build
+              run: pnpm build
+
+            - name: Lint
+              run: pnpm lint
+
+            - name: Typecheck
+              run: pnpm typecheck
+
+            - name: Test
+              run: pnpm test
+
+    # Placeholder: Firestore security-rules tests.
+    # The rules test harness does not exist yet — it lands with ticket #6.
+    # This job is intentionally skipped (`if: false`) so it never reports a
+    # fake pass. When #6 lands: remove the `if`, and run the rules test suite
+    # against the Firestore emulator here.
+    rules-tests:
+        name: Firestore rules tests
+        runs-on: ubuntu-latest
+        if: ${{ false }}
+        steps:
+            - name: Placeholder (blocked on ticket 6)
+              run: echo "Rules test harness not yet implemented (ticket #6)"
