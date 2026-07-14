@@ -4,17 +4,17 @@
  * can share the shapes.
  */
 
-import type { NotificationTrigger } from './enums.ts';
+import type { TNotificationTrigger } from './enums.ts';
 
-export interface BaseTemplateVars {
+export interface IBaseTemplateVars {
   /** WhatsApp Business Account template name, e.g. "project_welcome_v2" */
   templateName: string;
-  trigger: NotificationTrigger;
+  trigger: TNotificationTrigger;
   firmName: string;
   firmWaPhone: string;
 }
 
-export interface ProjectWelcomeVars extends BaseTemplateVars {
+export interface IProjectWelcomeVars extends IBaseTemplateVars {
   trigger: 'project_welcome';
   clientFirstName: string;
   clientFullName: string;
@@ -23,7 +23,7 @@ export interface ProjectWelcomeVars extends BaseTemplateVars {
   portalLink: string;
 }
 
-export interface TaskAssignedVars extends BaseTemplateVars {
+export interface ITaskAssignedVars extends IBaseTemplateVars {
   trigger: 'task_assigned';
   collaboratorName: string;
   taskTitle: string;
@@ -32,14 +32,14 @@ export interface TaskAssignedVars extends BaseTemplateVars {
   taskLink: string;
 }
 
-export interface TaskStatusChangeVars extends BaseTemplateVars {
+export interface ITaskStatusChangeVars extends IBaseTemplateVars {
   trigger: 'task_status_change';
   taskTitle: string;
   newStatus: string;
   projectTitle: string;
 }
 
-export interface TaskDueSoonVars extends BaseTemplateVars {
+export interface ITaskDueSoonVars extends IBaseTemplateVars {
   trigger: 'task_due_soon';
   taskTitle: string;
   dueDate: string;
@@ -47,7 +47,7 @@ export interface TaskDueSoonVars extends BaseTemplateVars {
   taskLink: string;
 }
 
-export interface NeedHelpVars extends BaseTemplateVars {
+export interface INeedHelpVars extends IBaseTemplateVars {
   trigger: 'need_help';
   collaboratorName: string;
   taskTitle: string;
@@ -55,15 +55,15 @@ export interface NeedHelpVars extends BaseTemplateVars {
   projectTitle: string;
 }
 
-export interface InboundAutoReplyVars extends BaseTemplateVars {
+export interface IInboundAutoReplyVars extends IBaseTemplateVars {
   trigger: 'inbound_auto_reply';
   portalLink: string;
 }
 
-export type TemplateVars =
-  | ProjectWelcomeVars
-  | TaskAssignedVars
-  | TaskStatusChangeVars
-  | TaskDueSoonVars
-  | NeedHelpVars
-  | InboundAutoReplyVars;
+export type TTemplateVars =
+  | IProjectWelcomeVars
+  | ITaskAssignedVars
+  | ITaskStatusChangeVars
+  | ITaskDueSoonVars
+  | INeedHelpVars
+  | IInboundAutoReplyVars;

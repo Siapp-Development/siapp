@@ -11,16 +11,16 @@
  */
 
 import type {
-  CollaboratorStatus,
-  CollaboratorType,
-  Locale,
-  MemberRole,
-  PhoneRefType,
-  ProjectLifecycle,
-  ProjectStatus,
-  ProjectVertical,
-  TaskStatus,
-  WorkspacePlan,
+  TCollaboratorStatus,
+  TCollaboratorType,
+  TLocale,
+  TMemberRole,
+  TPhoneRefType,
+  TProjectLifecycle,
+  TProjectStatus,
+  TProjectVertical,
+  TTaskStatus,
+  TWorkspacePlan,
 } from './enums.ts';
 
 // ---------------------------------------------------------------------------
@@ -28,30 +28,30 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** `/users/{uid}` — firm staff Firebase Auth profile. */
-export interface UserDoc {
+export interface IUserDoc {
   uid: string;
   email: string;
   displayName: string;
   photoUrl?: string;
   phone?: string;
   defaultWorkspaceId?: string;
-  locale: Locale;
+  locale: TLocale;
   createdAt: Date;
   lastSeenAt: Date;
 }
 
 /** Entry inside `/phoneIndex/{phoneE164}.refs[]` */
-export interface PhoneRef {
+export interface IPhoneRef {
   workspaceId: string;
-  type: PhoneRefType;
+  type: TPhoneRefType;
   refId: string;
   addedAt: Date;
 }
 
 /** `/phoneIndex/{phoneE164}` — cross-workspace phone lookup. */
-export interface PhoneIndexDoc {
+export interface IPhoneIndexDoc {
   phone: string;
-  refs: PhoneRef[];
+  refs: IPhoneRef[];
   updatedAt: Date;
 }
 
@@ -59,40 +59,40 @@ export interface PhoneIndexDoc {
 // Workspace tree — `/workspaces/{wid}`
 // ---------------------------------------------------------------------------
 
-export interface WorkspaceBranding {
+export interface IWorkspaceBranding {
   logoUrl?: string;
   primaryColor?: string;
 }
 
-export interface WorkspaceWhatsappAllowance {
+export interface IWorkspaceWhatsappAllowance {
   includedPerPeriod: number;
   periodStart: Date;
   used: number;
 }
 
 /** `/workspaces/{wid}` */
-export interface WorkspaceDoc {
+export interface IWorkspaceDoc {
   id: string;
   name: string;
   slug: string;
   ownerId: string;
-  plan: WorkspacePlan;
+  plan: TWorkspacePlan;
   planExpiresAt: Date;
   seatLimit: number;
   seatsUsed: number;
-  branding: WorkspaceBranding;
-  whatsappAllowance: WorkspaceWhatsappAllowance;
-  defaultLocale: Locale;
+  branding: IWorkspaceBranding;
+  whatsappAllowance: IWorkspaceWhatsappAllowance;
+  defaultLocale: TLocale;
   createdAt: Date;
   updatedAt: Date;
 }
 
 /** `/workspaces/{wid}/members/{uid}` */
-export interface MemberDoc {
+export interface IMemberDoc {
   uid: string;
   email: string;
   displayName: string;
-  role: MemberRole;
+  role: TMemberRole;
   departments: string[];
   seatActive: boolean;
   joinedAt: Date;
@@ -100,7 +100,7 @@ export interface MemberDoc {
 }
 
 /** `/workspaces/{wid}/departments/{depId}` */
-export interface DepartmentDoc {
+export interface IDepartmentDoc {
   id: string;
   name: string;
   description?: string;
@@ -111,13 +111,13 @@ export interface DepartmentDoc {
 }
 
 /** `/workspaces/{wid}/clients/{cid}` */
-export interface ClientDoc {
+export interface IClientDoc {
   id: string;
   name: string;
   phone: string;
   email?: string;
   companyName?: string;
-  language: Locale;
+  language: TLocale;
   notes?: string;
   notificationsOptOut?: boolean;
   createdAt: Date;
@@ -125,15 +125,15 @@ export interface ClientDoc {
 }
 
 /** `/workspaces/{wid}/collaborators/{colid}` */
-export interface CollaboratorDoc {
+export interface ICollaboratorDoc {
   id: string;
   name: string;
   phone: string;
   email?: string;
   company?: string;
   trade?: string;
-  type: CollaboratorType;
-  status: CollaboratorStatus;
+  type: TCollaboratorType;
+  status: TCollaboratorStatus;
   notificationsOptOut?: boolean;
   createdAt: Date;
   invitedBy: string;
@@ -144,7 +144,7 @@ export interface CollaboratorDoc {
 // Projects — `/workspaces/{wid}/projects/{pid}`
 // ---------------------------------------------------------------------------
 
-export interface ProjectSummary {
+export interface IProjectSummary {
   totalTasks: number;
   doneTasks: number;
   overdueTasks: number;
@@ -152,23 +152,23 @@ export interface ProjectSummary {
   lastActivityAt: Date;
 }
 
-export interface ProjectVisibility {
+export interface IProjectVisibility {
   clientCanSee: boolean;
   clientId?: string;
 }
 
 /** `/workspaces/{wid}/projects/{pid}` */
-export interface ProjectDoc {
+export interface IProjectDoc {
   id: string;
   name: string;
   code?: string;
-  vertical: ProjectVertical;
-  lifecycle: ProjectLifecycle;
+  vertical: TProjectVertical;
+  lifecycle: TProjectLifecycle;
   publishedAt?: Date;
   completedAt?: Date;
   archivedAt?: Date;
   deletedAt?: Date;
-  status: ProjectStatus;
+  status: TProjectStatus;
   duplicatedFromProjectId?: string;
   clientId: string;
   clientNameDenorm: string;
@@ -177,14 +177,14 @@ export interface ProjectDoc {
   startDate: Date;
   targetEndDate?: Date;
   actualEndDate?: Date;
-  summary: ProjectSummary;
-  visibility: ProjectVisibility;
+  summary: IProjectSummary;
+  visibility: IProjectVisibility;
   createdAt: Date;
   updatedAt: Date;
 }
 
 /** `/workspaces/{wid}/projects/{pid}/phases/{phid}` */
-export interface PhaseDoc {
+export interface IPhaseDoc {
   id: string;
   name: string;
   order: number;
@@ -192,7 +192,7 @@ export interface PhaseDoc {
 }
 
 /** `/workspaces/{wid}/projects/{pid}/milestones/{mid}` */
-export interface MilestoneDoc {
+export interface IMilestoneDoc {
   id: string;
   name: string;
   dueDate: Date;
@@ -201,12 +201,12 @@ export interface MilestoneDoc {
 }
 
 /** `/workspaces/{wid}/projects/{pid}/tasks/{tid}` */
-export interface TaskDoc {
+export interface ITaskDoc {
   id: string;
   title: string;
   phaseId?: string;
   order: number;
-  status: TaskStatus;
+  status: TTaskStatus;
   assigneeUid?: string;
   assigneeNameDenorm?: string;
   collaboratorId?: string;
@@ -223,7 +223,7 @@ export interface TaskDoc {
 }
 
 /** `/workspaces/{wid}/projects/{pid}/tasks/{tid}/updates/{updid}` */
-export interface TaskUpdateDoc {
+export interface ITaskUpdateDoc {
   id: string;
   authorId: string;
   authorNameDenorm: string;
@@ -233,7 +233,7 @@ export interface TaskUpdateDoc {
 }
 
 /** `/workspaces/{wid}/projects/{pid}/documents/{did}` */
-export interface ProjectDocumentDoc {
+export interface IProjectDocumentDoc {
   id: string;
   name: string;
   storagePath: string;
@@ -250,7 +250,7 @@ export interface ProjectDocumentDoc {
 // ---------------------------------------------------------------------------
 
 /** `/workspaces/{wid}/messages/{mid}` */
-export interface MessageDoc {
+export interface IMessageDoc {
   id: string;
   projectId: string;
   taskId?: string;
@@ -269,7 +269,7 @@ export interface MessageDoc {
 }
 
 /** `/workspaces/{wid}/auditLog/{alid}` */
-export interface AuditLogDoc {
+export interface IAuditLogDoc {
   id: string;
   actorUid: string;
   actorEmail: string;
@@ -283,7 +283,7 @@ export interface AuditLogDoc {
 }
 
 /** `/workspaces/{wid}/usageCounters/{period}` e.g. period = "2026-07" */
-export interface UsageCounterDoc {
+export interface IUsageCounterDoc {
   period: string;
   waConversations: number;
   waMessages: number;

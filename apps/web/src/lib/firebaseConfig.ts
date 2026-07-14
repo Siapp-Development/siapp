@@ -1,4 +1,4 @@
-export interface FirebaseWebConfig {
+export interface IFirebaseWebConfig {
   apiKey: string;
   authDomain: string;
   projectId: string;
@@ -24,14 +24,14 @@ const ENV_KEY_MAP = {
   storageBucket: 'VITE_FIREBASE_STORAGE_BUCKET',
   messagingSenderId: 'VITE_FIREBASE_MESSAGING_SENDER_ID',
   appId: 'VITE_FIREBASE_APP_ID',
-} as const satisfies Record<keyof FirebaseWebConfig, string>;
+} as const satisfies Record<keyof IFirebaseWebConfig, string>;
 
-export function parseFirebaseConfig(env: Record<string, unknown>): FirebaseWebConfig {
+export function parseFirebaseConfig(env: Record<string, unknown>): IFirebaseWebConfig {
   const missing: string[] = [];
-  const config: Partial<Record<keyof FirebaseWebConfig, string>> = {};
+  const config: Partial<Record<keyof IFirebaseWebConfig, string>> = {};
 
   for (const [field, envKey] of Object.entries(ENV_KEY_MAP) as [
-    keyof FirebaseWebConfig,
+    keyof IFirebaseWebConfig,
     string,
   ][]) {
     const value = env[envKey];
@@ -46,7 +46,7 @@ export function parseFirebaseConfig(env: Record<string, unknown>): FirebaseWebCo
     throw new FirebaseConfigError(missing);
   }
 
-  return config as FirebaseWebConfig;
+  return config as IFirebaseWebConfig;
 }
 
 export function shouldUseEmulators(env: Record<string, unknown>, isDev: boolean): boolean {
