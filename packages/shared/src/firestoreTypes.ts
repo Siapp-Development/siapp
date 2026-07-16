@@ -6,22 +6,54 @@
  * to `Timestamp` where needed; the Admin SDK uses the same `Timestamp`
  * class via `firebase-admin/firestore`.
  *
- * Collection paths follow the workspace-scoped model from the data model
- * design: `/workspaces/{wid}/…`
+ * Collection paths follow the workspace-scoped model from
+ * pm_ux/plans/firestore-data-model.md: `/workspaces/{wid}/…`
  */
 
 import type {
+  TActorType,
   TCollaboratorStatus,
   TCollaboratorType,
+  TDocumentScope,
   TLocale,
+  TMagicLinkKind,
+  TMagicLinkScopeType,
   TMemberRole,
+  TMessageChannel,
+  TMessageStatus,
+  TPhaseStatus,
   TPhoneRefType,
   TProjectLifecycle,
   TProjectStatus,
   TProjectVertical,
+  TScanStatus,
   TTaskStatus,
+  TTaskUpdateAction,
+  TTaskUpdateAuthorType,
+  TTaskUpdateSource,
+  TUploaderType,
   TWorkspacePlan,
 } from './enums.ts';
+
+// ---------------------------------------------------------------------------
+// Auth custom claims
+// ---------------------------------------------------------------------------
+
+/** Per-workspace entry inside the Firebase Auth custom-claims payload. */
+export interface IWorkspaceClaimEntry {
+  role: TMemberRole;
+  departments: string[];
+}
+
+/**
+ * Shape of the Firebase Auth custom claims set by the `setCustomClaim`
+ * Cloud Function and read by `firestore.rules`
+ * (`request.auth.token.workspaces[wid]`). Shared with the rules test
+ * harness so both sides agree on the claim shape.
+ */
+export interface IWorkspaceClaims {
+  workspaces: Record<string, IWorkspaceClaimEntry>;
+}
 
 // ---------------------------------------------------------------------------
 // Top-level collections
@@ -140,6 +172,22 @@ export interface ICollaboratorDoc {
   lastTaskAt?: Date;
 }
 
+/** `/workspaces/{wid}/magicLinks/{shortCode}` — collaborator + client tokens (server-only). */
+export interface IMagicLinkDoc {
+  shortCode: string;
+  audience: TMagicLinkKind;
+  scopeType: TMagicLinkScopeType;
+  scopeId: string;
+  subjectId: string;
+  issuedAt: Date;
+  expiresAt: Date;
+  lastUsedAt?: Date;
+  useCount: number;
+  revoked: boolean;
+  revokedAt?: Date;
+  revokedBy?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Projects — `/workspaces/{wid}/projects/{pid}`
 // ---------------------------------------------------------------------------
@@ -154,7 +202,7 @@ export interface IProjectSummary {
 
 export interface IProjectVisibility {
   clientCanSee: boolean;
-  clientId?: string;
+  collaboratorsCount: number;
 }
 
 /** `/workspaces/{wid}/projects/{pid}` */
@@ -181,6 +229,7 @@ export interface IProjectDoc {
   visibility: IProjectVisibility;
   createdAt: Date;
   updatedAt: Date;
+  createdBy: string;
 }
 
 /** `/workspaces/{wid}/projects/{pid}/phases/{phid}` */
@@ -188,47 +237,84 @@ export interface IPhaseDoc {
   id: string;
   name: string;
   order: number;
-  createdAt: Date;
+  startDate?: Date;
+  endDate?: Date;
+  status: TPhaseStatus;
 }
 
-/** `/workspaces/{wid}/projects/{pid}/milestones/{mid}` */
+/** `/workspaces/{wid}/projects/{pid}/milestones/{mid}` — client-facing checkpoints. */
 export interface IMilestoneDoc {
   id: string;
   name: string;
-  dueDate: Date;
-  phaseId?: string;
-  createdAt: Date;
+  targetDate: Date;
+  completedAt?: Date;
+  order: number;
+  description?: string;
 }
+
+/** Firm-staff assignee entry on a task. */
+export interface ITaskUserAssignee {
+  type: 'user';
+  id: string;
+  name: string;
+}
+
+/** External-collaborator assignee entry on a task. */
+export interface ITaskCollaboratorAssignee {
+  type: 'collaborator';
+  id: string;
+  name: string;
+  phone: string;
+}
+
+export type TTaskAssignee = ITaskUserAssignee | ITaskCollaboratorAssignee;
 
 /** `/workspaces/{wid}/projects/{pid}/tasks/{tid}` */
 export interface ITaskDoc {
   id: string;
   title: string;
+  description?: string;
   phaseId?: string;
-  order: number;
   status: TTaskStatus;
-  assigneeUid?: string;
-  assigneeNameDenorm?: string;
-  collaboratorId?: string;
-  collaboratorNameDenorm?: string;
-  departmentId?: string;
   startDate?: Date;
   dueDate?: Date;
+  completedAt?: Date;
+  assignees: TTaskAssignee[];
   visibleToClient: boolean;
+  /** Empty = all assigned collaborators see it. */
+  visibleToCollaboratorIds: string[];
+  /** Empty/missing = unrestricted; see 20-access-control-departments.md. */
+  restrictedToDepartments: string[];
+  /** Per-task WhatsApp toggle (D-031: copied on Duplicate). */
   sendWhatsapp: boolean;
-  notes?: string;
+  /** Task ids this task depends on (D-031 dependency links). */
   dependsOn: string[];
+  order: number;
   createdAt: Date;
   updatedAt: Date;
+  createdBy: string;
 }
 
-/** `/workspaces/{wid}/projects/{pid}/tasks/{tid}/updates/{updid}` */
+export interface ITaskUpdatePayload {
+  from?: unknown;
+  to?: unknown;
+  text?: string;
+  storagePath?: string;
+  mimeType?: string;
+}
+
+/**
+ * `/workspaces/{wid}/projects/{pid}/tasks/{tid}/updates/{updid}`
+ * Append-only activity stream; drives the task feed, audit, and notifications.
+ */
 export interface ITaskUpdateDoc {
   id: string;
+  authorType: TTaskUpdateAuthorType;
   authorId: string;
   authorNameDenorm: string;
-  body: string;
-  attachments: string[];
+  source: TTaskUpdateSource;
+  action: TTaskUpdateAction;
+  payload: ITaskUpdatePayload;
   createdAt: Date;
 }
 
@@ -236,57 +322,76 @@ export interface ITaskUpdateDoc {
 export interface IProjectDocumentDoc {
   id: string;
   name: string;
-  storagePath: string;
   mimeType: string;
   sizeBytes: number;
+  storagePath: string;
+  scope: TDocumentScope;
+  scopeId: string;
   uploadedBy: string;
-  uploadedByKind: 'member' | 'client';
+  uploaderType: TUploaderType;
+  uploadedAt: Date;
   visibleToClient: boolean;
-  createdAt: Date;
+  visibleToCollaboratorIds: string[];
+  restrictedToDepartments: string[];
+  scanStatus: TScanStatus;
+  retentionUntil?: Date;
+  deletedAt?: Date;
+  deletedBy?: string;
+  deletedByType?: TUploaderType;
 }
 
 // ---------------------------------------------------------------------------
 // Messaging & audit
 // ---------------------------------------------------------------------------
 
-/** `/workspaces/{wid}/messages/{mid}` */
+/** Back-pointer from a message to the entity it concerns. */
+export interface IMessageRelatedTo {
+  type: 'task' | 'project' | 'milestone';
+  id: string;
+}
+
+/** `/workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log. */
 export interface IMessageDoc {
   id: string;
-  projectId: string;
-  taskId?: string;
+  channel: TMessageChannel;
   recipientPhone: string;
-  recipientKind: 'client' | 'collaborator';
-  channel: 'whatsapp' | 'sms';
+  recipientType: TPhoneRefType;
+  recipientId: string;
   templateName: string;
   variables: Record<string, string>;
-  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed';
+  status: TMessageStatus;
   twilioSid?: string;
-  scheduledAt?: Date;
+  conversationId?: string;
+  errorCode?: string;
+  costEstimateMyr: number;
+  relatedTo?: IMessageRelatedTo;
+  createdAt: Date;
   sentAt?: Date;
   deliveredAt?: Date;
-  readAt?: Date;
-  createdAt: Date;
 }
 
 /** `/workspaces/{wid}/auditLog/{alid}` */
 export interface IAuditLogDoc {
   id: string;
-  actorUid: string;
-  actorEmail: string;
+  actorType: TActorType;
+  actorId: string;
   action: string;
-  resourceKind: string;
-  resourceId: string;
+  targetType: string;
+  targetId: string;
   before?: Record<string, unknown>;
   after?: Record<string, unknown>;
   ip?: string;
-  createdAt: Date;
+  userAgent?: string;
+  ts: Date;
 }
 
 /** `/workspaces/{wid}/usageCounters/{period}` e.g. period = "2026-07" */
 export interface IUsageCounterDoc {
   period: string;
-  waConversations: number;
-  waMessages: number;
-  smsSent: number;
-  updatedAt: Date;
+  whatsappConv: number;
+  smsSegments: number;
+  storageBytes: number;
+  activeProjects: number;
+  membersBilled: number;
+  computedAt: Date;
 }
