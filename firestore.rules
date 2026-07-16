@@ -27,7 +27,8 @@ service cloud.firestore {
 
     // Firm-staff profile — own doc read only; profile writes land with #9.
     match /users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
       allow write: if false;
     }
 
