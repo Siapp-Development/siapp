@@ -1,8 +1,119 @@
 rules_version = '2';
 
-// Deny-by-default baseline. Real access rules land with ticket #6.
+// Deny-by-default. Ticket #6 lays the read rails only:
+// - Workspace isolation via custom claims (request.auth.token.workspaces[wid])
+// - Same-workspace members may READ workspace data (explicit matches only)
+// - ALL client writes denied — write features arrive with ticket #9+
+// - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // O(1) membership check from custom claims — no membership-doc read.
+    function isFirmMember(wid) {
+      return isSignedIn()
+        && request.auth.token.workspaces != null
+        && request.auth.token.workspaces[wid] != null;
+    }
+
+    // Role gate for future write rules (ticket #9+). Unused today by design.
+    function hasRole(wid, roles) {
+      return isFirmMember(wid)
+        && request.auth.token.workspaces[wid].role in roles;
+    }
+
+    // Firm-staff profile — own doc read only; profile writes land with #9.
+    match /users/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // Cross-workspace phone lookup — Cloud Function / Admin SDK only.
+    match /phoneIndex/{phone} {
+      allow read, write: if false;
+    }
+
+    match /workspaces/{wid} {
+      allow read: if isFirmMember(wid);
+      allow write: if false;
+
+      match /members/{memberUid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /departments/{depId} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /clients/{cid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /collaborators/{colid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /projects/{pid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+
+        match /phases/{phid} {
+          allow read: if isFirmMember(wid);
+          allow write: if false;
+        }
+
+        match /tasks/{tid} {
+          allow read: if isFirmMember(wid);
+          allow write: if false;
+
+          match /updates/{updid} {
+            allow read: if isFirmMember(wid);
+            allow write: if false;
+          }
+        }
+
+        match /documents/{did} {
+          allow read: if isFirmMember(wid);
+          allow write: if false;
+        }
+
+        match /milestones/{mid} {
+          allow read: if isFirmMember(wid);
+          allow write: if false;
+        }
+      }
+
+      // Magic-link token material is server-only — deny even workspace members
+      // (D-035, data-model principle 4).
+      match /magicLinks/{shortCode} {
+        allow read, write: if false;
+      }
+
+      match /messages/{mid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /auditLog/{alid} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+
+      match /usageCounters/{period} {
+        allow read: if isFirmMember(wid);
+        allow write: if false;
+      }
+    }
+
+    // Catch-all: anything not explicitly matched above is denied.
     match /{document=**} {
       allow read, write: if false;
     }

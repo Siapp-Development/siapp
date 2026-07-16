@@ -9,3 +9,5 @@ allowBuilds:
   '@firebase/util': true
   esbuild: true
   protobufjs: true
+  # firebase-tools optional native regex engine — JS fallback is fine, skip native build
+  re2: false

@@ -53,15 +53,37 @@ jobs:
             - name: Test
               run: pnpm test
 
-    # Placeholder: Firestore security-rules tests.
-    # The rules test harness does not exist yet — it lands with ticket #6.
-    # This job is intentionally skipped (`if: false`) so it never reports a
-    # fake pass. When #6 lands: remove the `if`, and run the rules test suite
-    # against the Firestore emulator here.
+    # Firestore security-rules tests (ticket #6). Runs the @siapp/rules-tests
+    # suite against the Firestore emulator via `firebase emulators:exec`.
+    # If you rename this job, update the branch-protection required check too.
     rules-tests:
         name: Firestore rules tests
         runs-on: ubuntu-latest
-        if: ${{ false }}
+
+        permissions:
+            contents: read
+
         steps:
-            - name: Placeholder (blocked on ticket 6)
-              run: echo "Rules test harness not yet implemented (ticket #6)"
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version-file: ".nvmrc"
+                  cache: "pnpm"
+
+            - name: Set up Java (Firestore emulator needs a JVM)
+              uses: actions/setup-java@v4
+              with:
+                  distribution: "temurin"
+                  java-version: "21"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Run Firestore rules tests
+              run: pnpm test:rules

@@ -14,9 +14,11 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test && node --test scripts/check-bundle-isolation.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore \"pnpm --filter @siapp/rules-tests test:rules\"",
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "firebase-tools": "^15.23.0",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3"
   }
