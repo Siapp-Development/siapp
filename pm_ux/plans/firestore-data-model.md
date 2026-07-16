@@ -1,7 +1,7 @@
 ---
 title: "Firestore Data Model"
 status: draft
-updated: 2026-07-12
+updated: 2026-07-15
 ---
 
 # Firestore Data Model
@@ -280,6 +280,7 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   phaseId?: string,
   status: 'todo' | 'in_progress' | 'blocked' | 'done',
 
+  startDate?: Timestamp,           // optional kickoff date; pairs with dependsOn for sequencing (D-031)
   dueDate?: Timestamp,
   completedAt?: Timestamp,
 
@@ -294,6 +295,9 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   visibleToClient: boolean,        // default from project.visibility.clientCanSee
   visibleToCollaboratorIds: string[], // empty = all assigned collaborators see it
   restrictedToDepartments: string[],  // empty/missing = unrestricted; see 20-access-control-departments.md
+
+  sendWhatsapp: boolean,           // per-task WhatsApp toggle; copied on Duplicate (D-031)
+  dependsOn: string[],             // task ids this task depends on — dependency links (D-031)
 
   order: number,                   // for manual sort within phase / board
   createdAt: Timestamp,
