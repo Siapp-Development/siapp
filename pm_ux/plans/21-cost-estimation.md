@@ -95,7 +95,7 @@ Firestore `onWrite` triggers for pre-aggregation and audit fan-out. ~50k invocat
 ### 2.7 Firebase Auth + Hosting — Fixed
 
 - Auth: free for email/password and Google sign-in up to 50k MAU.
-- Magic-link sign-in: free at Firebase; emails delivered by Postmark (next line).
+- Auth emails (password reset, verification): sent by Firebase built-in delivery, free (D-040). Custom sender domain configured in console.
 - Hosting: 10 GB storage + 360 MB/day egress free.
 
 **0 MYR/mo** through Checkpoint C; **~50 MYR/mo** at Checkpoint D (egress).
@@ -126,9 +126,10 @@ Modelling 250 conversations/mo at **80% utility / 15% marketing / 5% service**:
 
 This is the **single biggest COGS line** and the one most sensitive to behaviour. Overage rates in [pricing model](./06-pricing-model.md) and template-category nudges are the primary mitigations.
 
-### 2.9 Transactional email — Postmark (firm-side: auth, invites, magic links, founder billing) — Fixed-ish
+### 2.9 Transactional email — Postmark (team invites, founder billing) — Fixed-ish, deferred (D-040)
 
-- USD 15/mo for 10k emails.
+- **Not adopted until ticket #11 (team invites)** — MVP auth emails are handled free by Firebase Auth built-in delivery (D-040). 0 MYR/mo until then.
+- USD 15/mo for 10k emails once adopted.
 - 100 workspaces × ~30 emails/mo = 3k emails → fits **15 USD ≈ 70 MYR/mo** through Checkpoint C.
 - At Checkpoint D → USD 25 ≈ **120 MYR/mo**.
 
