@@ -12,6 +12,23 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-07-15 — Firebase Auth built-in emails for MVP; Postmark deferred to team invites (D-040)
+
+**Decision:** Use **Firebase Auth's built-in email delivery** (password reset, email verification) for all MVP auth emails — no third-party email provider in M0/M1 auth (#8, #9). Customize the sender domain in Firebase console (Authentication → Templates) so mail doesn't come from `@siapp-prod.firebaseapp.com`. **Postmark adoption is deferred to ticket #11 (team invites)** — the first feature that must deliver an email Firebase won't send itself (Admin SDK generates the invite link; we deliver it). Founder billing emails (#24) also ride Postmark when it lands.
+
+**Why:**
+- #9 auth scope is email/password + Google — the only near-term auth email is password reset, which Firebase sends free with zero setup.
+- Removes a paid dependency (USD 15/mo) and a DNS/approval workflow from #8's critical path.
+- Postmark setup is ~1 hour whenever needed; its DKIM/Return-Path DNS records don't conflict with existing Firebase Hosting records.
+
+**Consequences:** #8 email item shrinks to "customize Firebase auth sender domain." Cost model 2.9 shifts from Checkpoint-A to #11 timing. Built-in templates are barely brandable — accepted for password-reset-only traffic.
+
+**Reversal cost:** Trivial — adopting Postmark earlier is additive.
+
+**Revisit when:** #11 starts, or if auth-email deliverability to MY corporate domains proves poor.
+
+---
+
 ## 2026-07-13 — Brand palette v1 finalized (D-039)
 
 **Decision:** Finalize the v1 semantic color palette (implements the direction in [09-brand-identity.md](./09-brand-identity.md) — indigo/slate primary, terracotta accent, dual neutral sets):
