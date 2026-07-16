@@ -4,6 +4,8 @@ packages:
   - 'packages/*'
 
 allowBuilds:
+  '@tailwindcss/oxide': true
+  'unrs-resolver': true
   '@firebase/util': true
   esbuild: true
   protobufjs: true

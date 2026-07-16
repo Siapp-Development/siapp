@@ -69,6 +69,7 @@ Forbidden words/phrases (default ban): "revolutionary," "synergize," "delight," 
   - Primary: deep, trustworthy (think indigo or slate blue — not corporate navy, not tech purple).
   - Accent: warm, human (terracotta or amber) used sparingly for status/success.
   - Neutrals: high-contrast greys for data density on the firm side; softer warm-greys for the client portal.
+  - **Finalized v1 hexes (2026-07-13, D-039):** primary slate-indigo `#3E4C77`, accent terracotta `#C4553D`, warning amber `#B8860B`, success `#2E7D4F`, danger `#B3372F`; cool neutrals (firm) `#101321`→`#F7F8FA`, warm neutrals (portal) `#2A2622`→`#FAF8F5`. Source of truth: `packages/ui` tokens + [decisions-log.md](./decisions-log.md).
 - **Typography:**
   - UI: a clean grotesque (Inter, Geist, or similar) — strong at small sizes for table-heavy firm UI.
   - Display: same family at heavier weight, no second face. Keep load light.

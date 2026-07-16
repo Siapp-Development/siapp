@@ -1,0 +1,55 @@
+/**
+ * Siapp design tokens — brand palette v1 (D-039).
+ *
+ * Semantic names are the stable contract; values may be re-tuned by a
+ * designer pass without touching components. Surface themes swap the
+ * neutral set via [data-surface] on <html> ("one system, two
+ * personalities" — see pm_ux/plans/23-design-system-research.md).
+ * All text/background pairs meet WCAG AA (>= 4.5:1).
+ */
+:root {
+  /* Primary — slate-indigo */
+  --primary: #3e4c77;
+  --primary-deep: #2c3759;
+  --primary-tint: #eef1f8;
+  --primary-foreground: #ffffff;
+
+  /* Accent — terracotta */
+  --accent: #c4553d;
+  --accent-deep: #a33f2b;
+  --accent-tint: #fbeae5;
+  --accent-foreground: #ffffff;
+
+  /* States */
+  --warning: #b8860b;
+  --warning-tint: #fff7e0;
+  --success: #2e7d4f;
+  --success-tint: #e6f4ec;
+  --danger: #b3372f;
+  --danger-tint: #fcebea;
+
+  /* Neutrals — firm (cool) is the default surface */
+  --background: #f7f8fa;
+  --foreground: #101321;
+  --surface-card: #ffffff;
+  --border: #d9dde5;
+  --ring: var(--primary);
+
+  /* Type & shape scale */
+  --radius: 0.5rem;
+}
+
+[data-surface='firm'] {
+  --background: #f7f8fa;
+  --foreground: #101321;
+  --surface-card: #ffffff;
+  --border: #d9dde5;
+}
+
+/* Client portal / collaborator surfaces — warm neutrals */
+[data-surface='portal'] {
+  --background: #faf8f5;
+  --foreground: #2a2622;
+  --surface-card: #ffffff;
+  --border: #e4ded6;
+}
