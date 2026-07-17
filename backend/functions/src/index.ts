@@ -1,17 +1,26 @@
 /**
- * Cloud Functions 2nd gen — Firestore trigger stubs.
+ * Cloud Functions 2nd gen — Firestore triggers.
  *
- * Full implementations arrive in later tickets:
+ * Implemented:
+ *   - onWorkspaceMemberWrite → syncMemberClaims (#9): member role changes are
+ *     mirrored into Firebase Auth custom claims.
+ *
+ * Remaining stubs arrive in later tickets:
  *   - Project summary pre-aggregation (#17)
  *   - Activity / audit log capture (#23)
  *   - Phone index maintenance (#16)
  *
- * Each stub is exported so the Functions runtime discovers them.
+ * Each export is discovered by the Functions runtime.
  * Deploy: `pnpm --filter @siapp/functions deploy`
  *         or `firebase deploy --only functions` from repo root.
  */
 
+import { initializeApp } from 'firebase-admin/app';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+
+import { syncMemberClaims } from './triggers/syncMemberClaims.js';
+
+initializeApp();
 
 /**
  * Maintains pre-aggregated `project.summary` counters whenever a task
@@ -28,14 +37,16 @@ export const onTaskWrite = onDocumentWritten(
 );
 
 /**
- * Keeps `workspace.seatsUsed` consistent whenever a member document changes
- * (member added, removed, or `seatActive` toggled).
+ * Syncs Firebase Auth custom claims whenever a member document changes
+ * (member added, removed, or role/departments updated) — see
+ * `triggers/syncMemberClaims.ts`.
  *
  * Collection path: `workspaces/{workspaceId}/members/{memberId}`
  */
 export const onWorkspaceMemberWrite = onDocumentWritten(
   'workspaces/{workspaceId}/members/{memberId}',
-  async (_event) => {
+  async (event) => {
+    await syncMemberClaims(event);
     // TODO (#11): recount seatActive members and update workspace.seatsUsed.
   },
 );
