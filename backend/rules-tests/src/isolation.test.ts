@@ -116,7 +116,9 @@ describe('all client writes denied (no write features yet)', () => {
     await assertFails(deleteDoc(doc(memberADb(), paths.client)));
   });
 
-  it('denies own-profile write (profile writes land with #9)', async () => {
+  it('denies an own-profile update that fails the #9 profile validation', async () => {
+    // The seeded doc only carries `uid`, so the merged update is missing the
+    // required validated fields (email/displayName/locale/timestamps).
     await assertFails(
       updateDoc(doc(memberADb(), `users/${MEMBER_A_UID}`), { displayName: 'Alice 2' }),
     );
