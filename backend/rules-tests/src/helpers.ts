@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc } from 'firebase/firestore';
+import { Timestamp, doc, setDoc } from 'firebase/firestore';
 import type { IWorkspaceClaims, TMemberRole } from '@siapp/shared';
 
 const RULES_PATH = fileURLToPath(new URL('../../../firestore.rules', import.meta.url));
@@ -89,5 +89,32 @@ export async function seedWorkspace(testEnv: RulesTestEnvironment, wid: string):
 export async function seedUser(testEnv: RulesTestEnvironment, uid: string): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), `users/${uid}`), { uid });
+  });
+}
+
+/** A users/{uid} payload that satisfies the #9 profile validation rules. */
+export function validProfilePayload(uid: string, email: string): Record<string, unknown> {
+  return {
+    uid,
+    email,
+    displayName: 'Test Member',
+    locale: 'en',
+    createdAt: Timestamp.now(),
+    lastSeenAt: Timestamp.now(),
+  };
+}
+
+/** Seed a fully valid `/users/{uid}` profile doc, bypassing rules. */
+export async function seedUserProfile(
+  testEnv: RulesTestEnvironment,
+  uid: string,
+  email: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), `users/${uid}`), {
+      ...validProfilePayload(uid, email),
+      ...extra,
+    });
   });
 }
