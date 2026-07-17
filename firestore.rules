@@ -1,9 +1,14 @@
 rules_version = '2';
 
-// Deny-by-default. Ticket #6 lays the read rails only:
+// Deny-by-default. #6 laid the read rails; #9 adds the first write rules:
 // - Workspace isolation via custom claims (request.auth.token.workspaces[wid])
 // - Same-workspace members may READ workspace data (explicit matches only)
-// - ALL client writes denied — write features arrive with ticket #9+
+// - users/{uid}: owner may create/update their own profile (validated below);
+//   claimsUpdatedAt is SERVER-ONLY (stamped by syncMemberClaims)
+// - auditLog reads are role-gated to owner/admin (deferred #6 audit item)
+// - All other client writes stay denied — member docs are written server-side
+//   only (#10 provisioning, #11 invites), which keeps the claims-sync trigger
+//   trustworthy; project/task write rules belong to #12
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -19,17 +24,54 @@ service cloud.firestore {
         && request.auth.token.workspaces[wid] != null;
     }
 
-    // Role gate for future write rules (ticket #9+). Unused today by design.
+    // Role gate from custom claims (first used by auditLog reads below).
     function hasRole(wid, roles) {
       return isFirmMember(wid)
         && request.auth.token.workspaces[wid].role in roles;
     }
 
-    // Firm-staff profile — own doc read only; profile writes land with #9.
+    // Field validation for own users/{uid} writes. Whitelisted keys only —
+    // claimsUpdatedAt is deliberately absent: only the claims-sync trigger
+    // (Admin SDK) may set it, because the client uses it as the "refresh your
+    // token now" signal.
+    function validUserProfile(uid) {
+      let d = request.resource.data;
+      return d.uid == uid
+        && d.email == request.auth.token.email
+        && d.displayName is string
+        && d.displayName.size() > 0
+        && d.locale in ['en']
+        && d.createdAt is timestamp
+        && d.lastSeenAt is timestamp
+        && (!('photoUrl' in d) || d.photoUrl is string)
+        && (!('phone' in d) || d.phone is string)
+        && (!('defaultWorkspaceId' in d) || d.defaultWorkspaceId is string);
+    }
+
+    // Firm-staff profile — own doc only. No delete; list stays denied.
     match /users/{uid} {
       allow get: if isSignedIn() && request.auth.uid == uid;
       allow list: if false;
-      allow write: if false;
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoUrl', 'phone',
+          'defaultWorkspaceId', 'locale', 'createdAt', 'lastSeenAt'
+        ])
+        && validUserProfile(uid);
+      // Updates may see a server-stamped claimsUpdatedAt in the merged doc,
+      // but must never introduce or change it (nor rewrite createdAt).
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'displayName', 'photoUrl', 'phone',
+          'defaultWorkspaceId', 'locale', 'createdAt', 'lastSeenAt',
+          'claimsUpdatedAt'
+        ])
+        && !request.resource.data.diff(resource.data)
+          .affectedKeys().hasAny(['claimsUpdatedAt', 'createdAt'])
+        && validUserProfile(uid);
+      allow delete: if false;
     }
 
     // Cross-workspace phone lookup — Cloud Function / Admin SDK only.
@@ -102,8 +144,10 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Audit trail is owner/admin-only reading (20-access-control audit
+      // gating; tightened from isFirmMember per the deferred #6 item).
       match /auditLog/{alid} {
-        allow read: if isFirmMember(wid);
+        allow read: if hasRole(wid, ['owner', 'admin']);
         allow write: if false;
       }
 
