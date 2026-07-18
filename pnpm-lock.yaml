@@ -178,9 +178,6 @@ importers:
 
   backend/functions:
     dependencies:
-      '@siapp/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       firebase-admin:
         specifier: ^13.4.0
         version: 13.10.0
