@@ -17,6 +17,4 @@ package-lock.json
 
 # turbo
 .turbo/
-
-# firebase deploy cache
 .firebase/

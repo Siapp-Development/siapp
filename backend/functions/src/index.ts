@@ -31,6 +31,9 @@ import { impersonateUser } from './admin/impersonateUser.js';
 // Co-locate compute with the Firestore database (asia-southeast1, D-002).
 setGlobalOptions({ region: 'asia-southeast1' });
 
+// Co-locate compute with the Firestore database (asia-southeast1, D-002).
+setGlobalOptions({ region: 'asia-southeast1' });
+
 initializeApp();
 
 // ── Admin callables (#10) ───────────────────────────────────────────────────
