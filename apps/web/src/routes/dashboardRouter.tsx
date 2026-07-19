@@ -5,6 +5,7 @@ import { ForgotPasswordPage } from '@/surfaces/firm/auth/ForgotPasswordPage.tsx'
 import { LoginPage } from '@/surfaces/firm/auth/LoginPage.tsx';
 import { RequireAuth } from '@/surfaces/firm/auth/RequireAuth.tsx';
 import { FirmShell } from '@/surfaces/firm/FirmShell.tsx';
+import { ImpersonatePage } from '@/surfaces/firm/ImpersonatePage.tsx';
 import { InviteAcceptPage } from '@/surfaces/firm/InviteAcceptPage.tsx';
 import { WorkspaceEntry } from '@/surfaces/firm/WorkspaceEntry.tsx';
 
@@ -25,6 +26,8 @@ export const dashboardRoutes: RouteObject[] = [
       { path: '/forgot-password', Component: ForgotPasswordPage },
       // Outside RequireAuth: recipients typically have no account yet.
       { path: '/invite/:workspaceId/:inviteId/:token', Component: InviteAcceptPage },
+      // Outside RequireAuth: signs the browser in as the impersonated user.
+      { path: '/impersonate', Component: ImpersonatePage },
       { path: '/', Component: WorkspaceEntry },
       {
         path: '/:workspaceSlug/*',

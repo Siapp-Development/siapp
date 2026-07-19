@@ -87,3 +87,11 @@ export type TNotificationTrigger =
   | 'task_due_soon'
   | 'need_help'
   | 'inbound_auto_reply';
+
+// Admin audit-log action kinds (#10 admin panel)
+export type TAdminAction =
+  | 'workspace.provision'
+  | 'workspace.plan_change'
+  | 'workspace.seat_adjust'
+  | 'workspace.renewal_adjust'
+  | 'user.impersonate';

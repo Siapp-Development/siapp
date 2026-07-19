@@ -4,6 +4,9 @@
  * Implemented:
  *   - onWorkspaceMemberWrite → syncMemberClaims (#9) + recountSeats (#11)
  *   - Invite lifecycle callables + setMemberDepartments (#11)
+ *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
+ *   - adminAdjustWorkspace (#10): mutate plan / seats / expiry.
+ *   - adminImpersonateUser (#10): mint custom token for support impersonation.
  *
  * Remaining stubs arrive in later tickets:
  *   - Project summary pre-aggregation (#17)
@@ -18,18 +21,36 @@
 import { initializeApp } from 'firebase-admin/app';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onCall } from 'firebase-functions/v2/https';
 
 import { recountSeats } from './triggers/recountSeats.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
+import { provisionWorkspace } from './admin/provisionWorkspace.js';
+import { adjustWorkspace } from './admin/adjustWorkspace.js';
+import { impersonateUser } from './admin/impersonateUser.js';
 
 // Co-locate compute with the Firestore database (asia-southeast1, D-002).
 setGlobalOptions({ region: 'asia-southeast1' });
 
 initializeApp();
 
-// Team invites & departments (#11).
+// ── Team invites & departments callables (#11) ─────────────────────────────
+
 export { acceptInvite, createInvite, resendInvite, revokeInvite } from './callables/invites.js';
 export { setMemberDepartments } from './callables/setMemberDepartments.js';
+
+// ── Admin callables (#10) ───────────────────────────────────────────────────
+
+/** Provisions a new workspace, first owner member, and starter project. */
+export const adminProvisionWorkspace = onCall(provisionWorkspace);
+
+/** Adjusts plan / seat limit / expiry on an existing workspace. */
+export const adminAdjustWorkspace = onCall(adjustWorkspace);
+
+/** Mints a Firebase custom token for support impersonation. */
+export const adminImpersonateUser = onCall(impersonateUser);
+
+// ── Firestore triggers ──────────────────────────────────────────────────────
 
 /**
  * Maintains pre-aggregated `project.summary` counters whenever a task
