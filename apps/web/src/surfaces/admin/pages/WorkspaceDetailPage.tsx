@@ -139,16 +139,16 @@ export function WorkspaceDetailPage() {
         targetUid: targetUid.trim(),
         reason: impersonateReason.trim(),
       });
-      // Sign in as the target user in a new tab using the custom token.
-      // Store the token in sessionStorage so the relay page can pick it up.
-      sessionStorage.setItem('_impersonateToken', result.data.customToken);
-      const slug = workspace?.slug ?? '';
+      // Hand the custom token to the dashboard origin via the URL fragment —
+      // web storage is origin-scoped, so the dashboard could never read a
+      // token stored here. Fragments are not sent to any server, and the
+      // relay page strips the token from history before signing in.
       window.open(
-        `https://dashboard.siapp.app/${slug}?impersonate=1`,
+        `https://dashboard.siapp.app/impersonate#token=${encodeURIComponent(result.data.customToken)}`,
         '_blank',
         'noopener',
       );
-      setImpersonateMsg('Custom token minted. New tab opened — sign-in with custom token and then clear sessionStorage.');
+      setImpersonateMsg('Custom token minted. Completing sign-in in the new tab (audit-logged).');
     } catch (err) {
       setImpersonateMsg(err instanceof Error ? err.message : 'Impersonation failed.');
     } finally {
@@ -275,8 +275,8 @@ export function WorkspaceDetailPage() {
         <section aria-labelledby="impersonate-heading" className="rounded-lg border p-4">
           <h2 id="impersonate-heading" className="font-medium">Impersonate user</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Mints a custom Firebase token. A new tab opens to dashboard.siapp.app/{workspace.slug}. All
-            impersonation actions are audit-logged.
+            Mints a custom Firebase token and opens dashboard.siapp.app in a new tab, signed in as
+            the target user. All impersonation actions are audit-logged.
           </p>
           <form onSubmit={(e) => void handleImpersonate(e)} className="mt-3 space-y-3">
             <div className="space-y-1">

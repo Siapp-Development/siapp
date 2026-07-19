@@ -57,7 +57,11 @@ export function AdminAuditLogPage() {
     loadPage(null)
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []); // loadPage is stable (defined inside component body, no external deps change)
+    // Intentionally mount-only: fetch the first page once. loadPage is
+    // recreated each render, so listing it would refetch on every render;
+    // pagination goes through handleLoadMore instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleLoadMore(): Promise<void> {
     if (lastDoc === null) return;

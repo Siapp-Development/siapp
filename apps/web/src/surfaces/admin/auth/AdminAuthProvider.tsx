@@ -3,11 +3,13 @@ import { GoogleAuthProvider, onIdTokenChanged, signInWithPopup, signOut, type Us
 import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { auth } from '@/lib/firebase.ts';
+import { shouldUseEmulators } from '@/lib/firebaseConfig';
 
 export type TAdminAuthState =
   | { status: 'loading' }
   | { status: 'signedOut' }
   | { status: 'notAdmin'; user: User }
+  | { status: 'mfaRequired'; user: User }
   | { status: 'signedIn'; user: User };
 
 export interface IAdminAuthContextValue {
@@ -24,7 +26,8 @@ export interface IAdminAuthProviderProps {
 
 /**
  * Auth provider for the Siapp admin surface.
- * Google sign-in only; checks `isAdmin` custom claim after sign-in.
+ * Google sign-in only; requires the `isAdmin` custom claim and (outside the
+ * emulator) a second-factor signal on the ID token — #10 mandates SSO + MFA.
  */
 export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
   const [state, setState] = useState<TAdminAuthState>({ status: 'loading' });
@@ -38,12 +41,23 @@ export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
       user
         .getIdTokenResult()
         .then((result) => {
-          const claims = result.claims as unknown as Partial<IWorkspaceClaims>;
-          if (claims.isAdmin === true) {
-            setState({ status: 'signedIn', user });
-          } else {
+          const claims = result.claims as unknown as Partial<IWorkspaceClaims> & {
+            firebase?: { sign_in_second_factor?: string };
+          };
+          if (claims.isAdmin !== true) {
             setState({ status: 'notAdmin', user });
+            return;
           }
+          const usedSecondFactor =
+            typeof claims.firebase?.sign_in_second_factor === 'string' &&
+            claims.firebase.sign_in_second_factor !== '';
+          // The emulator cannot complete an MFA sign-in, so only enforce
+          // outside it — mirrors assertAdminCall on the backend.
+          if (!usedSecondFactor && !shouldUseEmulators(import.meta.env, import.meta.env.DEV)) {
+            setState({ status: 'mfaRequired', user });
+            return;
+          }
+          setState({ status: 'signedIn', user });
         })
         .catch(() => {
           setState({ status: 'notAdmin', user });
