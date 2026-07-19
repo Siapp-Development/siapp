@@ -18,8 +18,10 @@
  *         or `firebase deploy --only functions` from repo root.
  */
 
+// Region must be set before the hoisted imports below register any function.
+import './globalOptions.js';
+
 import { initializeApp } from 'firebase-admin/app';
-import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
 
@@ -28,9 +30,6 @@ import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
 import { impersonateUser } from './admin/impersonateUser.js';
-
-// Co-locate compute with the Firestore database (asia-southeast1, D-002).
-setGlobalOptions({ region: 'asia-southeast1' });
 
 initializeApp();
 
