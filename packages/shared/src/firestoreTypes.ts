@@ -15,6 +15,8 @@ import type {
   TCollaboratorStatus,
   TCollaboratorType,
   TDocumentScope,
+  TInviteRole,
+  TInviteStatus,
   TLocale,
   TMagicLinkKind,
   TMagicLinkScopeType,
@@ -140,6 +142,28 @@ export interface IDepartmentDoc {
   createdAt: Date;
   createdBy: string;
   memberCount: number;
+}
+
+/**
+ * `/workspaces/{wid}/invites/{inviteId}` — pending team invitations (#11).
+ * The raw token is only ever emailed / returned to the inviter; Firestore
+ * stores its SHA-256 hash. Client writes are denied — all mutations go
+ * through the invite callables so member docs stay server-authored.
+ */
+export interface IInviteDoc {
+  id: string;
+  email: string;
+  role: TInviteRole;
+  status: TInviteStatus;
+  tokenHash: string;
+  invitedBy: string;
+  invitedByNameDenorm: string;
+  createdAt: Date;
+  expiresAt: Date;
+  acceptedBy?: string;
+  acceptedAt?: Date;
+  revokedAt?: Date;
+  revokedBy?: string;
 }
 
 /** `/workspaces/{wid}/clients/{cid}` */
