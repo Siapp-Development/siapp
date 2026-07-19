@@ -49,6 +49,11 @@ export interface ISetMemberDepartmentsRequest {
   departments: string[];
 }
 
+export interface ISetMemberDepartmentsResponse {
+  /** Deduplicated department ids now assigned to the member. */
+  departments: string[];
+}
+
 /** Stable error codes rendered by the accept page. */
 export type TInviteErrorCode =
   | 'invite/not-found'

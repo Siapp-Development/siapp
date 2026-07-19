@@ -50,11 +50,11 @@ Write paths:
 ### firestore.rules
 - `invites`: read owner/admin only; all client writes denied.
 - `departments`: read any active member; create/update owner/admin with field allow-list; delete owner/admin only when `memberCount == 0`.
-- `canSeeRestricted(workspaceId, departments)` helper for department-gated content: unrestricted (`departments` empty/null) → any active member; restricted → owner, or member whose claim departments intersect. Admin gets NO implicit access (D-041).
+- `canSeeRestricted(workspaceId, departments)` helper for department-gated content: unrestricted (`departments` empty/null) → any active member; restricted → owner/admin (always full detail per D-025 / 20-access-control-departments.md — audit, incident response, lockout avoidance), or member whose claim departments intersect.
 - Members: `departments` mutations denied to clients (callable-only).
 
 ### backend/rules-tests (180 tests total)
-- `invites.test.ts` (new), `departments.test.ts` (new), `restrictedContent.test.ts` (new — the need-to-know matrix: member-in-dept allow, member-not-in-dept deny, admin-not-in-dept deny, owner allow, unrestricted allow-all-members, cross-workspace/no-member deny).
+- `invites.test.ts` (new), `departments.test.ts` (new), `restrictedContent.test.ts` (new — the need-to-know matrix: member-in-dept allow, member-not-in-dept deny, admin-without-dept allow (D-025), owner allow, unrestricted allow-all-members, cross-workspace/no-member deny).
 - `helpers.ts` — arbitrary-path seeding support.
 
 ### apps/web (dashboard surface only; bundle isolation unaffected)

@@ -12,6 +12,7 @@ import type {
   IResendInviteRequest,
   IRevokeInviteRequest,
   ISetMemberDepartmentsRequest,
+  ISetMemberDepartmentsResponse,
   TResendInviteResponse,
 } from '@siapp/shared';
 
@@ -47,7 +48,7 @@ export async function resendInvite(data: IResendInviteRequest): Promise<TResendI
 }
 
 export async function setMemberDepartments(data: ISetMemberDepartmentsRequest): Promise<void> {
-  const call = httpsCallable<ISetMemberDepartmentsRequest, { ok: boolean }>(
+  const call = httpsCallable<ISetMemberDepartmentsRequest, ISetMemberDepartmentsResponse>(
     functions,
     'setMemberDepartments',
   );
