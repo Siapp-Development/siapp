@@ -1,9 +1,9 @@
 /**
- * Cloud Functions 2nd gen — Firestore triggers.
+ * Cloud Functions 2nd gen — Firestore triggers + callables.
  *
  * Implemented:
- *   - onWorkspaceMemberWrite → syncMemberClaims (#9): member role changes are
- *     mirrored into Firebase Auth custom claims.
+ *   - onWorkspaceMemberWrite → syncMemberClaims (#9) + recountSeats (#11)
+ *   - Invite lifecycle callables + setMemberDepartments (#11)
  *
  * Remaining stubs arrive in later tickets:
  *   - Project summary pre-aggregation (#17)
@@ -19,12 +19,17 @@ import { initializeApp } from 'firebase-admin/app';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 
+import { recountSeats } from './triggers/recountSeats.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 
 // Co-locate compute with the Firestore database (asia-southeast1, D-002).
 setGlobalOptions({ region: 'asia-southeast1' });
 
 initializeApp();
+
+// Team invites & departments (#11).
+export { acceptInvite, createInvite, resendInvite, revokeInvite } from './callables/invites.js';
+export { setMemberDepartments } from './callables/setMemberDepartments.js';
 
 /**
  * Maintains pre-aggregated `project.summary` counters whenever a task
@@ -51,7 +56,7 @@ export const onWorkspaceMemberWrite = onDocumentWritten(
   'workspaces/{workspaceId}/members/{memberId}',
   async (event) => {
     await syncMemberClaims(event);
-    // TODO (#11): recount seatActive members and update workspace.seatsUsed.
+    await recountSeats(event.params.workspaceId);
   },
 );
 
