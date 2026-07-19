@@ -15,6 +15,8 @@
  * Seeded accounts (password for all: "siapp-dev-password"):
  *   owner@siapp.test / admin@siapp.test / pm@siapp.test / viewer@siapp.test
  * Workspace: "Dev Workspace" at dashboard slug "dev".
+ * Departments (#11): "Structural" (pm is a member) and "Interiors" (empty),
+ * so need-to-know visibility and the D-004 reveal are testable out of the box.
  *
  * Talks straight to the emulators via the Admin SDK — NEVER run against
  * production (it refuses unless the emulator env vars are set).
@@ -33,6 +35,12 @@ const WORKSPACE_ID = 'dev-workspace';
 const WORKSPACE_SLUG = 'dev';
 const PASSWORD = 'siapp-dev-password';
 const ROLES = ['owner', 'admin', 'pm', 'viewer'];
+const DEPARTMENTS = [
+  { id: 'dep-structural', name: 'Structural' },
+  { id: 'dep-interiors', name: 'Interiors' },
+];
+// pm belongs to Structural — proves department-restricted reads for the others.
+const MEMBER_DEPARTMENTS = { pm: ['dep-structural'] };
 
 const app = initializeApp({ projectId: PROJECT_ID });
 const auth = getAuth(app);
@@ -71,6 +79,7 @@ async function main() {
 
   for (const role of ROLES) {
     const { uid, email, displayName } = await ensureUser(role);
+    const departments = MEMBER_DEPARTMENTS[role] ?? [];
 
     // Member doc (doc id == uid, mirrored `uid` field — the claims trigger
     // queries collectionGroup('members').where('uid', '==', uid)).
@@ -79,7 +88,7 @@ async function main() {
       email,
       displayName,
       role,
-      departments: [],
+      departments,
       seatActive: true,
       joinedAt: now,
       invitedBy: 'seed-script',
@@ -92,7 +101,7 @@ async function main() {
     // Set claims directly too, so the seed works even when the functions
     // emulator (which hosts syncMemberClaims) isn't running.
     await auth.setCustomUserClaims(uid, {
-      workspaces: { [WORKSPACE_ID]: { role, departments: [] } },
+      workspaces: { [WORKSPACE_ID]: { role, departments } },
     });
 
     await db.doc(`users/${uid}`).set(
@@ -109,6 +118,20 @@ async function main() {
     );
 
     process.stdout.write(`seeded ${email} (${role}) uid=${uid}\n`);
+  }
+
+  for (const department of DEPARTMENTS) {
+    const memberCount = Object.values(MEMBER_DEPARTMENTS).filter((deps) =>
+      deps.includes(department.id),
+    ).length;
+    await db.doc(`workspaces/${WORKSPACE_ID}/departments/${department.id}`).set({
+      id: department.id,
+      name: department.name,
+      createdAt: now,
+      createdBy: 'seed-script',
+      memberCount,
+    });
+    process.stdout.write(`seeded department ${department.name} (members: ${memberCount})\n`);
   }
 
   process.stdout.write(

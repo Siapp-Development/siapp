@@ -15,6 +15,13 @@ export type TPhaseStatus = 'todo' | 'in_progress' | 'done';
 // Workspace member roles
 export type TMemberRole = 'owner' | 'admin' | 'pm' | 'viewer';
 
+// Roles assignable via invite — Owner is never invited (one Owner per
+// workspace; ownership transfer is a separate flow).
+export type TInviteRole = 'admin' | 'pm' | 'viewer';
+
+// Invite lifecycle. 'expired' is stamped lazily at accept time.
+export type TInviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+
 // Billing plan tiers
 export type TWorkspacePlan = 'trial' | 'standard' | 'business';
 

@@ -9,6 +9,9 @@ rules_version = '2';
 // - All other client writes stay denied — member docs are written server-side
 //   only (#10 provisioning, #11 invites), which keeps the claims-sync trigger
 //   trustworthy; project/task write rules belong to #12
+// - #11 adds: invites (owner/admin read, server-only writes), departments
+//   CRUD for owner/admin, and department need-to-know gating on task /
+//   task-update / document reads (20-access-control-departments.md)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -28,6 +31,21 @@ service cloud.firestore {
     function hasRole(wid, roles) {
       return isFirmMember(wid)
         && request.auth.token.workspaces[wid].role in roles;
+    }
+
+    // Department need-to-know gate (20-access-control-departments.md, #11).
+    // Empty/missing restriction list = unrestricted; owner/admin always see
+    // everything; others need at least one matching department in claims.
+    function canSeeRestricted(wid, restrictions) {
+      return hasRole(wid, ['owner', 'admin'])
+        || restrictions.size() == 0
+        || restrictions.hasAny(request.auth.token.workspaces[wid].departments);
+    }
+
+    // Restriction list of an existing doc, tolerating docs written before
+    // the field existed.
+    function restrictionsOf(data) {
+      return data.get('restrictedToDepartments', []);
     }
 
     // Siapp internal admin — isAdmin custom claim is set once via the
@@ -52,6 +70,24 @@ service cloud.firestore {
         && (!('photoUrl' in d) || d.photoUrl is string)
         && (!('phone' in d) || d.phone is string)
         && (!('defaultWorkspaceId' in d) || d.defaultWorkspaceId is string);
+    }
+
+    // Field validation shared by department create/update (#11).
+    function validDepartment(depId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'description', 'color', 'createdAt', 'createdBy',
+          'memberCount'
+        ])
+        && d.id == depId
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 60
+        && (!('description' in d) || d.description is string)
+        && (!('color' in d) || d.color is string)
+        && d.createdAt is timestamp
+        && d.createdBy is string
+        && d.memberCount is int;
     }
 
     // Firm-staff profile — own doc only. No delete; list stays denied.
@@ -94,9 +130,33 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Team invitations (#11). Owner/admin manage invites in the UI, but
+      // every mutation goes through the invite callables — the raw token is
+      // generated server-side and only its hash is stored, and member docs
+      // must stay server-authored for the claims-sync trigger.
+      match /invites/{inviteId} {
+        allow read: if hasRole(wid, ['owner', 'admin']);
+        allow write: if false;
+      }
+
+      // Departments (#11): workspace-visible names; owner/admin manage them.
+      // memberCount / createdAt / createdBy are server-or-create-only —
+      // membership changes go through the setMemberDepartments callable,
+      // which recomputes memberCount.
       match /departments/{depId} {
         allow read: if isFirmMember(wid);
-        allow write: if false;
+        allow create: if hasRole(wid, ['owner', 'admin'])
+          && validDepartment(depId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.memberCount == 0;
+        allow update: if hasRole(wid, ['owner', 'admin'])
+          && validDepartment(depId)
+          && !request.resource.data.diff(resource.data)
+            .affectedKeys().hasAny(['id', 'createdAt', 'createdBy', 'memberCount']);
+        // Deleting a department with members would strand claim/restriction
+        // references — empty it first (memberCount is server-maintained).
+        allow delete: if hasRole(wid, ['owner', 'admin'])
+          && resource.data.memberCount == 0;
       }
 
       match /clients/{cid} {
@@ -118,18 +178,28 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // Department need-to-know (#11): restricted tasks are readable only
+        // by owner/admin or members of a listed department. List queries
+        // over tasks must therefore constrain restrictedToDepartments
+        // client-side (rules for `list` are proven against the query).
         match /tasks/{tid} {
-          allow read: if isFirmMember(wid);
+          allow read: if isFirmMember(wid)
+            && canSeeRestricted(wid, restrictionsOf(resource.data));
           allow write: if false;
 
+          // Updates inherit the parent task's restriction (one get()).
           match /updates/{updid} {
-            allow read: if isFirmMember(wid);
+            allow read: if isFirmMember(wid)
+              && canSeeRestricted(wid, restrictionsOf(
+                get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
+              ));
             allow write: if false;
           }
         }
 
         match /documents/{did} {
-          allow read: if isFirmMember(wid);
+          allow read: if isFirmMember(wid)
+            && canSeeRestricted(wid, restrictionsOf(resource.data));
           allow write: if false;
         }
 

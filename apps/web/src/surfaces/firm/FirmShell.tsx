@@ -1,7 +1,8 @@
 import { Button } from '@siapp/ui';
-import { Link, useParams } from 'react-router';
+import { Link, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
+import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
 
 /**
@@ -51,6 +52,8 @@ export function FirmShell() {
     );
   }
 
+  const role = state.claims.workspaces[workspace.id]?.role ?? 'viewer';
+
   return (
     <div className="flex min-h-screen">
       <SkipLink />
@@ -69,9 +72,12 @@ export function FirmShell() {
               </a>
             </li>
             <li>
-              <a href="#main" className="text-foreground hover:text-primary">
+              <Link
+                to={`/${workspace.slug}/settings/team`}
+                className="text-foreground hover:text-primary"
+              >
                 Settings
-              </a>
+              </Link>
             </li>
           </ul>
         </nav>
@@ -83,8 +89,28 @@ export function FirmShell() {
         </div>
       </aside>
       <main id="main" className="flex-1 px-8 py-10">
-        <h1 className="text-2xl font-bold">{workspace.name}</h1>
-        <p className="mt-2">Dashboard features arrive in later tickets.</p>
+        <Routes>
+          <Route
+            index
+            element={
+              <>
+                <h1 className="text-2xl font-bold">{workspace.name}</h1>
+                <p className="mt-2">Dashboard features arrive in later tickets.</p>
+              </>
+            }
+          />
+          <Route
+            path="settings/team"
+            element={
+              <TeamSettingsPage
+                workspaceId={workspace.id}
+                workspaceName={workspace.name}
+                role={role}
+                uid={state.user.uid}
+              />
+            }
+          />
+        </Routes>
       </main>
     </div>
   );

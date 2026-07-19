@@ -59,6 +59,7 @@ export function workspacePaths(wid: string): Record<string, string> {
   return {
     workspace: `workspaces/${wid}`,
     member: `workspaces/${wid}/members/member1`,
+    invite: `workspaces/${wid}/invites/inv1`,
     department: `workspaces/${wid}/departments/dep1`,
     client: `workspaces/${wid}/clients/client1`,
     collaborator: `workspaces/${wid}/collaborators/col1`,
@@ -82,6 +83,17 @@ export async function seedWorkspace(testEnv: RulesTestEnvironment, wid: string):
     for (const path of Object.values(workspacePaths(wid))) {
       await setDoc(doc(db, path), { seededFor: wid });
     }
+  });
+}
+
+/** Seed an arbitrary document path with the given data, bypassing rules. */
+export async function seedDoc(
+  testEnv: RulesTestEnvironment,
+  path: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), path), data);
   });
 }
 
