@@ -16,9 +16,13 @@
  */
 
 import { initializeApp } from 'firebase-admin/app';
+import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
+
+// Co-locate compute with the Firestore database (asia-southeast1, D-002).
+setGlobalOptions({ region: 'asia-southeast1' });
 
 initializeApp();
 
