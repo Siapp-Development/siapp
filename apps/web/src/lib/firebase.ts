@@ -1,6 +1,11 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import {
+  connectFunctionsEmulator,
+  getFunctions,
+  type Functions,
+} from 'firebase/functions';
 import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 import { parseFirebaseConfig, shouldUseEmulators } from './firebaseConfig';
 
@@ -10,10 +15,13 @@ export const app: FirebaseApp = initializeApp(config);
 export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
 export const storage: FirebaseStorage = getStorage(app);
+// Same region as setGlobalOptions in backend/functions (D-002).
+export const functions: Functions = getFunctions(app, 'asia-southeast1');
 
 // Ports must stay in sync with the "emulators" block in firebase.json.
 if (shouldUseEmulators(import.meta.env, import.meta.env.DEV)) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   connectStorageEmulator(storage, '127.0.0.1', 9199);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
 }
