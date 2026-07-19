@@ -30,6 +30,12 @@ service cloud.firestore {
         && request.auth.token.workspaces[wid].role in roles;
     }
 
+    // Siapp internal admin — isAdmin custom claim is set once via the
+    // setAdminClaim.ts bootstrap script; never by user-initiated flows.
+    function isSiappAdmin() {
+      return isSignedIn() && request.auth.token.isAdmin == true;
+    }
+
     // Field validation for own users/{uid} writes. Whitelisted keys only —
     // claimsUpdatedAt is deliberately absent: only the claims-sync trigger
     // (Admin SDK) may set it, because the client uses it as the "refresh your
@@ -160,6 +166,13 @@ service cloud.firestore {
     // Catch-all: anything not explicitly matched above is denied.
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    // Siapp internal admin audit log (#10). Client writes are denied;
+    // all entries are written by Cloud Functions via the Admin SDK.
+    match /adminLog/{alid} {
+      allow read: if isSiappAdmin();
+      allow write: if false;
     }
   }
 }

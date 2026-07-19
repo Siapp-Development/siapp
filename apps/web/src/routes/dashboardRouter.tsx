@@ -5,6 +5,7 @@ import { ForgotPasswordPage } from '@/surfaces/firm/auth/ForgotPasswordPage.tsx'
 import { LoginPage } from '@/surfaces/firm/auth/LoginPage.tsx';
 import { RequireAuth } from '@/surfaces/firm/auth/RequireAuth.tsx';
 import { FirmShell } from '@/surfaces/firm/FirmShell.tsx';
+import { ImpersonatePage } from '@/surfaces/firm/ImpersonatePage.tsx';
 import { WorkspaceEntry } from '@/surfaces/firm/WorkspaceEntry.tsx';
 
 function DashboardRoot() {
@@ -22,6 +23,8 @@ export const dashboardRoutes: RouteObject[] = [
     children: [
       { path: '/login', Component: LoginPage },
       { path: '/forgot-password', Component: ForgotPasswordPage },
+      // Outside RequireAuth: signs the browser in as the impersonated user.
+      { path: '/impersonate', Component: ImpersonatePage },
       { path: '/', Component: WorkspaceEntry },
       {
         path: '/:workspaceSlug/*',

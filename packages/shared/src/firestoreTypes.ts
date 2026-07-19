@@ -12,6 +12,7 @@
 
 import type {
   TActorType,
+  TAdminAction,
   TCollaboratorStatus,
   TCollaboratorType,
   TDocumentScope,
@@ -53,6 +54,9 @@ export interface IWorkspaceClaimEntry {
  */
 export interface IWorkspaceClaims {
   workspaces: Record<string, IWorkspaceClaimEntry>;
+  /** Present and `true` only on Siapp-admin accounts. Set once via the
+   *  `setAdminClaim.ts` bootstrap script; never set by user-initiated flows. */
+  isAdmin?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +89,23 @@ export interface IPhoneIndexDoc {
   phone: string;
   refs: IPhoneRef[];
   updatedAt: Date;
+}
+
+/**
+ * `/adminLog/{alid}` — audit trail written by Siapp admin Cloud Functions.
+ * Client writes are denied by Firestore rules; only the Admin SDK writes here.
+ */
+export interface IAdminLogDoc {
+  id: string;
+  actorUid: string;
+  actorEmail: string;
+  action: TAdminAction;
+  targetType: 'workspace' | 'user';
+  targetId: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  ip?: string;
+  ts: Date;
 }
 
 // ---------------------------------------------------------------------------
