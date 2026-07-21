@@ -2,6 +2,8 @@ import { Button } from '@siapp/ui';
 import { Link, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
+import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
+import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
 
@@ -62,9 +64,9 @@ export function FirmShell() {
         <nav aria-label="Workspace" className="mt-6">
           <ul className="flex flex-col gap-2">
             <li>
-              <a href="#main" className="text-foreground hover:text-primary">
+              <Link to={`/${workspace.slug}`} className="text-foreground hover:text-primary">
                 Projects
-              </a>
+              </Link>
             </li>
             <li>
               <a href="#main" className="text-foreground hover:text-primary">
@@ -93,10 +95,24 @@ export function FirmShell() {
           <Route
             index
             element={
-              <>
-                <h1 className="text-2xl font-bold">{workspace.name}</h1>
-                <p className="mt-2">Dashboard features arrive in later tickets.</p>
-              </>
+              <ProjectsListPage
+                workspaceId={workspace.id}
+                workspaceSlug={workspace.slug}
+                workspaceName={workspace.name}
+                role={role}
+                uid={state.user.uid}
+                userName={state.user.displayName ?? state.user.email ?? ''}
+              />
+            }
+          />
+          <Route
+            path="projects/:projectId"
+            element={
+              <ProjectDetailPage
+                workspaceId={workspace.id}
+                workspaceSlug={workspace.slug}
+                role={role}
+              />
             }
           />
           <Route

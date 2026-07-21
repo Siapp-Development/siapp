@@ -20,6 +20,13 @@ vi.mock('firebase/auth', () => ({
   signInWithPopup: vi.fn(),
   signOut: vi.fn(),
 }));
+// Route targets subscribe to Firestore — covered by their own test files.
+vi.mock('./projects/ProjectsListPage.tsx', () => ({
+  ProjectsListPage: ({ workspaceName }: { workspaceName: string }) => (
+    <h1>Projects — {workspaceName}</h1>
+  ),
+}));
+vi.mock('./projects/ProjectDetailPage.tsx', () => ({ ProjectDetailPage: () => null }));
 
 const signedIn: TAuthState = {
   status: 'signedIn',
@@ -51,7 +58,7 @@ describe('FirmShell', () => {
     renderShell('/acme');
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'Acme Builders' }),
+      screen.getByRole('heading', { level: 1, name: 'Projects — Acme Builders' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
     expect(screen.getByText('Alice Tan')).toBeInTheDocument();
