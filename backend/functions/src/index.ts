@@ -5,6 +5,7 @@
  *   - onWorkspaceMemberWrite → syncMemberClaims (#9) + recountSeats (#11)
  *   - Invite lifecycle callables + setMemberDepartments (#11)
  *   - setProjectLifecycle (#12): D-027 lifecycle transitions + publish preview.
+ *   - getRestrictedTaskHeaders (#13): safe projection of restricted tasks.
  *   - onTaskWrite → recomputeProjectSummary (#12)
  *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
  *   - adminAdjustWorkspace (#10): mutate plan / seats / expiry.
@@ -43,6 +44,10 @@ export { setMemberDepartments } from './callables/setMemberDepartments.js';
 // ── Projects lifecycle callable (#12) ───────────────────────────────────────
 
 export { setProjectLifecycle } from './callables/setProjectLifecycle.js';
+
+// ── Tasks callables (#13) ───────────────────────────────────────────────────
+
+export { getRestrictedTaskHeaders } from './callables/getRestrictedTaskHeaders.js';
 
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 

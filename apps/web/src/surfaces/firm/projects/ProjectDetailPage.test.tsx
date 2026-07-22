@@ -20,6 +20,12 @@ vi.mock('./useProjects.ts', () => ({
   updateProject: projectData.updateProject,
 }));
 
+vi.mock('./tasks/TasksSection.tsx', () => ({
+  TasksSection: (props: { canEdit: boolean }) => (
+    <div data-testid="tasks-section" data-can-edit={props.canEdit} />
+  ),
+}));
+
 import { ProjectDetailPage } from './ProjectDetailPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -50,11 +56,24 @@ function renderPage(role: 'owner' | 'admin' | 'pm' | 'viewer' = 'owner') {
       <Routes>
         <Route
           path="/:workspaceSlug/projects/:projectId"
-          element={<ProjectDetailPage workspaceId="wksA" workspaceSlug="acme" role={role} />}
+          element={
+            <ProjectDetailPage
+              workspaceId="wksA"
+              workspaceSlug="acme"
+              role={role}
+              departments={[]}
+              uid="u1"
+              userName="Alice Tan"
+            />
+          }
         />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+async function openDetailsTab(): Promise<void> {
+  await userEvent.click(screen.getByRole('tab', { name: 'Details' }));
 }
 
 beforeEach(() => {
@@ -64,7 +83,7 @@ beforeEach(() => {
 });
 
 describe('ProjectDetailPage', () => {
-  it('renders project details with lifecycle badge and progress', () => {
+  it('shows the Tasks tab by default and renders project details under Details', async () => {
     projectData.state = {
       status: 'ready',
       project: projectRow({
@@ -81,6 +100,10 @@ describe('ProjectDetailPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Bungalow build' })).toBeInTheDocument();
     expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getByTestId('tasks-section')).toBeInTheDocument();
+
+    await openDetailsTab();
+    expect(screen.queryByTestId('tasks-section')).not.toBeInTheDocument();
     expect(screen.getByText('Ahmad Corp')).toBeInTheDocument();
     expect(screen.getByText(/50% \(5\/10 tasks, 1 overdue\)/)).toBeInTheDocument();
   });
@@ -96,12 +119,15 @@ describe('ProjectDetailPage', () => {
     );
   });
 
-  it('hides editing from viewers and on completed projects', () => {
-    renderPage('viewer');
+  it('hides editing from viewers and on completed projects', async () => {
+    const viewerRender = renderPage('viewer');
+    await openDetailsTab();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    viewerRender.unmount();
 
     projectData.state = { status: 'ready', project: projectRow({ lifecycle: 'completed' }) };
     renderPage('owner');
+    await openDetailsTab();
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.getByText(/read-only — reopen to make changes/i)).toBeInTheDocument();
   });
@@ -109,6 +135,7 @@ describe('ProjectDetailPage', () => {
   it('saves field edits through updateProject', async () => {
     projectData.updateProject.mockResolvedValue(undefined);
     renderPage('pm');
+    await openDetailsTab();
 
     await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
     const nameInput = screen.getByLabelText('Name');
@@ -135,6 +162,7 @@ describe('ProjectDetailPage', () => {
         publishPreview: { waCount: 3, estimatedCostMyr: 0.3 },
       });
     renderPage('pm');
+    await openDetailsTab();
 
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
     expect(mockCallables.setProjectLifecycle).toHaveBeenCalledWith({
@@ -156,9 +184,10 @@ describe('ProjectDetailPage', () => {
     });
   });
 
-  it('gates lifecycle actions by role (D-027)', () => {
+  it('gates lifecycle actions by role (D-027)', async () => {
     projectData.state = { status: 'ready', project: projectRow({ lifecycle: 'published' }) };
     renderPage('pm');
+    await openDetailsTab();
 
     expect(screen.getByRole('button', { name: /mark completed/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
@@ -168,6 +197,7 @@ describe('ProjectDetailPage', () => {
   it('requires a confirm step before deleting (owner only)', async () => {
     mockCallables.setProjectLifecycle.mockResolvedValue({ lifecycle: 'deleted' });
     renderPage('owner');
+    await openDetailsTab();
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(mockCallables.setProjectLifecycle).not.toHaveBeenCalled();
@@ -186,6 +216,7 @@ describe('ProjectDetailPage', () => {
     mockCallables.setProjectLifecycle.mockRejectedValue(err);
     mockCallables.projectErrorCode.mockReturnValue('project/forbidden-transition');
     renderPage('pm');
+    await openDetailsTab();
 
     await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
     expect(await screen.findByText(/your role cannot perform this action/i)).toBeInTheDocument();

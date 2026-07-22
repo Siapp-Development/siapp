@@ -11,6 +11,9 @@ rules_version = '2';
 //   trustworthy; task write rules belong to #13
 // - #12 adds: project create/update for owner/admin/pm (lifecycle + summary
 //   client-immutable; transitions via the setProjectLifecycle callable)
+// - #13 adds: phase + task CRUD for owner/admin/pm (department need-to-know
+//   enforced on create/update/delete) and append-only task updates for any
+//   member who can see the task (author pinned to caller, source 'web')
 // - #11 adds: invites (owner/admin read, server-only writes), departments
 //   CRUD for owner/admin, and department need-to-know gating on task /
 //   task-update / document reads (20-access-control-departments.md)
@@ -48,6 +51,16 @@ service cloud.firestore {
     // the field existed.
     function restrictionsOf(data) {
       return data.get('restrictedToDepartments', []);
+    }
+
+    // List-provable variant of canSeeRestricted (#13): references the field
+    // directly — no .get() default — so the query prover must constrain
+    // restrictedToDepartments. With the .get() default an unconstrained
+    // pm/viewer list query was ALLOWED and returned restricted docs.
+    function canSeeRestrictedList(wid, data) {
+      return hasRole(wid, ['owner', 'admin'])
+        || data.restrictedToDepartments.size() == 0
+        || data.restrictedToDepartments.hasAny(request.auth.token.workspaces[wid].departments);
     }
 
     // Siapp internal admin — isAdmin custom claim is set once via the
@@ -112,6 +125,58 @@ service cloud.firestore {
     // the visibility field existed (e.g. starter projects).
     function collabCountOf(data) {
       return data.get('visibility', {}).get('collaboratorsCount', 0);
+    }
+
+    // Field validation shared by phase create/update (#13).
+    function validPhaseFields(phid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'name', 'order', 'startDate', 'endDate', 'status'])
+        && d.id == phid
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 80
+        && d.order is number
+        && d.status in ['todo', 'in_progress', 'done']
+        && (!('startDate' in d) || d.startDate is timestamp)
+        && (!('endDate' in d) || d.endDate is timestamp);
+    }
+
+    // Field validation shared by task create/update (#13). Assignees may be
+    // firm users or collaborators (shape enforced per entry is deferred to
+    // the client at MVP; lists are size-capped).
+    function validTaskFields(tid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'title', 'description', 'phaseId', 'status',
+          'startDate', 'dueDate', 'completedAt', 'assignees',
+          'visibleToClient', 'visibleToCollaboratorIds',
+          'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
+          'order', 'createdAt', 'updatedAt', 'createdBy'
+        ])
+        && d.id == tid
+        && d.title is string
+        && d.title.size() > 0
+        && d.title.size() <= 200
+        && (!('description' in d) || (d.description is string && d.description.size() <= 5000))
+        && (!('phaseId' in d) || d.phaseId is string)
+        && d.status in ['todo', 'in_progress', 'blocked', 'done']
+        && (!('startDate' in d) || d.startDate is timestamp)
+        && (!('dueDate' in d) || d.dueDate is timestamp)
+        && (!('completedAt' in d) || d.completedAt is timestamp)
+        && d.assignees is list
+        && d.assignees.size() <= 20
+        && d.visibleToClient is bool
+        && d.visibleToCollaboratorIds is list
+        && d.restrictedToDepartments is list
+        && d.restrictedToDepartments.size() <= 10
+        && d.sendWhatsapp is bool
+        && d.dependsOn is list
+        && d.dependsOn.size() <= 50
+        && !d.dependsOn.hasAny([tid])
+        && d.order is number
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp
+        && d.createdBy is string;
     }
 
     // Firm-staff profile — own doc only. No delete; list stays denied.
@@ -236,33 +301,79 @@ service cloud.firestore {
         // Soft delete only — `delete` action on the lifecycle callable.
         allow delete: if false;
 
+        // Phases (#13): owner/admin/pm manage the project's phase structure.
         match /phases/{phid} {
           allow read: if isFirmMember(wid);
-          allow write: if false;
+          allow create, update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && validPhaseFields(phid);
+          allow delete: if hasRole(wid, ['owner', 'admin', 'pm']);
         }
 
         // Department need-to-know (#11): restricted tasks are readable only
         // by owner/admin or members of a listed department. List queries
         // over tasks must therefore constrain restrictedToDepartments
         // client-side (rules for `list` are proven against the query).
+        // #13 opens the write path for owner/admin/pm — you can never
+        // create, update into, or delete a task you couldn't see.
         match /tasks/{tid} {
-          allow read: if isFirmMember(wid)
+          allow get: if isFirmMember(wid)
             && canSeeRestricted(wid, restrictionsOf(resource.data));
-          allow write: if false;
+          allow list: if isFirmMember(wid)
+            && canSeeRestrictedList(wid, resource.data);
+          allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && validTaskFields(tid)
+            && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
+            && request.resource.data.createdBy == request.auth.uid;
+          allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && validTaskFields(tid)
+            && canSeeRestricted(wid, restrictionsOf(resource.data))
+            && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
+            && !request.resource.data.diff(resource.data)
+              .affectedKeys().hasAny(['id', 'createdAt', 'createdBy']);
+          // Hard delete (no task soft-delete in the data model); the
+          // onTaskWrite trigger recomputes project.summary.
+          allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && canSeeRestricted(wid, restrictionsOf(resource.data));
 
           // Updates inherit the parent task's restriction (one get()).
+          // Append-only activity stream (#13): any member who can see the
+          // task may append; author fields are pinned to the caller and
+          // web-sourced actions only — WA/system entries are server-written.
           match /updates/{updid} {
             allow read: if isFirmMember(wid)
               && canSeeRestricted(wid, restrictionsOf(
                 get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
               ));
-            allow write: if false;
+            allow create: if isFirmMember(wid)
+              && canSeeRestricted(wid, restrictionsOf(
+                get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
+              ))
+              && request.resource.data.keys().hasOnly([
+                'id', 'authorType', 'authorId', 'authorNameDenorm',
+                'source', 'action', 'payload', 'createdAt'
+              ])
+              && request.resource.data.id == updid
+              && request.resource.data.authorType == 'user'
+              && request.resource.data.authorId == request.auth.uid
+              && request.resource.data.authorNameDenorm is string
+              && request.resource.data.source == 'web'
+              && request.resource.data.action in
+                ['comment', 'status_change', 'eta_change', 'assigned']
+              && request.resource.data.payload is map
+              && (request.resource.data.action != 'comment'
+                || (request.resource.data.payload.text is string
+                  && request.resource.data.payload.text.size() > 0
+                  && request.resource.data.payload.text.size() <= 5000))
+              && request.resource.data.createdAt is timestamp;
+            allow update, delete: if false;
           }
         }
 
         match /documents/{did} {
-          allow read: if isFirmMember(wid)
+          allow get: if isFirmMember(wid)
             && canSeeRestricted(wid, restrictionsOf(resource.data));
+          allow list: if isFirmMember(wid)
+            && canSeeRestrictedList(wid, resource.data);
           allow write: if false;
         }
 
