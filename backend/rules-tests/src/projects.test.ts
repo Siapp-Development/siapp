@@ -10,7 +10,7 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import type { TMemberRole } from '@siapp/shared';
-import { Timestamp, deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { Timestamp, deleteDoc, deleteField, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.ts';
 
@@ -122,6 +122,31 @@ describe('project create', () => {
       setDoc(
         doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-x`),
         validProject('proj-x', { visibility: { clientCanSee: true, collaboratorsCount: 2 } }),
+      ),
+    );
+  });
+
+  it('denies create with extra keys inside summary or visibility', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-x`),
+        validProject('proj-x', {
+          summary: {
+            totalTasks: 0,
+            doneTasks: 0,
+            overdueTasks: 0,
+            progressPct: 0,
+            lastActivityAt: Timestamp.now(),
+          },
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-x`),
+        validProject('proj-x', {
+          visibility: { clientCanSee: true, collaboratorsCount: 0, hiddenFromClient: true },
+        }),
       ),
     );
   });
@@ -284,6 +309,24 @@ describe('project update', () => {
     await assertSucceeds(
       updateDoc(doc(dbAs('owner'), PROJ_PATH), {
         visibility: { clientCanSee: false, collaboratorsCount: 0 },
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies injecting extra keys into visibility on update', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), PROJ_PATH), {
+        visibility: { clientCanSee: false, collaboratorsCount: 0, portalTheme: 'dark' },
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies removing the visibility map on update', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), PROJ_PATH), {
+        visibility: deleteField(),
         updatedAt: Timestamp.now(),
       }),
     );

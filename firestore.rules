@@ -214,10 +214,16 @@ service cloud.firestore {
           && request.resource.data.ownerUid == request.auth.uid
           && request.resource.data.ownerNameDenorm is string
           && request.resource.data.createdAt is timestamp
+          && request.resource.data.summary.keys().hasOnly([
+            'totalTasks', 'doneTasks', 'overdueTasks', 'progressPct'
+          ])
           && request.resource.data.summary.totalTasks == 0
           && request.resource.data.summary.doneTasks == 0
           && request.resource.data.summary.overdueTasks == 0
           && request.resource.data.summary.progressPct == 0
+          && request.resource.data.visibility.keys().hasOnly([
+            'clientCanSee', 'collaboratorsCount'
+          ])
           && request.resource.data.visibility.clientCanSee is bool
           && request.resource.data.visibility.collaboratorsCount == 0;
         // Completed projects are read-only client-side (re-open first);
@@ -231,8 +237,14 @@ service cloud.firestore {
           ])
           && validProjectFields()
           && collabCountOf(request.resource.data) == collabCountOf(resource.data)
-          && (!('visibility' in request.resource.data)
-            || request.resource.data.visibility.clientCanSee is bool);
+          // visibility, when present, must keep its exact shape; it may only
+          // be absent on legacy docs that never had it (cannot be removed).
+          && ('visibility' in request.resource.data
+            ? (request.resource.data.visibility.keys().hasOnly([
+                'clientCanSee', 'collaboratorsCount'
+              ])
+              && request.resource.data.visibility.clientCanSee is bool)
+            : !('visibility' in resource.data));
         // Soft delete only — `delete` action on the lifecycle callable.
         allow delete: if false;
 

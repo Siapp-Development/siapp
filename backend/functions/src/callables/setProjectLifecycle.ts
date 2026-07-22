@@ -97,6 +97,9 @@ export const setProjectLifecycle = onCall(async (request) => {
   if (!workspaceId || !projectId || !isLifecycleAction(action)) {
     throw new HttpsError('invalid-argument', 'workspaceId, projectId and action are required.');
   }
+  if (dryRun && action !== 'publish') {
+    throw new HttpsError('invalid-argument', 'dryRun is only supported for the publish action.');
+  }
 
   const role = requireMemberRole(request, workspaceId);
 
