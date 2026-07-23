@@ -6,8 +6,13 @@
  */
 
 import { logger } from 'firebase-functions';
+import { defineSecret } from 'firebase-functions/params';
 
 const POSTMARK_ENDPOINT = 'https://api.postmarkapp.com/email';
+
+// Callables that send email must list this in their `secrets` binding so the
+// deployed function gets POSTMARK_SERVER_TOKEN injected into process.env.
+export const postmarkServerToken = defineSecret('POSTMARK_SERVER_TOKEN');
 
 export interface IInviteEmail {
   to: string;
