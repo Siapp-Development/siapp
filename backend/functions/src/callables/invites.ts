@@ -24,7 +24,7 @@ import {
   tokenMatchesHash,
   type TInviteErrorCode,
 } from '../lib/invites.js';
-import { sendInviteEmail } from '../lib/mail.js';
+import { postmarkServerToken, sendInviteEmail } from '../lib/mail.js';
 
 /** Dashboard origin used in emailed invite links. */
 const appOrigin = defineString('APP_ORIGIN', { default: 'https://dashboard.siapp.app' });
@@ -68,7 +68,7 @@ function inviteError(code: TInviteErrorCode, message: string): HttpsError {
   return new HttpsError('failed-precondition', message, { code });
 }
 
-export const createInvite = onCall(async (request) => {
+export const createInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   const uid = requireWorkspaceAdmin(request, workspaceId);
 
@@ -157,7 +157,7 @@ export const revokeInvite = onCall(async (request) => {
   return { ok: true };
 });
 
-export const resendInvite = onCall(async (request) => {
+export const resendInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   requireWorkspaceAdmin(request, workspaceId);
   const inviteId = requireStringField(request, 'inviteId');
