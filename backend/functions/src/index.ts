@@ -4,12 +4,13 @@
  * Implemented:
  *   - onWorkspaceMemberWrite → syncMemberClaims (#9) + recountSeats (#11)
  *   - Invite lifecycle callables + setMemberDepartments (#11)
+ *   - setProjectLifecycle (#12): D-027 lifecycle transitions + publish preview.
+ *   - onTaskWrite → recomputeProjectSummary (#12)
  *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
  *   - adminAdjustWorkspace (#10): mutate plan / seats / expiry.
  *   - adminImpersonateUser (#10): mint custom token for support impersonation.
  *
  * Remaining stubs arrive in later tickets:
- *   - Project summary pre-aggregation (#17)
  *   - Activity / audit log capture (#23)
  *   - Phone index maintenance (#16)
  *
@@ -26,6 +27,7 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
 
 import { recountSeats } from './triggers/recountSeats.js';
+import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
@@ -37,6 +39,10 @@ initializeApp();
 
 export { acceptInvite, createInvite, resendInvite, revokeInvite } from './callables/invites.js';
 export { setMemberDepartments } from './callables/setMemberDepartments.js';
+
+// ── Projects lifecycle callable (#12) ───────────────────────────────────────
+
+export { setProjectLifecycle } from './callables/setProjectLifecycle.js';
 
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 
@@ -53,15 +59,14 @@ export const adminImpersonateUser = onCall(impersonateUser);
 
 /**
  * Maintains pre-aggregated `project.summary` counters whenever a task
- * document is created, updated, or deleted.
+ * document is created, updated, or deleted — see `triggers/projectSummary.ts`.
  *
  * Collection path: `workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}`
  */
 export const onTaskWrite = onDocumentWritten(
   'workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}',
-  async (_event) => {
-    // TODO (#13/#17): recompute summary.totalTasks / doneTasks / overdueTasks /
-    // progressPct on the parent project document using the Admin SDK.
+  async (event) => {
+    await recomputeProjectSummary(event.params.workspaceId, event.params.projectId);
   },
 );
 

@@ -4,7 +4,7 @@
  * generics) so both sides agree on the wire shape.
  */
 
-import type { TInviteRole, TMemberRole } from './enums.ts';
+import type { TInviteRole, TMemberRole, TProjectLifecycle } from './enums.ts';
 
 export interface ICreateInviteRequest {
   workspaceId: string;
@@ -53,6 +53,37 @@ export interface ISetMemberDepartmentsResponse {
   /** Deduplicated department ids now assigned to the member. */
   departments: string[];
 }
+
+/** Lifecycle transitions a firm user can request (D-027). */
+export type TProjectLifecycleAction = 'publish' | 'complete' | 'archive' | 'reopen' | 'delete';
+
+export interface ISetProjectLifecycleRequest {
+  workspaceId: string;
+  projectId: string;
+  action: TProjectLifecycleAction;
+  /** Publish only: validate + return the WA preview without transitioning. */
+  dryRun?: boolean;
+}
+
+export interface IPublishPreview {
+  /** Outbound WhatsApp messages the publish transition would trigger. */
+  waCount: number;
+  /** Rough utility-conversation cost estimate (WA_UTILITY_COST_MYR each). */
+  estimatedCostMyr: number;
+}
+
+export interface ISetProjectLifecycleResponse {
+  /** Resulting lifecycle (current lifecycle when dryRun). */
+  lifecycle: TProjectLifecycle;
+  /** Present for publish requests (dry-run or real). */
+  publishPreview?: IPublishPreview;
+}
+
+/** Stable error codes for the project lifecycle callable. */
+export type TProjectErrorCode =
+  | 'project/not-found'
+  | 'project/invalid-transition'
+  | 'project/forbidden-transition';
 
 /** Stable error codes rendered by the accept page. */
 export type TInviteErrorCode =

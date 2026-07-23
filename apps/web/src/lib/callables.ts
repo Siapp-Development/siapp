@@ -13,6 +13,8 @@ import type {
   IRevokeInviteRequest,
   ISetMemberDepartmentsRequest,
   ISetMemberDepartmentsResponse,
+  ISetProjectLifecycleRequest,
+  ISetProjectLifecycleResponse,
   TResendInviteResponse,
 } from '@siapp/shared';
 
@@ -57,11 +59,30 @@ export async function setMemberDepartments(data: ISetMemberDepartmentsRequest): 
 
 /** Stable invite error code from an HttpsError's details, or null. */
 export function inviteErrorCode(error: unknown): string | null {
+  return errorCodeWithPrefix(error, 'invite/');
+}
+
+export async function setProjectLifecycle(
+  data: ISetProjectLifecycleRequest,
+): Promise<ISetProjectLifecycleResponse> {
+  const call = httpsCallable<ISetProjectLifecycleRequest, ISetProjectLifecycleResponse>(
+    functions,
+    'setProjectLifecycle',
+  );
+  return (await call(data)).data;
+}
+
+/** Stable project error code from an HttpsError's details, or null. */
+export function projectErrorCode(error: unknown): string | null {
+  return errorCodeWithPrefix(error, 'project/');
+}
+
+function errorCodeWithPrefix(error: unknown, prefix: string): string | null {
   if (typeof error === 'object' && error !== null && 'details' in error) {
     const details = (error as { details?: unknown }).details;
     if (typeof details === 'object' && details !== null && 'code' in details) {
       const code = (details as { code?: unknown }).code;
-      if (typeof code === 'string' && code.startsWith('invite/')) {
+      if (typeof code === 'string' && code.startsWith(prefix)) {
         return code;
       }
     }

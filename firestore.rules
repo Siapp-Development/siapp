@@ -8,7 +8,9 @@ rules_version = '2';
 // - auditLog reads are role-gated to owner/admin (deferred #6 audit item)
 // - All other client writes stay denied — member docs are written server-side
 //   only (#10 provisioning, #11 invites), which keeps the claims-sync trigger
-//   trustworthy; project/task write rules belong to #12
+//   trustworthy; task write rules belong to #13
+// - #12 adds: project create/update for owner/admin/pm (lifecycle + summary
+//   client-immutable; transitions via the setProjectLifecycle callable)
 // - #11 adds: invites (owner/admin read, server-only writes), departments
 //   CRUD for owner/admin, and department need-to-know gating on task /
 //   task-update / document reads (20-access-control-departments.md)
@@ -90,6 +92,28 @@ service cloud.firestore {
         && d.memberCount is int;
     }
 
+    // Type validation for the client-editable project fields (#12).
+    function validProjectFields() {
+      let d = request.resource.data;
+      return d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 120
+        && (!('code' in d) || (d.code is string && d.code.size() <= 20))
+        && d.status in ['planning', 'active', 'on_hold', 'completed', 'archived']
+        && d.clientId is string
+        && d.clientNameDenorm is string
+        && d.startDate is timestamp
+        && (!('targetEndDate' in d) || d.targetEndDate is timestamp)
+        && (!('actualEndDate' in d) || d.actualEndDate is timestamp)
+        && d.updatedAt is timestamp;
+    }
+
+    // collaboratorsCount is server-maintained; tolerate docs written before
+    // the visibility field existed (e.g. starter projects).
+    function collabCountOf(data) {
+      return data.get('visibility', {}).get('collaboratorsCount', 0);
+    }
+
     // Firm-staff profile — own doc only. No delete; list stays denied.
     match /users/{uid} {
       allow get: if isSignedIn() && request.auth.uid == uid;
@@ -169,9 +193,60 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Projects (#12): field CRUD is client-side for owner/admin/pm;
+      // `lifecycle` + its timestamps, `summary`, and provenance/denorm fields
+      // are client-immutable — transitions go through the setProjectLifecycle
+      // callable (D-027) and summary through the onTaskWrite trigger.
       match /projects/{pid} {
         allow read: if isFirmMember(wid);
-        allow write: if false;
+        allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
+            'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
+            'startDate', 'targetEndDate', 'actualEndDate',
+            'summary', 'visibility', 'createdAt', 'updatedAt', 'createdBy'
+          ])
+          && validProjectFields()
+          && request.resource.data.id == pid
+          && request.resource.data.vertical in ['construction', 'legal', 'other']
+          && request.resource.data.lifecycle == 'draft'
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerNameDenorm is string
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.summary.keys().hasOnly([
+            'totalTasks', 'doneTasks', 'overdueTasks', 'progressPct'
+          ])
+          && request.resource.data.summary.totalTasks == 0
+          && request.resource.data.summary.doneTasks == 0
+          && request.resource.data.summary.overdueTasks == 0
+          && request.resource.data.summary.progressPct == 0
+          && request.resource.data.visibility.keys().hasOnly([
+            'clientCanSee', 'collaboratorsCount'
+          ])
+          && request.resource.data.visibility.clientCanSee is bool
+          && request.resource.data.visibility.collaboratorsCount == 0;
+        // Completed projects are read-only client-side (re-open first);
+        // archived/deleted are read-only outright (D-027 table).
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && resource.data.lifecycle in ['draft', 'published']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'code', 'clientId', 'clientNameDenorm', 'status',
+            'startDate', 'targetEndDate', 'actualEndDate', 'visibility',
+            'updatedAt'
+          ])
+          && validProjectFields()
+          && collabCountOf(request.resource.data) == collabCountOf(resource.data)
+          // visibility, when present, must keep its exact shape; it may only
+          // be absent on legacy docs that never had it (cannot be removed).
+          && ('visibility' in request.resource.data
+            ? (request.resource.data.visibility.keys().hasOnly([
+                'clientCanSee', 'collaboratorsCount'
+              ])
+              && request.resource.data.visibility.clientCanSee is bool)
+            : !('visibility' in resource.data));
+        // Soft delete only — `delete` action on the lifecycle callable.
+        allow delete: if false;
 
         match /phases/{phid} {
           allow read: if isFirmMember(wid);
