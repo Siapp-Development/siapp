@@ -9,6 +9,8 @@ import type {
   IAcceptInviteResponse,
   ICreateInviteRequest,
   ICreateInviteResponse,
+  IGetRestrictedTaskHeadersRequest,
+  IGetRestrictedTaskHeadersResponse,
   IResendInviteRequest,
   IRevokeInviteRequest,
   ISetMemberDepartmentsRequest,
@@ -75,6 +77,17 @@ export async function setProjectLifecycle(
 /** Stable project error code from an HttpsError's details, or null. */
 export function projectErrorCode(error: unknown): string | null {
   return errorCodeWithPrefix(error, 'project/');
+}
+
+/** Header rows for department-restricted tasks the caller cannot read (#13). */
+export async function getRestrictedTaskHeaders(
+  data: IGetRestrictedTaskHeadersRequest,
+): Promise<IGetRestrictedTaskHeadersResponse> {
+  const call = httpsCallable<IGetRestrictedTaskHeadersRequest, IGetRestrictedTaskHeadersResponse>(
+    functions,
+    'getRestrictedTaskHeaders',
+  );
+  return (await call(data)).data;
 }
 
 function errorCodeWithPrefix(error: unknown, prefix: string): string | null {

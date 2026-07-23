@@ -112,6 +112,9 @@ export function FirmShell() {
                 workspaceId={workspace.id}
                 workspaceSlug={workspace.slug}
                 role={role}
+                departments={state.claims.workspaces[workspace.id]?.departments ?? []}
+                uid={state.user.uid}
+                userName={state.user.displayName ?? state.user.email ?? ''}
               />
             }
           />

@@ -5,7 +5,7 @@
  * estimate before confirming.
  */
 
-import { Alert, Button, Card, CardContent, CardHeader } from '@siapp/ui';
+import { Alert, Button, Card, CardContent, CardHeader, cn } from '@siapp/ui';
 import type {
   IPublishPreview,
   TMemberRole,
@@ -19,6 +19,7 @@ import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
+import { TasksSection } from './tasks/TasksSection.tsx';
 import { updateProject, useProject, type IProjectRow } from './useProjects.ts';
 
 /** D-027 action availability by lifecycle and role (mirrors the callable). */
@@ -208,12 +209,23 @@ export interface IProjectDetailPageProps {
   workspaceId: string;
   workspaceSlug: string;
   role: TMemberRole;
+  departments: string[];
+  uid: string;
+  userName: string;
 }
 
-export function ProjectDetailPage({ workspaceId, workspaceSlug, role }: IProjectDetailPageProps) {
+export function ProjectDetailPage({
+  workspaceId,
+  workspaceSlug,
+  role,
+  departments,
+  uid,
+  userName,
+}: IProjectDetailPageProps) {
   const { projectId = '' } = useParams<'projectId'>();
   const state = useProject(workspaceId, projectId);
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<'tasks' | 'details'>('tasks');
 
   if (state.status === 'loading') {
     return <p className="text-sm">Loading project…</p>;
@@ -251,69 +263,110 @@ export function ProjectDetailPage({ workspaceId, workspaceSlug, role }: IProject
         )}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <h2 className="text-lg font-semibold">Details</h2>
-          {canEdit && !editing && (
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
-              Edit
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {editing ? (
-            <ProjectForm
-              project={project}
-              submitLabel="Save changes"
-              onCancel={() => setEditing(false)}
-              onSubmit={async (values) => {
-                await updateProject(workspaceId, project.id, values, project.collaboratorsCount);
-                setEditing(false);
-              }}
-            />
-          ) : (
-            <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-muted-foreground">Client</dt>
-                <dd>{project.clientNameDenorm !== '' ? project.clientNameDenorm : 'No client linked'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Status</dt>
-                <dd>{STATUS_LABELS[project.status]}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Vertical</dt>
-                <dd>{VERTICAL_LABELS[project.vertical]}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Owner</dt>
-                <dd>{project.ownerNameDenorm}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Start date</dt>
-                <dd>{project.startDate?.toLocaleDateString() ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Target end</dt>
-                <dd>{project.targetEndDate?.toLocaleDateString() ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Progress</dt>
-                <dd>
-                  {project.progressPct}% ({project.doneTasks}/{project.totalTasks} tasks
-                  {project.overdueTasks > 0 && `, ${project.overdueTasks} overdue`})
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Client visibility</dt>
-                <dd>{project.clientCanSee ? 'Client can see this project' : 'Hidden from client'}</dd>
-              </div>
-            </dl>
-          )}
-        </CardContent>
-      </Card>
+      <div role="tablist" aria-label="Project sections" className="flex gap-1 border-b">
+        {(
+          [
+            { id: 'tasks', label: 'Tasks' },
+            { id: 'details', label: 'Details' },
+          ] as const
+        ).map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            onClick={() => setTab(entry.id)}
+            className={cn(
+              'border-b-2 px-3 py-2 text-sm font-medium',
+              tab === entry.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
 
-      <LifecycleActions workspaceId={workspaceId} project={project} role={role} />
+      {tab === 'tasks' && (
+        <TasksSection
+          workspaceId={workspaceId}
+          projectId={project.id}
+          role={role}
+          departments={departments}
+          uid={uid}
+          userName={userName}
+          canEdit={canEdit}
+        />
+      )}
+
+      {tab === 'details' && (
+        <>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <h2 className="text-lg font-semibold">Details</h2>
+              {canEdit && !editing && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+                  Edit
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {editing ? (
+                <ProjectForm
+                  project={project}
+                  submitLabel="Save changes"
+                  onCancel={() => setEditing(false)}
+                  onSubmit={async (values) => {
+                    await updateProject(workspaceId, project.id, values, project.collaboratorsCount);
+                    setEditing(false);
+                  }}
+                />
+              ) : (
+                <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-muted-foreground">Client</dt>
+                    <dd>{project.clientNameDenorm !== '' ? project.clientNameDenorm : 'No client linked'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Status</dt>
+                    <dd>{STATUS_LABELS[project.status]}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Vertical</dt>
+                    <dd>{VERTICAL_LABELS[project.vertical]}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Owner</dt>
+                    <dd>{project.ownerNameDenorm}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Start date</dt>
+                    <dd>{project.startDate?.toLocaleDateString() ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Target end</dt>
+                    <dd>{project.targetEndDate?.toLocaleDateString() ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Progress</dt>
+                    <dd>
+                      {project.progressPct}% ({project.doneTasks}/{project.totalTasks} tasks
+                      {project.overdueTasks > 0 && `, ${project.overdueTasks} overdue`})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Client visibility</dt>
+                    <dd>{project.clientCanSee ? 'Client can see this project' : 'Hidden from client'}</dd>
+                  </div>
+                </dl>
+              )}
+            </CardContent>
+          </Card>
+
+          <LifecycleActions workspaceId={workspaceId} project={project} role={role} />
+        </>
+      )}
     </div>
   );
 }

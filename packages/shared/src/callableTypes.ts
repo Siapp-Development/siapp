@@ -4,7 +4,7 @@
  * generics) so both sides agree on the wire shape.
  */
 
-import type { TInviteRole, TMemberRole, TProjectLifecycle } from './enums.ts';
+import type { TInviteRole, TMemberRole, TProjectLifecycle, TTaskStatus } from './enums.ts';
 
 export interface ICreateInviteRequest {
   workspaceId: string;
@@ -77,6 +77,30 @@ export interface ISetProjectLifecycleResponse {
   lifecycle: TProjectLifecycle;
   /** Present for publish requests (dry-run or real). */
   publishPreview?: IPublishPreview;
+}
+
+export interface IGetRestrictedTaskHeadersRequest {
+  workspaceId: string;
+  projectId: string;
+}
+
+/**
+ * Safe projection of a department-restricted task the caller cannot read
+ * (#13): enough to render the list row + "Restricted" badge, nothing more.
+ */
+export interface IRestrictedTaskHeader {
+  id: string;
+  title: string;
+  status: TTaskStatus;
+  phaseId: string | null;
+  /** ISO string (callable responses cannot carry Timestamps). */
+  dueDate: string | null;
+  order: number;
+  restrictedToDepartments: string[];
+}
+
+export interface IGetRestrictedTaskHeadersResponse {
+  headers: IRestrictedTaskHeader[];
 }
 
 /** Stable error codes for the project lifecycle callable. */

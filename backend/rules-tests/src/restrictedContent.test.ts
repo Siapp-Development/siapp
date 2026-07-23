@@ -8,7 +8,7 @@
 
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.ts';
 
@@ -136,5 +136,28 @@ describe('restricted document reads', () => {
 
   it('allows every member on unrestricted documents', async () => {
     await assertSucceeds(getDoc(doc(viewerNoDept(), OPEN_DOC)));
+  });
+});
+
+describe('document list queries (#13 canSeeRestrictedList)', () => {
+  const DOCS_PATH = `${BASE}/documents`;
+
+  it('denies pm unconstrained document lists (would leak restricted docs)', async () => {
+    await assertFails(getDocs(collection(notInDept(), DOCS_PATH)));
+  });
+
+  it('allows owner unconstrained; pm only with a restriction constraint', async () => {
+    await assertSucceeds(getDocs(collection(owner(), DOCS_PATH)));
+    await assertSucceeds(
+      getDocs(query(collection(notInDept(), DOCS_PATH), where('restrictedToDepartments', '==', []))),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(inDept(), DOCS_PATH),
+          where('restrictedToDepartments', 'array-contains', DEP),
+        ),
+      ),
+    );
   });
 });

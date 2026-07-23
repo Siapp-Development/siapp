@@ -344,6 +344,8 @@ export interface ITaskUpdatePayload {
   from?: unknown;
   to?: unknown;
   text?: string;
+  /** Workspace-member uids @mentioned in `text` (#13). */
+  mentions?: string[];
   storagePath?: string;
   mimeType?: string;
 }
