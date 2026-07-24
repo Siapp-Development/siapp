@@ -153,7 +153,8 @@ function timeField(data: Record<string, unknown>, field: string): number {
 /**
  * Builds the versioned export envelope from raw docs: Timestamps → ISO
  * strings at every depth, deterministic ordering (phases/tasks by `order`,
- * activity by `at` desc, updates by `createdAt` asc, id as tiebreak), and
+ * activity by `at` desc, updates by `createdAt` asc, documents by
+ * `uploadedAt` asc, id as tiebreak), and
  * the D6 `deleted` flag on soft-deleted documents. Pure — unit-tested
  * without emulators.
  */
@@ -174,10 +175,16 @@ export function serializeExport(source: IExportSource): IExportProjectPayload {
         .map(toRecord),
     }));
 
-  const documents = source.documents.map((doc): IExportDocumentRecord => {
-    const record = toRecord(doc);
-    return { ...record, deleted: record['deletedAt'] != null };
-  });
+  const documents = [...source.documents]
+    .sort(
+      (a, b) =>
+        timeField(a.data, 'uploadedAt') - timeField(b.data, 'uploadedAt') ||
+        a.id.localeCompare(b.id),
+    )
+    .map((doc): IExportDocumentRecord => {
+      const record = toRecord(doc);
+      return { ...record, deleted: record['deletedAt'] != null };
+    });
 
   return {
     exportVersion: EXPORT_VERSION,

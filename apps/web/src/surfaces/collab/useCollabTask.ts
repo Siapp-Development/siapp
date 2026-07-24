@@ -125,7 +125,9 @@ export function useCollabUpdates(
           db,
           `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/updates`,
         ),
-        // authorId pin is what makes the rules list provable (D-c).
+        // authorType + authorId pins are what make the rules list
+        // provable (D-c: own collaborator-authored entries only).
+        where('authorType', '==', 'collaborator'),
         where('authorId', '==', collaboratorId),
         orderBy('createdAt', 'desc'),
       ),

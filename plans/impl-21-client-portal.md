@@ -164,5 +164,5 @@ Each step leaves `pnpm turbo build lint typecheck test` green and is independent
 - D6: Firm branding delivered as snapshot in `redeemPortalLink` response.
 - D7: Direct client-SDK Storage upload under portal rules (10MB, PDF/image/DOCX in rules), uuid-path obscurity as in #14.
 - D8: Sub-routes per wireframes (B2 overview / B3 documents / B4 updates).
-- Q1: Soft revoke — existing session valid ≤1h after Reset; no per-read linkId check.
+- Q1: Soft revoke — Reset blocks re-redemption of the old link only. An already-signed-in session is NOT time-bounded by the custom-token TTL (the exchanged refresh token keeps minting ID tokens until sign-out/revocation); it is contained instead by the per-read rules re-checks (lifecycle + current clientId), so unpublishing or re-linking the client closes it immediately. No per-read linkId check.
 - Q2: Add minimal firm-side milestones editor (title, date, done) in project Details tab — in scope.

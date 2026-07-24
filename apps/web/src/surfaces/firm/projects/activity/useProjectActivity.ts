@@ -55,6 +55,18 @@ export function mapActivity(id: string, data: DocumentData): IActivityRow {
     typeof data['payload'] === 'object' && data['payload'] !== null
       ? (data['payload'] as Record<string, unknown>)
       : {};
+  // task_assigned / task_unassigned write name ARRAYS; other actions write
+  // plain strings. Join arrays so assignee names survive into the timeline.
+  const payloadText = (value: unknown): string | null => {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      const names = value.filter((v): v is string => typeof v === 'string');
+      return names.length > 0 ? names.join(', ') : null;
+    }
+    return null;
+  };
   return {
     id,
     action: (data['action'] ?? 'task_created') as TProjectActivityAction,
@@ -62,8 +74,8 @@ export function mapActivity(id: string, data: DocumentData): IActivityRow {
     actorName: String(data['actorNameDenorm'] ?? ''),
     taskTitle: typeof data['taskTitleDenorm'] === 'string' ? data['taskTitleDenorm'] : '',
     docName: typeof data['docNameDenorm'] === 'string' ? data['docNameDenorm'] : '',
-    from: typeof payload['from'] === 'string' ? payload['from'] : null,
-    to: typeof payload['to'] === 'string' ? payload['to'] : null,
+    from: payloadText(payload['from']),
+    to: payloadText(payload['to']),
     wouldHaveNotified: data['wouldHaveNotified'] === true,
     restrictedToDepartments: Array.isArray(data['restrictedToDepartments'])
       ? (data['restrictedToDepartments'] as string[]).filter((d) => typeof d === 'string')

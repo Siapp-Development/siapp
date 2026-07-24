@@ -49,21 +49,25 @@ export async function revokeCollabLinksForTask(
   collaboratorIds: readonly string[],
 ): Promise<void> {
   const db = getFirestore();
-  for (const collaboratorId of collaboratorIds) {
-    const active = await db
-      .collection(`workspaces/${workspaceId}/magicLinks`)
-      .where('audience', '==', 'collaborator')
-      .where('scopeType', '==', 'task')
-      .where('scopeId', '==', taskId)
-      .where('subjectId', '==', collaboratorId)
-      .where('revoked', '==', false)
-      .get();
-    for (const snap of active.docs) {
-      await snap.ref.update({
-        revoked: true,
-        revokedAt: FieldValue.serverTimestamp(),
-        revokedBy: '',
-      });
-    }
-  }
+  await Promise.all(
+    collaboratorIds.map(async (collaboratorId) => {
+      const active = await db
+        .collection(`workspaces/${workspaceId}/magicLinks`)
+        .where('audience', '==', 'collaborator')
+        .where('scopeType', '==', 'task')
+        .where('scopeId', '==', taskId)
+        .where('subjectId', '==', collaboratorId)
+        .where('revoked', '==', false)
+        .get();
+      await Promise.all(
+        active.docs.map((snap) =>
+          snap.ref.update({
+            revoked: true,
+            revokedAt: FieldValue.serverTimestamp(),
+            revokedBy: 'system:task-assignee-removed',
+          }),
+        ),
+      );
+    }),
+  );
 }

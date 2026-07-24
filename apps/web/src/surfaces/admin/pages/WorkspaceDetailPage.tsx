@@ -229,9 +229,10 @@ export function WorkspaceDetailPage() {
             <div>
               <dt className="text-muted-foreground">WA allowance</dt>
               <dd className="font-medium">
+                {/* Always derived from plan + seats — the persisted
+                    includedPerPeriod can be stale (pre-#24 provisioning). */}
                 {workspace.whatsappAllowance?.used ?? 0} /{' '}
-                {workspace.whatsappAllowance?.includedPerPeriod ??
-                  includedForPlan(workspace.plan, workspace.seatLimit)}
+                {includedForPlan(workspace.plan, workspace.seatLimit)}
               </dd>
             </div>
             <div>

@@ -26,10 +26,22 @@ export interface IAuditEntry {
   userAgent?: string;
 }
 
-/** Writes one workspace audit-log entry. Log-and-continue on failure. */
-export async function writeAuditLog(workspaceId: string, entry: IAuditEntry): Promise<void> {
+/**
+ * Writes one workspace audit-log entry. Log-and-continue on failure.
+ *
+ * `dedupeKey` (pass from triggers, e.g. `${event.id}-${action}`): used as the
+ * document id so at-least-once redeliveries overwrite the same entry instead
+ * of duplicating the audit trail. Callables run once per user action and may
+ * omit it (random id).
+ */
+export async function writeAuditLog(
+  workspaceId: string,
+  entry: IAuditEntry,
+  dedupeKey?: string,
+): Promise<void> {
   try {
-    const ref = getFirestore().collection(`workspaces/${workspaceId}/auditLog`).doc();
+    const col = getFirestore().collection(`workspaces/${workspaceId}/auditLog`);
+    const ref = dedupeKey !== undefined ? col.doc(dedupeKey) : col.doc();
     await ref.set({
       ...entry,
       id: ref.id,

@@ -59,10 +59,10 @@ export function mapWorkspaceBilling(
   const seatLimit = asNumber(data?.['seatLimit'], 1);
   const allowance = data?.['whatsappAllowance'] as Record<string, unknown> | undefined;
   const waUsed = asNumber(allowance?.['used'], 0);
-  const waIncluded = asNumber(
-    allowance?.['includedPerPeriod'],
-    includedForPlan(plan, seatLimit),
-  );
+  // Always derived from plan + seats — the persisted includedPerPeriod can
+  // drift (provisioning seeded 50 * seatLimit regardless of plan) and would
+  // need a backfill to trust.
+  const waIncluded = includedForPlan(plan, seatLimit);
   const periodStart = asDate(allowance?.['periodStart']) ?? now;
   return {
     plan,
