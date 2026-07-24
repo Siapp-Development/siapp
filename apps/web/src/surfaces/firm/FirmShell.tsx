@@ -148,7 +148,12 @@ export function FirmShell() {
           <Route
             path="clients"
             element={
-              <ClientsListPage workspaceId={workspace.id} role={role} uid={state.user.uid} />
+              <ClientsListPage
+                workspaceId={workspace.id}
+                workspaceName={workspace.name}
+                role={role}
+                uid={state.user.uid}
+              />
             }
           />
           <Route
@@ -156,6 +161,7 @@ export function FirmShell() {
             element={
               <CollaboratorsListPage
                 workspaceId={workspace.id}
+                workspaceName={workspace.name}
                 role={role}
                 uid={state.user.uid}
               />

@@ -9,6 +9,7 @@ import type { TTaskStatus } from '@siapp/shared';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 
+import { PrivacyNotice } from '@/components/PrivacyNotice.tsx';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { useSurfaceTheme } from '@/hooks/useSurfaceTheme.ts';
 import { submitCollabUpdate } from '@/lib/callables.ts';
@@ -183,6 +184,12 @@ function CollabTaskView({ session }: { session: ICollabSession }) {
           </>
         )}
       </main>
+      <footer className="mx-auto max-w-xl border-t border-border px-6 py-4 text-center">
+        {/* #26 D5: static bilingual PDPA notice — the firm is the controller. */}
+        <PrivacyNotice
+          firmName={branding.firmName !== '' ? branding.firmName : 'The project team'}
+        />
+      </footer>
     </>
   );
 }

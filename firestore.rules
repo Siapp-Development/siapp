@@ -221,6 +221,23 @@ service cloud.firestore {
         && d.status in ['active', 'archived'];
     }
 
+    // WA/SMS consent record shape (#26, D1: firm-attested). Exact key set,
+    // recordedBy must be the caller (the attesting firm member), and the
+    // copy version travels with the record. Missing-key access on a
+    // malformed record errors → deny, which is the intent.
+    function validWaConsent() {
+      let c = request.resource.data.waConsent;
+      return c.keys().hasOnly(['granted', 'method', 'recordedBy', 'recordedAt', 'language', 'textVersion'])
+        && c.keys().hasAll(['granted', 'method', 'recordedBy', 'recordedAt', 'language', 'textVersion'])
+        && c.granted is bool
+        && c.method == 'firm_attested'
+        && c.recordedBy == request.auth.uid
+        && c.recordedAt is timestamp
+        && c.language in ['en', 'ms']
+        && c.textVersion is string
+        && c.textVersion.size() > 0;
+    }
+
     // Type validation for the client-editable project fields (#12).
     // #16: clientId and clientNameDenorm must be paired — either both empty
     // (no client linked) or both non-empty. No exists() check on clientId
@@ -533,15 +550,21 @@ service cloud.firestore {
       // field at MVP — clients are edit-only. notificationsOptOut is absent
       // from both allowlists: only the STOP webhook (Admin SDK) writes it,
       // and firms can never clear it (D-035).
+      // #26: waConsent is firm-writable (validWaConsent, D1) but never
+      // removable — dropping the field errors inside validWaConsent → deny;
+      // withdrawal is a fresh granted:false record. pdpaErased is server-only
+      // and freezes the doc: no further firm update once erased (D3), so
+      // un-erasing is impossible client-side.
       match /clients/{cid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
           && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'companyName', 'language',
-            'notes', 'createdAt', 'createdBy'
+            'notes', 'waConsent', 'createdAt', 'createdBy'
           ])
           && validClientFields()
+          && (!('waConsent' in request.resource.data) || validWaConsent())
           && request.resource.data.id == cid
           && request.resource.data.createdAt is timestamp
           && request.resource.data.createdBy == request.auth.uid;
@@ -549,12 +572,15 @@ service cloud.firestore {
         // the diff must never touch it (nor the identity fields).
         allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
           && workspaceActive(wid)
+          && !('pdpaErased' in resource.data)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'companyName', 'language',
-            'notes', 'notificationsOptOut', 'createdAt', 'createdBy'
+            'notes', 'notificationsOptOut', 'waConsent', 'createdAt', 'createdBy'
           ])
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'phone', 'email', 'companyName', 'language', 'notes'])
+            .hasOnly(['name', 'phone', 'email', 'companyName', 'language', 'notes', 'waConsent'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['waConsent'])
+            || validWaConsent())
           && validClientFields();
         allow delete: if false;
       }
@@ -563,28 +589,33 @@ service cloud.firestore {
       // Removal is archival via `status` (task assignees + phoneIndex refs
       // would orphan on delete). notificationsOptOut and lastTaskAt are
       // server-only — absent from both allowlists.
+      // #26: same waConsent + pdpaErased posture as clients above.
       match /collaborators/{colid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
           && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
-            'status', 'createdAt', 'invitedBy'
+            'status', 'waConsent', 'createdAt', 'invitedBy'
           ])
           && validCollaboratorFields()
+          && (!('waConsent' in request.resource.data) || validWaConsent())
           && request.resource.data.id == colid
           && request.resource.data.status == 'active'
           && request.resource.data.createdAt is timestamp
           && request.resource.data.invitedBy == request.auth.uid;
         allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
           && workspaceActive(wid)
+          && !('pdpaErased' in resource.data)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
-            'status', 'notificationsOptOut', 'lastTaskAt', 'createdAt',
-            'invitedBy'
+            'status', 'notificationsOptOut', 'lastTaskAt', 'waConsent',
+            'createdAt', 'invitedBy'
           ])
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['name', 'phone', 'email', 'company', 'trade', 'type', 'status'])
+            .hasOnly(['name', 'phone', 'email', 'company', 'trade', 'type', 'status', 'waConsent'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['waConsent'])
+            || validWaConsent())
           && validCollaboratorFields();
         allow delete: if false;
       }

@@ -6,6 +6,7 @@
  *   toggle/trigger/recipient off  → no record at all
  *   project not published         → suppressed 'lifecycle:<state>' (D-027 preview)
  *   recipient opted out           → suppressed 'opt_out'
+ *   client without waConsent      → suppressed 'no_consent' (#26 D2; members exempt)
  *   recipient unresolvable        → suppressed 'no_recipient' | 'no_phone'
  *   inside quiet hours            → queued + holdUntil = next window end
  *   otherwise                     → queued, no holdUntil
@@ -21,6 +22,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import { isOptedOut } from './optOut.js';
+import { hasWaConsent } from './pdpa.js';
 import { holdUntilFor, mytDateString, resolveQuietHours, type IQuietHours } from './quietHours.js';
 import { resolveNotify, type ITaskNotifyConfig } from './notifyConfig.js';
 
@@ -70,6 +72,12 @@ interface IRecipient {
   id: string;
   phone: string | null;
   optedOut: boolean;
+  /**
+   * #26 D2: the recipient's doc is in hand but carries no waConsent grant.
+   * Only ever true for clients/collaborators — members are exempt (contract
+   * basis). A missing doc stays 'no_recipient' (cannot prove either way).
+   */
+  noConsent: boolean;
   /** Suppression when the recipient cannot be resolved at all. */
   unresolvableReason: 'no_recipient' | 'no_phone' | null;
 }
@@ -91,6 +99,7 @@ function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNoti
       id: linked ? clientId : '',
       phone,
       optedOut: isOptedOut(input.clientData),
+      noConsent: input.clientData !== undefined && !hasWaConsent(input.clientData),
       unresolvableReason: !linked || input.clientData === undefined
         ? 'no_recipient'
         : phone === null
@@ -122,6 +131,8 @@ function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNoti
         id: uid,
         phone,
         optedOut: isOptedOut(profile),
+        // Members receive notifications on a contract basis (#26 D2 exempt).
+        noConsent: false,
         unresolvableReason: phone === null ? 'no_phone' : null,
       });
     }
@@ -181,7 +192,9 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
         ? `lifecycle:${typeof lifecycle === 'string' ? lifecycle : 'draft'}`
         : recipient.optedOut
           ? 'opt_out'
-          : recipient.unresolvableReason;
+          : recipient.noConsent
+            ? 'no_consent'
+            : recipient.unresolvableReason;
 
     // D5: deterministic id per task, recipient, and MYT day so re-runs and
     // overlapping sweep windows cannot double-enqueue.
