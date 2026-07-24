@@ -241,6 +241,8 @@ export interface IProjectSummary {
   totalTasks: number;
   doneTasks: number;
   overdueTasks: number;
+  /** Optional: absent on projects untouched since the #17 trigger deploy. */
+  blockedTasks?: number;
   progressPct: number;
   lastActivityAt: Date;
 }

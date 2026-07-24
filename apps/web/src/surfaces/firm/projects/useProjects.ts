@@ -36,6 +36,7 @@ export interface IProjectRow {
   totalTasks: number;
   doneTasks: number;
   overdueTasks: number;
+  blockedTasks: number;
   clientCanSee: boolean;
   collaboratorsCount: number;
 }
@@ -74,6 +75,8 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
     totalTasks: typeof summary['totalTasks'] === 'number' ? summary['totalTasks'] : 0,
     doneTasks: typeof summary['doneTasks'] === 'number' ? summary['doneTasks'] : 0,
     overdueTasks: typeof summary['overdueTasks'] === 'number' ? summary['overdueTasks'] : 0,
+    // Absent on projects untouched since the #17 trigger deploy — treat as 0.
+    blockedTasks: typeof summary['blockedTasks'] === 'number' ? summary['blockedTasks'] : 0,
     clientCanSee: visibility['clientCanSee'] === true,
     collaboratorsCount:
       typeof visibility['collaboratorsCount'] === 'number' ? visibility['collaboratorsCount'] : 0,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { User } from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
@@ -21,6 +21,11 @@ vi.mock('firebase/auth', () => ({
   signOut: vi.fn(),
 }));
 // Route targets subscribe to Firestore — covered by their own test files.
+vi.mock('./dashboard/DashboardPage.tsx', () => ({
+  DashboardPage: ({ workspaceName }: { workspaceName: string }) => (
+    <h1>Home — {workspaceName}</h1>
+  ),
+}));
 vi.mock('./projects/ProjectsListPage.tsx', () => ({
   ProjectsListPage: ({ workspaceName }: { workspaceName: string }) => (
     <h1>Projects — {workspaceName}</h1>
@@ -54,14 +59,34 @@ function renderShell(initialEntry: string, signOutUser = vi.fn(async () => {})) 
 }
 
 describe('FirmShell', () => {
-  it('renders the workspace when the slug matches a claimed workspace', () => {
+  it('renders Home at the workspace index when the slug matches a claimed workspace', () => {
     renderShell('/acme');
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Home — Acme Builders' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
+    expect(screen.getByText('Alice Tan')).toBeInTheDocument();
+  });
+
+  it('renders the projects list at /projects', () => {
+    renderShell('/acme/projects');
 
     expect(
       screen.getByRole('heading', { level: 1, name: 'Projects — Acme Builders' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
-    expect(screen.getByText('Alice Tan')).toBeInTheDocument();
+  });
+
+  it('marks the active nav item with aria-current', () => {
+    renderShell('/acme/projects');
+
+    const nav = screen.getByRole('navigation', { name: 'Workspace' });
+    expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/acme');
+    expect(within(nav).getByRole('link', { name: 'Projects' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(nav).getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
   });
 
   it('shows one non-leaking screen for foreign or unknown slugs', () => {

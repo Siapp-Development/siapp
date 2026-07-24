@@ -1,13 +1,31 @@
-import { Button } from '@siapp/ui';
-import { Link, Route, Routes, useParams } from 'react-router';
+import { Button, cn } from '@siapp/ui';
+import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { ClientsListPage } from './clients/ClientsListPage.tsx';
 import { CollaboratorsListPage } from './collaborators/CollaboratorsListPage.tsx';
+import { DashboardPage } from './dashboard/DashboardPage.tsx';
 import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
 import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
+
+/** Sidebar nav link — NavLink supplies aria-current="page" on the active route. */
+function NavItem({ to, end = false, label }: { to: string; end?: boolean; label: string }) {
+  return (
+    <li>
+      <NavLink
+        to={to}
+        end={end}
+        className={({ isActive }) =>
+          cn('text-foreground hover:text-primary', isActive && 'font-semibold text-primary')
+        }
+      >
+        {label}
+      </NavLink>
+    </li>
+  );
+}
 
 /**
  * Firm dashboard shell at dashboard.siapp.app/:workspaceSlug/* — the URL slug
@@ -65,35 +83,11 @@ export function FirmShell() {
         <p className="text-lg font-semibold text-primary">Siapp</p>
         <nav aria-label="Workspace" className="mt-6">
           <ul className="flex flex-col gap-2">
-            <li>
-              <Link to={`/${workspace.slug}`} className="text-foreground hover:text-primary">
-                Projects
-              </Link>
-            </li>
-            <li>
-              <Link
-                to={`/${workspace.slug}/clients`}
-                className="text-foreground hover:text-primary"
-              >
-                Clients
-              </Link>
-            </li>
-            <li>
-              <Link
-                to={`/${workspace.slug}/collaborators`}
-                className="text-foreground hover:text-primary"
-              >
-                Collaborators
-              </Link>
-            </li>
-            <li>
-              <Link
-                to={`/${workspace.slug}/settings/team`}
-                className="text-foreground hover:text-primary"
-              >
-                Settings
-              </Link>
-            </li>
+            <NavItem to={`/${workspace.slug}`} end label="Home" />
+            <NavItem to={`/${workspace.slug}/projects`} label="Projects" />
+            <NavItem to={`/${workspace.slug}/clients`} label="Clients" />
+            <NavItem to={`/${workspace.slug}/collaborators`} label="Collaborators" />
+            <NavItem to={`/${workspace.slug}/settings/team`} label="Settings" />
           </ul>
         </nav>
         <div className="mt-auto flex flex-col gap-2 pt-6">
@@ -107,6 +101,19 @@ export function FirmShell() {
         <Routes>
           <Route
             index
+            element={
+              <DashboardPage
+                workspaceId={workspace.id}
+                workspaceSlug={workspace.slug}
+                workspaceName={workspace.name}
+                role={role}
+                departments={state.claims.workspaces[workspace.id]?.departments ?? []}
+                uid={state.user.uid}
+              />
+            }
+          />
+          <Route
+            path="projects"
             element={
               <ProjectsListPage
                 workspaceId={workspace.id}

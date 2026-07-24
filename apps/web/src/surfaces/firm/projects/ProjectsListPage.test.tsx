@@ -60,6 +60,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     totalTasks: 0,
     doneTasks: 0,
     overdueTasks: 0,
+    blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
     ...overrides,
@@ -141,6 +142,43 @@ describe('ProjectsListPage', () => {
     renderPage('viewer');
     expect(screen.queryByRole('button', { name: /new project/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  });
+
+  it('opens the New-project chooser on arrival with ?new=1 (#17 Home CTA)', () => {
+    render(
+      <MemoryRouter initialEntries={['/acme/projects?new=1']}>
+        <ProjectsListPage
+          workspaceId="wksA"
+          workspaceSlug="acme"
+          workspaceName="Acme Builders"
+          role="owner"
+          departments={[]}
+          uid="u1"
+          userName="Alice Tan"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { level: 2, name: 'New project' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Blank' })).toBeChecked();
+  });
+
+  it('ignores ?new=1 for viewers', () => {
+    render(
+      <MemoryRouter initialEntries={['/acme/projects?new=1']}>
+        <ProjectsListPage
+          workspaceId="wksA"
+          workspaceSlug="acme"
+          workspaceName="Acme Builders"
+          role="viewer"
+          departments={[]}
+          uid="u1"
+          userName="Alice Tan"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('heading', { level: 2, name: 'New project' })).not.toBeInTheDocument();
   });
 
   it('creates a draft project from the form', async () => {
