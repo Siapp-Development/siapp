@@ -1,13 +1,5 @@
 {
-  "indexes": [
-    {
-      "collectionGroup": "adminLog",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "ts", "order": "DESCENDING" }
-      ]
-    }
-  ],
+  "indexes": [],
   "fieldOverrides": [
     {
       "collectionGroup": "members",

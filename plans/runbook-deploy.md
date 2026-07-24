@@ -106,6 +106,11 @@ deploys are incremental.
   defaults don't count). Add the value to
   [backend/functions/.env.siapp-prod](../backend/functions/.env.siapp-prod)
   (committed, public values only — secrets go through `defineSecret`).
+- **400 "this index is not necessary, configure using single field index
+  controls"** — `firestore.indexes.json` contains a single-field index;
+  Firestore creates those automatically and the composite-index API rejects
+  them. Keep only multi-field (composite) entries in `indexes`; single-field
+  exemptions belong in `fieldOverrides`.
 - **Functions prompt about deleting a function** — the workflow passes
   `--force`, so removals are applied automatically. If a function disappears
   unexpectedly, check that it's still exported from
