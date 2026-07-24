@@ -5,13 +5,13 @@
  * arrives via useProjects + useDashboardTasks; this page performs no writes.
  */
 
-import { Button, cn } from '@siapp/ui';
+import { Button, Progress, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
 import { LifecycleBadge } from '../projects/LifecycleBadge.tsx';
-import { TASK_STATUS_LABELS } from '../projects/tasks/taskLabels.ts';
+import { TaskStatusBadge } from '../projects/tasks/TaskStatusBadge.tsx';
 import { useProjects } from '../projects/useProjects.ts';
 import { bucketTasks } from './dueBuckets.ts';
 import { HealthBadge } from './HealthBadge.tsx';
@@ -20,10 +20,30 @@ import { useDashboardTasks, type IDashboardTaskRow } from './useDashboardTasks.t
 
 type TBucketId = 'myOpen' | 'overdue' | 'dueThisWeek';
 
-const BUCKETS: ReadonlyArray<{ id: TBucketId; label: string; empty: string }> = [
-  { id: 'myOpen', label: 'My tasks', empty: 'No other open tasks assigned to you.' },
-  { id: 'overdue', label: 'Overdue', empty: 'Nothing overdue. Nice work.' },
-  { id: 'dueThisWeek', label: 'Due this week', empty: 'Nothing due in the next 7 days.' },
+const BUCKETS: ReadonlyArray<{
+  id: TBucketId;
+  label: string;
+  empty: string;
+  countClass: string;
+}> = [
+  {
+    id: 'myOpen',
+    label: 'My tasks',
+    empty: 'No other open tasks assigned to you.',
+    countClass: 'text-foreground',
+  },
+  {
+    id: 'overdue',
+    label: 'Overdue',
+    empty: 'Nothing overdue. Nice work.',
+    countClass: 'text-danger',
+  },
+  {
+    id: 'dueThisWeek',
+    label: 'Due this week',
+    empty: 'Nothing due in the next 7 days.',
+    countClass: 'text-warning',
+  },
 ];
 
 interface ITaskListItemProps {
@@ -33,19 +53,19 @@ interface ITaskListItemProps {
 
 function TaskListItem({ task, workspaceSlug }: ITaskListItemProps) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-4 py-3">
-      <span className="flex flex-col">
-        <span className="font-medium">{task.title}</span>
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3 shadow-card">
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-medium">{task.title}</span>
         <Link
           to={`/${workspaceSlug}/projects/${task.projectId}`}
-          className="text-sm text-muted-foreground hover:text-primary"
+          className="truncate text-sm text-muted-foreground hover:text-primary"
         >
           {task.projectName}
         </Link>
       </span>
-      <span className="text-sm text-muted-foreground">
-        {TASK_STATUS_LABELS[task.status]}
-        {task.dueDate !== null && ` · due ${task.dueDate.toLocaleDateString()}`}
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+        <TaskStatusBadge status={task.status} />
+        {task.dueDate !== null && <span>due {task.dueDate.toLocaleDateString()}</span>}
       </span>
     </li>
   );
@@ -95,11 +115,13 @@ export function DashboardPage({
   const errored = projects.status === 'error' || tasks.status === 'error';
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto flex max-w-5xl flex-col gap-8">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-5">
         <div>
-          <h1 className="text-2xl font-bold">Home</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{workspaceName}</p>
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {workspaceName}
+          </p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">Home</h1>
         </div>
         {canCreate && (
           <Button asChild>
@@ -118,7 +140,7 @@ export function DashboardPage({
               Your tasks
             </h2>
             {/* KPI cards double as the bucket tabs (D9). */}
-            <div role="tablist" aria-label="Task buckets" className="flex flex-wrap gap-2">
+            <div role="tablist" aria-label="Task buckets" className="grid gap-3 sm:grid-cols-3">
               {BUCKETS.map((entry) => (
                 <button
                   key={entry.id}
@@ -129,14 +151,23 @@ export function DashboardPage({
                   aria-controls="dashboard-task-panel"
                   onClick={() => setBucket(entry.id)}
                   className={cn(
-                    'min-w-36 rounded-md border px-4 py-3 text-left',
+                    'rounded-lg border bg-card px-4 py-3.5 text-left shadow-card transition-colors duration-150',
                     bucket === entry.id
-                      ? 'border-primary bg-primary/5'
+                      ? 'border-primary ring-1 ring-primary'
                       : 'border-border hover:border-primary/50',
                   )}
                 >
-                  <span className="block text-2xl font-bold">{buckets[entry.id].length}</span>
-                  <span className="block text-sm text-muted-foreground">{entry.label}</span>
+                  <span
+                    className={cn(
+                      'block font-display text-3xl font-bold tabular-nums',
+                      buckets[entry.id].length > 0 ? entry.countClass : 'text-muted-foreground',
+                    )}
+                  >
+                    {buckets[entry.id].length}
+                  </span>
+                  <span className="mt-0.5 block text-sm font-medium text-muted-foreground">
+                    {entry.label}
+                  </span>
                 </button>
               ))}
             </div>
@@ -146,7 +177,9 @@ export function DashboardPage({
               aria-labelledby={`dashboard-tab-${bucket}`}
             >
               {buckets[bucket].length === 0 ? (
-                <p className="text-sm">{BUCKETS.find((b) => b.id === bucket)?.empty}</p>
+                <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                  {BUCKETS.find((b) => b.id === bucket)?.empty}
+                </p>
               ) : (
                 <ul className="flex flex-col gap-2">
                   {buckets[bucket].map((task) => (
@@ -178,26 +211,35 @@ export function DashboardPage({
               </p>
             </div>
             {attention.length === 0 ? (
-              <p className="text-sm">All projects are on track.</p>
+              <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                All projects are on track.
+              </p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {attention.map((project) => (
                   <li
                     key={project.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border bg-card px-4 py-3 shadow-card"
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
                       <Link
                         to={`/${workspaceSlug}/projects/${project.id}`}
-                        className="font-medium text-foreground hover:text-primary"
+                        className="truncate font-medium text-foreground hover:text-primary"
                       >
                         {project.name}
                       </Link>
                       <LifecycleBadge lifecycle={project.lifecycle} />
                       <HealthBadge project={project} />
                     </span>
-                    <span className="text-sm text-muted-foreground">
-                      {project.progressPct}% complete
+                    <span className="flex w-44 items-center gap-2">
+                      <Progress
+                        value={project.progressPct}
+                        label={`${project.name} progress`}
+                        className="flex-1"
+                      />
+                      <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                        {project.progressPct}%
+                      </span>
                     </span>
                   </li>
                 ))}

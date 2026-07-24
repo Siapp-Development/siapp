@@ -1,4 +1,5 @@
 import { Button, cn } from '@siapp/ui';
+import type { ReactNode } from 'react';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
@@ -15,20 +16,91 @@ import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
 
 /** Sidebar nav link — NavLink supplies aria-current="page" on the active route. */
-function NavItem({ to, end = false, label }: { to: string; end?: boolean; label: string }) {
+function NavItem({
+  to,
+  end = false,
+  label,
+  icon,
+}: {
+  to: string;
+  end?: boolean;
+  label: string;
+  icon: ReactNode;
+}) {
   return (
     <li>
       <NavLink
         to={to}
         end={end}
         className={({ isActive }) =>
-          cn('text-foreground hover:text-primary', isActive && 'font-semibold text-primary')
+          cn(
+            'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150',
+            isActive
+              ? 'bg-sidebar-active text-sidebar-active-foreground before:absolute before:top-1.5 before:bottom-1.5 before:-left-2 before:w-0.5 before:rounded-full before:bg-accent'
+              : 'text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-sidebar-active-foreground',
+          )
         }
       >
+        <span aria-hidden="true" className="shrink-0 opacity-80">
+          {icon}
+        </span>
         {label}
       </NavLink>
     </li>
   );
+}
+
+const ICON_PROPS = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const;
+
+const NAV_ICONS = {
+  home: (
+    <svg {...ICON_PROPS}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V21h14V9.5" />
+    </svg>
+  ),
+  projects: (
+    <svg {...ICON_PROPS}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </svg>
+  ),
+  clients: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20c.8-3.2 3.6-5 7-5s6.2 1.8 7 5" />
+    </svg>
+  ),
+  collaborators: (
+    <svg {...ICON_PROPS}>
+      <circle cx="9" cy="8.5" r="3" />
+      <path d="M3.5 19.5c.7-2.8 3-4.5 5.5-4.5s4.8 1.7 5.5 4.5" />
+      <path d="M16 5.7a3 3 0 0 1 0 5.6M18.5 15.6c1.2.8 2 2 2.3 3.9" />
+    </svg>
+  ),
+  settings: (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09c0 .68.4 1.3 1.03 1.56a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.26.63.88 1.03 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z" />
+    </svg>
+  ),
+} as const;
+
+function userInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter((part) => part !== '')
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
 }
 
 /**
@@ -83,25 +155,65 @@ export function FirmShell() {
   return (
     <div className="flex min-h-screen">
       <SkipLink />
-      <aside className="flex w-56 flex-col border-r border-border bg-card px-4 py-6">
-        <p className="text-lg font-semibold text-primary">Siapp</p>
-        <nav aria-label="Workspace" className="mt-6">
-          <ul className="flex flex-col gap-2">
-            <NavItem to={`/${workspace.slug}`} end label="Home" />
-            <NavItem to={`/${workspace.slug}/projects`} label="Projects" />
-            <NavItem to={`/${workspace.slug}/clients`} label="Clients" />
-            <NavItem to={`/${workspace.slug}/collaborators`} label="Collaborators" />
-            <NavItem to={`/${workspace.slug}/settings/team`} label="Settings" />
+      <aside className="on-dark sticky top-0 flex h-screen w-60 flex-col bg-sidebar px-4 py-5">
+        <p className="flex items-center gap-2.5 px-3">
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 items-center justify-center rounded-md bg-accent font-display text-sm font-bold text-accent-foreground"
+          >
+            S
+          </span>
+          <span className="font-display text-lg font-semibold tracking-tight text-white">
+            Siapp
+          </span>
+        </p>
+        <p className="mt-5 px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">
+          {workspace.name}
+        </p>
+        <nav aria-label="Workspace" className="mt-2">
+          <ul className="flex flex-col gap-0.5">
+            <NavItem to={`/${workspace.slug}`} end label="Home" icon={NAV_ICONS.home} />
+            <NavItem
+              to={`/${workspace.slug}/projects`}
+              label="Projects"
+              icon={NAV_ICONS.projects}
+            />
+            <NavItem to={`/${workspace.slug}/clients`} label="Clients" icon={NAV_ICONS.clients} />
+            <NavItem
+              to={`/${workspace.slug}/collaborators`}
+              label="Collaborators"
+              icon={NAV_ICONS.collaborators}
+            />
+            <NavItem
+              to={`/${workspace.slug}/settings/team`}
+              label="Settings"
+              icon={NAV_ICONS.settings}
+            />
           </ul>
         </nav>
-        <div className="mt-auto flex flex-col gap-2 pt-6">
-          <p className="text-sm">{state.user.displayName ?? state.user.email}</p>
-          <Button variant="outline" size="sm" onClick={() => void signOutUser()}>
+        <div className="mt-auto flex flex-col gap-3 border-t border-sidebar-border pt-4">
+          <p className="flex items-center gap-2.5 px-1">
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-white"
+            >
+              {userInitials(state.user.displayName ?? state.user.email ?? '?')}
+            </span>
+            <span className="truncate text-sm text-sidebar-foreground">
+              {state.user.displayName ?? state.user.email}
+            </span>
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-sidebar-border bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-active hover:text-white"
+            onClick={() => void signOutUser()}
+          >
             Sign out
           </Button>
         </div>
       </aside>
-      <main id="main" className="flex-1 px-8 py-10">
+      <main id="main" className="min-w-0 flex-1 px-8 py-8">
         {/* #24: read-only / usage banners on every firm page */}
         <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
         <Routes>

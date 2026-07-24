@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 @import './tokens.css';
+/* Self-hosted variable fonts (PDPA: no third-party font CDN calls). */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/space-grotesk';
 
 /* Tailwind must scan this package's components for used utilities. */
 @source '../';
@@ -10,6 +13,8 @@
   --color-foreground: var(--foreground);
   --color-card: var(--surface-card);
   --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
   --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-deep: var(--primary-deep);
@@ -25,7 +30,19 @@
   --color-success-tint: var(--success-tint);
   --color-danger: var(--danger);
   --color-danger-tint: var(--danger-tint);
+  /* Legacy alias — several screens use `destructive`; keep it mapped to danger. */
+  --color-destructive: var(--danger);
+  --color-destructive-tint: var(--danger-tint);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
   --radius-md: var(--radius);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
 }
 
 @layer base {
@@ -36,13 +53,21 @@
 
   body {
     margin: 0;
-    font-family:
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      Roboto,
-      sans-serif;
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Display face for headings — drafting-lettering personality. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
   }
 
   /* Visible focus for keyboard users; never removed without replacement. */
@@ -63,6 +88,11 @@
 }
 
 @layer components {
+  /* Dark chrome (firm sidebar): keep keyboard focus visible on dark bg. */
+  .on-dark :focus-visible {
+    outline-color: var(--sidebar-ring);
+  }
+
   /* Skip link: visually hidden until focused, always first in tab order. */
   .skip-link {
     position: absolute;

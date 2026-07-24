@@ -1,3 +1,4 @@
+import { Progress } from '@siapp/ui';
 import { Link } from 'react-router';
 
 import { TimespanBar } from './TimespanBar.tsx';
@@ -44,17 +45,19 @@ export function PortalProjectPage() {
   return (
     <div className="space-y-6">
       <section aria-labelledby="overview-heading">
-        <h1 id="overview-heading" className="text-2xl font-bold">
+        <h1 id="overview-heading" className="text-3xl font-bold tracking-tight">
           {project.name}
         </h1>
-        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div>
-            <dt className="text-muted-foreground">Started</dt>
-            <dd className="font-medium">{formatDate(project.startDate)}</dd>
+            <dt className="text-xs tracking-wide text-muted-foreground uppercase">Started</dt>
+            <dd className="mt-0.5 font-medium">{formatDate(project.startDate)}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Target completion</dt>
-            <dd className="font-medium">{formatDate(project.targetEndDate)}</dd>
+            <dt className="text-xs tracking-wide text-muted-foreground uppercase">
+              Target completion
+            </dt>
+            <dd className="mt-0.5 font-medium">{formatDate(project.targetEndDate)}</dd>
           </div>
         </dl>
         <div className="mt-4">
@@ -62,25 +65,23 @@ export function PortalProjectPage() {
         </div>
       </section>
 
-      <section aria-labelledby="progress-heading" className="rounded-lg border border-border p-4">
+      <section
+        aria-labelledby="progress-heading"
+        className="rounded-lg border border-border bg-card p-4 shadow-card"
+      >
         <h2 id="progress-heading" className="text-sm font-semibold">
           Progress
         </h2>
-        <div className="mt-2 flex items-center gap-3">
-          <div
-            role="progressbar"
-            aria-valuenow={project.progressPct}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Project progress"
-            className="h-2 flex-1 rounded-full bg-muted"
-          >
-            <div
-              className="h-2 rounded-full bg-primary"
-              style={{ width: `${project.progressPct}%` }}
-            />
-          </div>
-          <span className="text-sm font-medium">{project.progressPct}%</span>
+        <div className="mt-3 flex items-center gap-3">
+          <Progress
+            value={project.progressPct}
+            label="Project progress"
+            className="h-2 flex-1"
+            indicatorClassName="bg-accent"
+          />
+          <span className="font-display text-lg font-bold tabular-nums">
+            {project.progressPct}%
+          </span>
         </div>
         {phase !== null ? (
           <p className="mt-3 text-sm">
@@ -94,7 +95,10 @@ export function PortalProjectPage() {
         )}
       </section>
 
-      <section aria-labelledby="milestone-heading" className="rounded-lg border border-border p-4">
+      <section
+        aria-labelledby="milestone-heading"
+        className="rounded-lg border border-border bg-card p-4 shadow-card"
+      >
         <h2 id="milestone-heading" className="text-sm font-semibold">
           Next milestone
         </h2>
@@ -110,7 +114,10 @@ export function PortalProjectPage() {
         )}
       </section>
 
-      <section aria-labelledby="updates-heading" className="rounded-lg border border-border p-4">
+      <section
+        aria-labelledby="updates-heading"
+        className="rounded-lg border border-border bg-card p-4 shadow-card"
+      >
         <div className="flex items-baseline justify-between">
           <h2 id="updates-heading" className="text-sm font-semibold">
             Recent updates
@@ -132,7 +139,7 @@ export function PortalProjectPage() {
 
       <Link
         to="documents"
-        className="block rounded-lg border border-border p-4 text-sm font-medium hover:bg-muted"
+        className="block rounded-lg border border-border bg-card p-4 text-sm font-medium shadow-card transition-colors duration-150 hover:border-accent/50 hover:bg-muted"
       >
         View and share documents →
       </Link>

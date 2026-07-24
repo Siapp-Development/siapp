@@ -105,11 +105,23 @@ export function LoginPage() {
     <>
       <SkipLink />
       <main id="main" className="flex min-h-screen items-center justify-center px-4 py-10">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <h1 className="text-xl font-bold">Sign in to Siapp</h1>
-            <p className="text-sm">The dashboard for your firm's workspace.</p>
-          </CardHeader>
+        <div className="w-full max-w-sm">
+          <div className="mb-6 flex items-center justify-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-accent font-display text-lg font-bold text-accent-foreground"
+            >
+              S
+            </span>
+            <span className="font-display text-2xl font-bold tracking-tight">Siapp</span>
+          </div>
+          <Card className="shadow-raised">
+            <CardHeader>
+              <h1 className="text-xl font-bold">Sign in to Siapp</h1>
+              <p className="text-sm text-muted-foreground">
+                The dashboard for your firm's workspace.
+              </p>
+            </CardHeader>
           <CardContent>
             {formError !== null && (
               <Alert variant="destructive" className="mb-4">
@@ -186,7 +198,8 @@ export function LoginPage() {
               Continue with Google
             </Button>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </main>
     </>
   );

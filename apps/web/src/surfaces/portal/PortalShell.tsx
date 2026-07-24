@@ -48,21 +48,24 @@ export function PortalShell() {
   return (
     <div className="flex min-h-dvh flex-col">
       <SkipLink />
-      <header className="border-b border-border bg-card px-6 py-4">
+      <header className="border-b border-border bg-card px-6 pt-6">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           {branding.logoUrl !== undefined && (
-            <img src={branding.logoUrl} alt="" className="h-8 w-8 rounded object-contain" />
+            <img src={branding.logoUrl} alt="" className="h-9 w-9 rounded object-contain" />
           )}
-          <p
-            className="text-lg font-semibold text-primary"
-            style={
-              branding.primaryColor !== undefined ? { color: branding.primaryColor } : undefined
-            }
-          >
-            {branding.firmName !== '' ? branding.firmName : 'Client portal'}
-          </p>
+          <div className="min-w-0">
+            <p
+              className="truncate font-display text-xl font-bold tracking-tight text-foreground"
+              style={
+                branding.primaryColor !== undefined ? { color: branding.primaryColor } : undefined
+              }
+            >
+              {branding.firmName !== '' ? branding.firmName : 'Client portal'}
+            </p>
+            <p className="text-xs tracking-wide text-muted-foreground uppercase">Project portal</p>
+          </div>
         </div>
-        <nav aria-label="Portal sections" className="mx-auto mt-3 max-w-lg">
+        <nav aria-label="Portal sections" className="mx-auto mt-4 max-w-lg">
           <ul className="flex gap-1">
             {NAV_ITEMS.map((item) => (
               <li key={item.label}>
@@ -70,10 +73,10 @@ export function PortalShell() {
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `rounded-md px-3 py-1.5 text-sm font-medium ${
+                    `inline-flex min-h-11 items-center border-b-2 px-3 pt-1 text-sm font-medium transition-colors duration-150 ${
                       isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        ? 'border-accent text-foreground'
+                        : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
                     }`
                   }
                 >
@@ -84,7 +87,7 @@ export function PortalShell() {
           </ul>
         </nav>
       </header>
-      <main id="main" className="mx-auto w-full max-w-lg flex-1 px-6 py-6">
+      <main id="main" className="mx-auto w-full max-w-lg flex-1 px-6 py-7">
         <PortalSessionProvider value={session}>
           <Outlet />
         </PortalSessionProvider>
