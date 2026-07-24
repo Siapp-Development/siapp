@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
+import { DocumentsSection } from './documents/DocumentsSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
@@ -225,7 +226,7 @@ export function ProjectDetailPage({
   const { projectId = '' } = useParams<'projectId'>();
   const state = useProject(workspaceId, projectId);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<'tasks' | 'details'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'documents' | 'details'>('tasks');
 
   if (state.status === 'loading') {
     return <p className="text-sm">Loading project…</p>;
@@ -267,6 +268,7 @@ export function ProjectDetailPage({
         {(
           [
             { id: 'tasks', label: 'Tasks' },
+            { id: 'documents', label: 'Documents' },
             { id: 'details', label: 'Details' },
           ] as const
         ).map((entry) => (
@@ -300,6 +302,18 @@ export function ProjectDetailPage({
         />
       )}
 
+      {tab === 'documents' && (
+        <DocumentsSection
+          workspaceId={workspaceId}
+          projectId={project.id}
+          role={role}
+          departments={departments}
+          uid={uid}
+          userName={userName}
+          canEdit={canEdit}
+        />
+      )}
+
       {tab === 'details' && (
         <>
           <Card>
@@ -318,7 +332,12 @@ export function ProjectDetailPage({
                   submitLabel="Save changes"
                   onCancel={() => setEditing(false)}
                   onSubmit={async (values) => {
-                    await updateProject(workspaceId, project.id, values, project.collaboratorsCount);
+                    await updateProject(
+                      workspaceId,
+                      project.id,
+                      values,
+                      project.collaboratorsCount,
+                    );
                     setEditing(false);
                   }}
                 />
@@ -326,7 +345,11 @@ export function ProjectDetailPage({
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                   <div>
                     <dt className="text-muted-foreground">Client</dt>
-                    <dd>{project.clientNameDenorm !== '' ? project.clientNameDenorm : 'No client linked'}</dd>
+                    <dd>
+                      {project.clientNameDenorm !== ''
+                        ? project.clientNameDenorm
+                        : 'No client linked'}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Status</dt>
@@ -357,7 +380,9 @@ export function ProjectDetailPage({
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Client visibility</dt>
-                    <dd>{project.clientCanSee ? 'Client can see this project' : 'Hidden from client'}</dd>
+                    <dd>
+                      {project.clientCanSee ? 'Client can see this project' : 'Hidden from client'}
+                    </dd>
                   </div>
                 </dl>
               )}

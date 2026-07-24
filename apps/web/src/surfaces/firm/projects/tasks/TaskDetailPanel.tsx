@@ -12,6 +12,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
+import { TaskAttachments } from '../documents/DocumentsSection.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import {
@@ -90,7 +91,14 @@ interface IActivityFeedProps {
   userName: string;
 }
 
-function ActivityFeed({ workspaceId, projectId, taskId, members, uid, userName }: IActivityFeedProps) {
+function ActivityFeed({
+  workspaceId,
+  projectId,
+  taskId,
+  members,
+  uid,
+  userName,
+}: IActivityFeedProps) {
   const updatesState = useTaskUpdates(workspaceId, projectId, taskId);
   const [comment, setComment] = useState('');
   const [pending, setPending] = useState(false);
@@ -393,7 +401,9 @@ export function TaskDetailPanel({
                 onClick={() => setTab(entry)}
                 className={cn(
                   'rounded-md px-3 py-1 text-sm capitalize',
-                  tab === entry ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
+                  tab === entry
+                    ? 'bg-muted font-medium'
+                    : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {entry}
@@ -415,266 +425,288 @@ export function TaskDetailPanel({
             uid={uid}
             userName={userName}
           />
-        ) : !canEdit ? (
-          <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">Status</dt>
-              <dd>{TASK_STATUS_LABELS[task.status]}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Due date</dt>
-              <dd>{task.dueDate?.toLocaleDateString() ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Assignees</dt>
-              <dd>
-                {task.assignees.length > 0
-                  ? task.assignees.map((entry) => entry.name).join(', ')
-                  : '—'}
-              </dd>
-            </div>
-            {task.description !== '' && (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">Description</dt>
-                <dd className="whitespace-pre-wrap">{task.description}</dd>
-              </div>
-            )}
-          </dl>
         ) : (
-          <form onSubmit={(event) => void handleSave(event)} noValidate className="flex flex-col gap-4">
-            {error !== null && <Alert variant="destructive">{error}</Alert>}
-            <div className="flex flex-wrap gap-4">
-              <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-                <Label htmlFor="task-title">Title</Label>
-                <Input
-                  id="task-title"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="task-status">Status</Label>
-                <select
-                  id="task-status"
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                  value={status}
-                  onChange={(event) => setStatus(event.target.value as TTaskStatus)}
-                >
-                  {TASK_STATUSES.map((option) => (
-                    <option key={option} value={option}>
-                      {TASK_STATUS_LABELS[option]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="task-description">Description</Label>
-              <textarea
-                id="task-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="task-phase">Phase</Label>
-                <select
-                  id="task-phase"
-                  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-                  value={phaseId}
-                  onChange={(event) => setPhaseId(event.target.value)}
-                >
-                  <option value="">No phase</option>
-                  {phases.map((phase) => (
-                    <option key={phase.id} value={phase.id}>
-                      {phase.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="task-start">Start date</Label>
-                <Input
-                  id="task-start"
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="task-due">Due date</Label>
-                <Input
-                  id="task-due"
-                  type="date"
-                  value={dueDate}
-                  onChange={(event) => setDueDate(event.target.value)}
-                />
-              </div>
-            </div>
-
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Assignees</legend>
-              {assignees.length > 0 && (
-                <ul className="flex flex-wrap gap-1">
-                  {assignees.map((entry) => (
-                    <li
-                      key={`${entry.type}-${entry.id}`}
-                      className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
-                    >
-                      {entry.name}
-                      <button
-                        type="button"
-                        aria-label={`Remove ${entry.name}`}
-                        onClick={() =>
-                          setAssignees((prev) =>
-                            prev.filter(
-                              (item) => !(item.type === entry.type && item.id === entry.id),
-                            ),
-                          )
-                        }
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {unassignedMembers.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="task-assign">Assign teammate</Label>
-                  <select
-                    id="task-assign"
-                    className="h-10 max-w-64 rounded-md border border-border bg-background px-3 text-sm"
-                    value=""
-                    onChange={(event) => {
-                      const member = members.find((entry) => entry.uid === event.target.value);
-                      if (member !== undefined) {
-                        setAssignees((prev) => [
-                          ...prev,
-                          { type: 'user', id: member.uid, name: member.displayName },
-                        ]);
-                      }
-                    }}
-                  >
-                    <option value="">Choose a teammate…</option>
-                    {unassignedMembers.map((member) => (
-                      <option key={member.uid} value={member.uid}>
-                        {member.displayName}
-                      </option>
-                    ))}
-                  </select>
+          <div className="flex flex-col gap-6">
+            {!canEdit ? (
+              <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">Status</dt>
+                  <dd>{TASK_STATUS_LABELS[task.status]}</dd>
                 </div>
-              )}
-            </fieldset>
-
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium">Sharing &amp; access</legend>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={visibleToClient}
-                  onChange={(event) => setVisibleToClient(event.target.checked)}
-                />
-                Client can see this task
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={sendWhatsapp}
-                  onChange={(event) => setSendWhatsapp(event.target.checked)}
-                />
-                Send WhatsApp updates for this task
-              </label>
-              {selectableDepartments.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm text-muted-foreground">
-                    Restrict to departments (empty = visible to the whole team)
-                  </p>
-                  <ul className="flex flex-wrap gap-1">
-                    {selectableDepartments.map((dep) => (
-                      <li key={dep.id}>
-                        <button
-                          type="button"
-                          aria-pressed={restrictedTo.includes(dep.id)}
-                          onClick={() => toggleRestrictedDept(dep.id)}
-                          className={cn(
-                            'rounded-full border border-border px-2 py-0.5 text-xs',
-                            restrictedTo.includes(dep.id)
-                              ? 'bg-primary text-primary-foreground'
-                              : 'text-muted-foreground hover:text-foreground',
-                          )}
-                        >
-                          {dep.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                <div>
+                  <dt className="text-muted-foreground">Due date</dt>
+                  <dd>{task.dueDate?.toLocaleDateString() ?? '—'}</dd>
                 </div>
-              )}
-            </fieldset>
-
-            {otherTasks.length > 0 && (
-              <fieldset className="flex flex-col gap-1">
-                <legend className="text-sm font-medium">Depends on</legend>
-                <ul className="flex flex-col gap-1">
-                  {otherTasks.map((row) => (
-                    <li key={row.id}>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={dependsOn.includes(row.id)}
-                          onChange={() => toggleDependsOn(row.id)}
-                        />
-                        {row.title}
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </fieldset>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" disabled={pending} aria-busy={pending}>
-                {pending ? 'Saving…' : 'Save changes'}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => setConfirmingDelete(true)}
+                <div>
+                  <dt className="text-muted-foreground">Assignees</dt>
+                  <dd>
+                    {task.assignees.length > 0
+                      ? task.assignees.map((entry) => entry.name).join(', ')
+                      : '—'}
+                  </dd>
+                </div>
+                {task.description !== '' && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Description</dt>
+                    <dd className="whitespace-pre-wrap">{task.description}</dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <form
+                onSubmit={(event) => void handleSave(event)}
+                noValidate
+                className="flex flex-col gap-4"
               >
-                Delete task
-              </Button>
-            </div>
-            {confirmingDelete && (
-              <Alert variant="destructive">
-                <p className="text-sm font-medium">Delete this task?</p>
-                <p className="mt-1 text-sm">Its activity history is removed too. This cannot be undone.</p>
-                <div className="mt-3 flex gap-2">
+                {error !== null && <Alert variant="destructive">{error}</Alert>}
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex min-w-64 flex-1 flex-col gap-1.5">
+                    <Label htmlFor="task-title">Title</Label>
+                    <Input
+                      id="task-title"
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="task-status">Status</Label>
+                    <select
+                      id="task-status"
+                      className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+                      value={status}
+                      onChange={(event) => setStatus(event.target.value as TTaskStatus)}
+                    >
+                      {TASK_STATUSES.map((option) => (
+                        <option key={option} value={option}>
+                          {TASK_STATUS_LABELS[option]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="task-description">Description</Label>
+                  <textarea
+                    id="task-description"
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    rows={3}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="task-phase">Phase</Label>
+                    <select
+                      id="task-phase"
+                      className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+                      value={phaseId}
+                      onChange={(event) => setPhaseId(event.target.value)}
+                    >
+                      <option value="">No phase</option>
+                      {phases.map((phase) => (
+                        <option key={phase.id} value={phase.id}>
+                          {phase.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="task-start">Start date</Label>
+                    <Input
+                      id="task-start"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="task-due">Due date</Label>
+                    <Input
+                      id="task-due"
+                      type="date"
+                      value={dueDate}
+                      onChange={(event) => setDueDate(event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="text-sm font-medium">Assignees</legend>
+                  {assignees.length > 0 && (
+                    <ul className="flex flex-wrap gap-1">
+                      {assignees.map((entry) => (
+                        <li
+                          key={`${entry.type}-${entry.id}`}
+                          className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+                        >
+                          {entry.name}
+                          <button
+                            type="button"
+                            aria-label={`Remove ${entry.name}`}
+                            onClick={() =>
+                              setAssignees((prev) =>
+                                prev.filter(
+                                  (item) => !(item.type === entry.type && item.id === entry.id),
+                                ),
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {unassignedMembers.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="task-assign">Assign teammate</Label>
+                      <select
+                        id="task-assign"
+                        className="h-10 max-w-64 rounded-md border border-border bg-background px-3 text-sm"
+                        value=""
+                        onChange={(event) => {
+                          const member = members.find((entry) => entry.uid === event.target.value);
+                          if (member !== undefined) {
+                            setAssignees((prev) => [
+                              ...prev,
+                              { type: 'user', id: member.uid, name: member.displayName },
+                            ]);
+                          }
+                        }}
+                      >
+                        <option value="">Choose a teammate…</option>
+                        {unassignedMembers.map((member) => (
+                          <option key={member.uid} value={member.uid}>
+                            {member.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </fieldset>
+
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="text-sm font-medium">Sharing &amp; access</legend>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={visibleToClient}
+                      onChange={(event) => setVisibleToClient(event.target.checked)}
+                    />
+                    Client can see this task
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={sendWhatsapp}
+                      onChange={(event) => setSendWhatsapp(event.target.checked)}
+                    />
+                    Send WhatsApp updates for this task
+                  </label>
+                  {selectableDepartments.length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">
+                        Restrict to departments (empty = visible to the whole team)
+                      </p>
+                      <ul className="flex flex-wrap gap-1">
+                        {selectableDepartments.map((dep) => (
+                          <li key={dep.id}>
+                            <button
+                              type="button"
+                              aria-pressed={restrictedTo.includes(dep.id)}
+                              onClick={() => toggleRestrictedDept(dep.id)}
+                              className={cn(
+                                'rounded-full border border-border px-2 py-0.5 text-xs',
+                                restrictedTo.includes(dep.id)
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'text-muted-foreground hover:text-foreground',
+                              )}
+                            >
+                              {dep.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </fieldset>
+
+                {otherTasks.length > 0 && (
+                  <fieldset className="flex flex-col gap-1">
+                    <legend className="text-sm font-medium">Depends on</legend>
+                    <ul className="flex flex-col gap-1">
+                      {otherTasks.map((row) => (
+                        <li key={row.id}>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={dependsOn.includes(row.id)}
+                              onChange={() => toggleDependsOn(row.id)}
+                            />
+                            {row.title}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  </fieldset>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={pending} aria-busy={pending}>
+                    {pending ? 'Saving…' : 'Save changes'}
+                  </Button>
                   <Button
                     type="button"
                     variant="destructive"
                     size="sm"
-                    disabled={pending}
-                    onClick={() => void handleDelete()}
+                    onClick={() => setConfirmingDelete(true)}
                   >
                     Delete task
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    Cancel
-                  </Button>
                 </div>
-              </Alert>
+                {confirmingDelete && (
+                  <Alert variant="destructive">
+                    <p className="text-sm font-medium">Delete this task?</p>
+                    <p className="mt-1 text-sm">
+                      Its activity history is removed too. This cannot be undone.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => void handleDelete()}
+                      >
+                        Delete task
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmingDelete(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </Alert>
+                )}
+              </form>
             )}
-          </form>
+            <TaskAttachments
+              workspaceId={workspaceId}
+              projectId={projectId}
+              taskId={task.id}
+              taskVisibleToClient={task.visibleToClient}
+              taskRestrictedToDepartments={task.restrictedToDepartments}
+              role={role}
+              departments={[...memberDepartments]}
+              uid={uid}
+              userName={userName}
+              canEdit={canEdit}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

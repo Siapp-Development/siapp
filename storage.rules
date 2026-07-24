@@ -1,10 +1,67 @@
 rules_version = '2';
 
-// Deny-by-default baseline. Real access rules land with ticket #6.
+// Project/task document storage (#14). Deny-by-default; the only writable
+// area is workspaces/{wid}/projects/{pid}/{fileName} for firm owner/admin/pm.
+//
+// Reads are workspace-member-wide: department need-to-know is enforced at the
+// Firestore metadata layer (documents/{did} rules), and object paths carry
+// unguessable uuids — accepted MVP tradeoff, noted in the #14 PR.
+//
+// Objects are immutable (no update/delete): document removal is a Firestore
+// soft delete; bytes stay for retention until a purge job exists.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // O(1) membership check from custom claims — same shape as firestore.rules.
+    function isFirmMember(wid) {
+      return isSignedIn()
+        && request.auth.token.workspaces != null
+        && request.auth.token.workspaces[wid] != null;
+    }
+
+    function hasRole(wid, roles) {
+      return isFirmMember(wid)
+        && request.auth.token.workspaces[wid].role in roles;
+    }
+
+    // Mirrors ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (parity enforced
+    // by a rules test). No image/svg+xml — SVGs can carry scripts and the
+    // web app previews inline.
+    function isAllowedContentType() {
+      return request.resource.contentType in [
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/msword',
+        'application/vnd.ms-excel',
+        'application/vnd.ms-powerpoint'
+      ];
+    }
+
+    // Firm uploads live directly under the project prefix (single segment —
+    // client-uploads/ is deliberately not matched here).
+    match /workspaces/{wid}/projects/{pid}/{fileName} {
+      allow read: if isFirmMember(wid);
+      allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+        && request.resource.size <= 25 * 1024 * 1024
+        && isAllowedContentType();
+      allow update, delete: if false;
+    }
+
+    // Client/collaborator portal uploads (#21/#22) are written server-side;
+    // firm members may read them.
+    match /workspaces/{wid}/projects/{pid}/client-uploads/{fileName} {
+      allow read: if isFirmMember(wid);
+      allow write: if false;
     }
   }
 }
