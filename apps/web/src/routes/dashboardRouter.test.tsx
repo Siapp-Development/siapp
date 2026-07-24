@@ -75,4 +75,26 @@ describe('dashboardRouter', () => {
 
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveFocus();
   });
+
+  it('shows the error fallback instead of a blank screen when a route render throws', async () => {
+    // React + reportError both log the caught error — keep test output clean.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const Boom = () => {
+      throw new Error('dashboard route exploded');
+    };
+    // A throwing route under the root's configured errorElement.
+    const routes = [
+      { path: '/', Component: Boom, errorElement: dashboardRoutes[0]?.errorElement },
+    ];
+    const router = createMemoryRouter(routes, { initialEntries: ['/'] });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: /something went wrong/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reload page/i })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
 });

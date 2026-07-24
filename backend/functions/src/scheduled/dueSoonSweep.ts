@@ -13,6 +13,7 @@ import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import { enqueueTaskEvent } from '../lib/enqueueNotifications.js';
+import { errorPayload } from '../lib/errors.js';
 import { resolveNotify } from '../lib/notifyConfig.js';
 
 /** Mirrors DUE_SOON_WINDOW_HOURS in @siapp/shared (source-only package). */
@@ -73,7 +74,7 @@ export async function sweepDueSoon(now: Date): Promise<number> {
             workspaceId: workspaceSnap.id,
             projectId: projectSnap.id,
             taskId: taskSnap.id,
-            error,
+            err: errorPayload(error),
           });
         }
       }

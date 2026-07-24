@@ -40,6 +40,10 @@ jobs:
 
             - name: Build
               run: pnpm build
+              env:
+                  # Sentry source-map upload (#27): token only on main-branch
+                  # builds — PR builds skip the upload entirely.
+                  SENTRY_AUTH_TOKEN: ${{ github.ref == 'refs/heads/main' && secrets.SENTRY_AUTH_TOKEN || '' }}
 
             - name: Check bundle isolation
               run: node scripts/check-bundle-isolation.mjs

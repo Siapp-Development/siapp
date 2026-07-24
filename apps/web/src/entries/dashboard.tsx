@@ -4,7 +4,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';
 
+import { AppErrorBoundary } from '@/components/AppErrorBoundary.tsx';
+import { initSentry } from '@/lib/initSentry.ts';
+import { installGlobalErrorHandlers } from '@/lib/reportError.ts';
 import { createDashboardRouter } from '@/routes/dashboardRouter.tsx';
+
+installGlobalErrorHandlers('dashboard');
+initSentry('dashboard');
 
 const container = document.getElementById('root');
 
@@ -14,6 +20,8 @@ if (container === null) {
 
 createRoot(container).render(
   <StrictMode>
-    <RouterProvider router={createDashboardRouter()} />
+    <AppErrorBoundary surface="dashboard">
+      <RouterProvider router={createDashboardRouter()} />
+    </AppErrorBoundary>
   </StrictMode>,
 );

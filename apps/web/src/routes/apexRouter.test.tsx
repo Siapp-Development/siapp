@@ -162,4 +162,38 @@ describe('apexRouter', () => {
     expect(screen.getAllByText(/studio north/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
+
+  it('shows the error fallback instead of a blank screen when a route render throws', async () => {
+    // React + reportError both log the caught error — keep test output clean.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const Boom = () => {
+      throw new Error('apex route exploded');
+    };
+    // Same route object (incl. its configured errorElement), throwing component.
+    const routes = [{ ...apexRoutes[0], Component: Boom }];
+    const router = createMemoryRouter(routes, { initialEntries: ['/'] });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: /something went wrong/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reload page/i })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps portal and collab errors inside their own tree via per-tree errorElement', () => {
+    // Config-level guarantee for D-036 UX: the lazy /p and /t roots carry
+    // their own errorElement so external users never see apex-level UI.
+    expect(apexRoutes[1]?.errorElement).toBeDefined();
+    expect(apexRoutes[2]?.errorElement).toBeDefined();
+  });
+
+  it('renders the not-found screen for unknown paths via the catch-all route', async () => {
+    renderAt('/some-garbage-path');
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /page not found/i })).toBeInTheDocument();
+  });
 });

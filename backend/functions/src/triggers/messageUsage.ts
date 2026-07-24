@@ -18,6 +18,7 @@ import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import { USAGE_ALERT_AT, crossedThreshold, includedForPlan, periodKey, rollAllowance } from '../lib/billing.js';
+import { errorPayload } from '../lib/errors.js';
 import { holdUntilFor, resolveQuietHours } from '../lib/quietHours.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
@@ -111,7 +112,10 @@ export async function recordMessageUsage(
   try {
     await enqueueQuotaAlert(workspaceId, period, result, now);
   } catch (error) {
-    logger.error('recordMessageUsage: quota alert enqueue failed', { workspaceId, error });
+    logger.error('recordMessageUsage: quota alert enqueue failed', {
+      workspaceId,
+      err: errorPayload(error),
+    });
   }
 }
 
