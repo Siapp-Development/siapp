@@ -7,9 +7,6 @@
  *   - setProjectLifecycle (#12): D-027 lifecycle transitions + publish preview.
  *   - getRestrictedTaskHeaders (#13): safe projection of restricted tasks.
  *   - onTaskWrite → recomputeProjectSummary (#12) + collaborator lastTaskAt (#16)
- *     + notification enqueue on status transitions (#18)
- *   - onDueSoonSweep → daily due-soon queue sweep at 08:00 MYT (#18)
- *   - updateNotificationSettings (#18): owner/admin quiet-hours edits.
  *   - onClientWrite / onCollaboratorWrite → syncPhoneIndex (#16)
  *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
  *   - adminAdjustWorkspace (#10): mutate plan / seats / expiry.
@@ -27,20 +24,15 @@
 import './globalOptions.js';
 
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
-import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import { recountSeats } from './triggers/recountSeats.js';
 import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
-import { enqueueTaskEvent } from './lib/enqueueNotifications.js';
-import { triggersFor } from './lib/notifyConfig.js';
-import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
 import { impersonateUser } from './admin/impersonateUser.js';
@@ -60,10 +52,6 @@ export { setProjectLifecycle } from './callables/setProjectLifecycle.js';
 
 export { getRestrictedTaskHeaders } from './callables/getRestrictedTaskHeaders.js';
 
-// ── Notification settings callable (#18) ─────────────────────────────────────────────
-
-export { updateNotificationSettings } from './callables/updateNotificationSettings.js';
-
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 
 /** Provisions a new workspace, first owner member, and starter project. */
@@ -82,9 +70,6 @@ export const adminImpersonateUser = onCall(impersonateUser);
  * document is created, updated, or deleted — see `triggers/projectSummary.ts`.
  * #16: additionally stamps `lastTaskAt` on collaborator assignees when the
  * task transitions to done (A7 Active/Idle derivation).
- * #18 (D4): a status transition additionally enqueues task_status_change /
- * task_blocked queue records — the task doc is the authoritative event
- * source; each step is an independent failure domain.
  *
  * Collection path: `workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}`
  */
@@ -92,9 +77,10 @@ export const onTaskWrite = onDocumentWritten(
   'workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}',
   async (event) => {
     await recomputeProjectSummary(event.params.workspaceId, event.params.projectId);
-    const before = event.data?.before?.exists === true ? event.data.before.data() : undefined;
-    const after = event.data?.after?.exists === true ? event.data.after.data() : undefined;
-    const stampIds = collaboratorIdsToStamp(before, after);
+    const stampIds = collaboratorIdsToStamp(
+      event.data?.before?.data(),
+      event.data?.after?.data(),
+    );
     if (stampIds.length > 0) {
       // Best-effort: a stamping failure must not fail the trigger, which
       // would retry and re-run the (already committed) summary recompute.
@@ -108,43 +94,8 @@ export const onTaskWrite = onDocumentWritten(
         });
       }
     }
-    const trigger = triggersFor(before, after);
-    if (trigger !== null && after !== undefined) {
-      // Best-effort for the same reason: enqueue must not break the
-      // already-committed summary recompute (#18 risk note).
-      try {
-        const projectSnap = await getFirestore()
-          .doc(`workspaces/${event.params.workspaceId}/projects/${event.params.projectId}`)
-          .get();
-        await enqueueTaskEvent({
-          workspaceId: event.params.workspaceId,
-          projectId: event.params.projectId,
-          taskId: event.params.taskId,
-          trigger: trigger === 'blocked' ? 'task_blocked' : 'task_status_change',
-          taskData: after,
-          projectData: projectSnap.data(),
-        });
-      } catch (err) {
-        logger.error('onTaskWrite: notification enqueue failed', {
-          workspaceId: event.params.workspaceId,
-          projectId: event.params.projectId,
-          taskId: event.params.taskId,
-          error: err,
-        });
-      }
-    }
   },
 );
-
-/**
- * Daily due-soon sweep (#18, D5): 00:00 UTC = 08:00 MYT, exactly when quiet
- * hours end. The emulator loads but never fires cron — smoke tests invoke
- * `sweepDueSoon` directly.
- */
-export const onDueSoonSweep = onSchedule('0 0 * * *', async () => {
-  const written = await sweepDueSoon(new Date());
-  logger.info('dueSoonSweep: completed', { written });
-});
 
 /**
  * Syncs Firebase Auth custom claims whenever a member document changes

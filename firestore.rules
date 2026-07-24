@@ -235,7 +235,7 @@ service cloud.firestore {
           'id', 'title', 'description', 'phaseId', 'status',
           'startDate', 'dueDate', 'completedAt', 'assignees',
           'visibleToClient', 'visibleToCollaboratorIds',
-          'restrictedToDepartments', 'sendWhatsapp', 'notify', 'dependsOn',
+          'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
           'order', 'createdAt', 'updatedAt', 'createdBy'
         ])
         && d.id == tid
@@ -255,18 +255,6 @@ service cloud.firestore {
         && d.restrictedToDepartments is list
         && d.restrictedToDepartments.size() <= 10
         && d.sendWhatsapp is bool
-        // #18 (D2): optional trigger/recipient map — exactly these five bool
-        // keys when present; absent means server-side defaults apply.
-        && (!('notify' in d) || (
-          d.notify is map
-          && d.notify.keys().hasAll(['statusChange', 'dueSoon', 'blocked', 'toClient', 'toInternal'])
-          && d.notify.keys().hasOnly(['statusChange', 'dueSoon', 'blocked', 'toClient', 'toInternal'])
-          && d.notify.statusChange is bool
-          && d.notify.dueSoon is bool
-          && d.notify.blocked is bool
-          && d.notify.toClient is bool
-          && d.notify.toInternal is bool
-        ))
         && d.dependsOn is list
         && d.dependsOn.size() <= 50
         && !d.dependsOn.hasAny([tid])
