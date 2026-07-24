@@ -92,6 +92,7 @@ export function workspacePaths(wid: string): Record<string, string> {
     taskUpdate: `workspaces/${wid}/projects/proj1/tasks/task1/updates/upd1`,
     document: `workspaces/${wid}/projects/proj1/documents/doc1`,
     milestone: `workspaces/${wid}/projects/proj1/milestones/mile1`,
+    activity: `workspaces/${wid}/projects/proj1/activity/act1`,
     magicLink: `workspaces/${wid}/magicLinks/a8K2pQ`,
     message: `workspaces/${wid}/messages/msg1`,
     auditLog: `workspaces/${wid}/auditLog/audit1`,

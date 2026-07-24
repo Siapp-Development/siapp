@@ -111,3 +111,42 @@ export type TAdminAction =
   | 'workspace.seat_adjust'
   | 'workspace.renewal_adjust'
   | 'user.impersonate';
+
+// Project activity timeline event kinds (#23, D2). Server-written only.
+export type TProjectActivityAction =
+  | 'task_created'
+  | 'task_status_changed'
+  | 'task_assigned'
+  | 'task_unassigned'
+  | 'task_due_date_changed'
+  | 'task_deleted'
+  | 'doc_added'
+  | 'doc_deleted'
+  | 'project_created'
+  | 'project_published'
+  | 'project_completed'
+  | 'project_archived'
+  | 'project_deleted'
+  | 'project_reopened'
+  | 'client_link_changed';
+
+// Workspace audit-log action kinds (#23, D5). Dot-namespaced; written only
+// by Cloud Functions via lib/auditLog.ts.
+export type TAuditAction =
+  | 'invite.create'
+  | 'invite.accept'
+  | 'invite.revoke'
+  | 'invite.resend'
+  | 'member.departments_change'
+  | 'member.role_change'
+  | 'member.added'
+  | 'member.removed'
+  | 'project.lifecycle_change'
+  | 'task.delete'
+  | 'settings.notifications_change'
+  | 'client.create'
+  | 'client.update'
+  | 'collaborator.create'
+  | 'collaborator.update'
+  | 'admin.workspace_adjust'
+  | 'admin.impersonate';

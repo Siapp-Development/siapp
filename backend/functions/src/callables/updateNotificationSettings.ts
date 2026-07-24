@@ -11,6 +11,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 
 import { MYT_TIMEZONE, isValidTimeString, type IQuietHours } from '../lib/quietHours.js';
+import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 
 function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): void {
   const uid = request.auth?.uid;
@@ -63,7 +64,7 @@ export const updateNotificationSettings = onCall(async (request) => {
   if (!workspaceId) {
     throw new HttpsError('invalid-argument', 'workspaceId is required.');
   }
-  requireWorkspaceAdmin(request, workspaceId);
+  const actorUid = requireWorkspaceAdmin(request, workspaceId);
   const quietHours = parseQuietHoursInput(data['quietHours']);
 
   const db = getFirestore();
@@ -78,6 +79,19 @@ export const updateNotificationSettings = onCall(async (request) => {
     { notifications: { quietHours }, updatedAt: FieldValue.serverTimestamp() },
     { merge: true },
   );
+
+  // #23 (D5): settings change → attributed audit entry with before/after.
+  const beforeNotifications = snap.get('notifications') as Record<string, unknown> | undefined;
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: actorUid,
+    action: 'settings.notifications_change',
+    targetType: 'workspace',
+    targetId: workspaceId,
+    before: { quietHours: beforeNotifications?.['quietHours'] ?? null },
+    after: { quietHours: { ...quietHours } },
+    ...callableRequestMeta(request),
+  });
 
   return { quietHours };
 });
