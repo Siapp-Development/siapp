@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { IClientRow } from '../clients/useClients.ts';
 import type { IProjectRow, TProjectsState } from './useProjects.ts';
 
 const projectsData = vi.hoisted(() => ({
@@ -33,6 +34,13 @@ vi.mock('./duplicateProject.ts', () => ({
   DuplicateTooLargeError: duplicateData.DuplicateTooLargeError,
 }));
 
+const clientsData = vi.hoisted(() => ({
+  state: { status: 'ready', rows: [] } as { status: 'ready'; rows: IClientRow[] },
+}));
+vi.mock('../clients/useClients.ts', () => ({
+  useClients: () => clientsData.state,
+}));
+
 import { ProjectsListPage } from './ProjectsListPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -43,6 +51,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     vertical: 'construction',
     lifecycle: 'draft',
     status: 'planning',
+    clientId: '',
     clientNameDenorm: '',
     ownerNameDenorm: 'Alice Tan',
     startDate: new Date('2026-07-01T00:00:00'),
@@ -76,6 +85,7 @@ function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
 beforeEach(() => {
   vi.clearAllMocks();
   projectsData.state = { status: 'ready', rows: [] };
+  clientsData.state = { status: 'ready', rows: [] };
 });
 
 describe('ProjectsListPage', () => {
@@ -153,6 +163,42 @@ describe('ProjectsListPage', () => {
       'Alice Tan',
     );
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+  });
+
+  it('links a client on create, pairing clientId with the denorm name (#16)', async () => {
+    projectsData.createProject.mockResolvedValue('p-new');
+    clientsData.state = {
+      status: 'ready',
+      rows: [
+        {
+          id: 'c1',
+          name: 'Ahmad bin Ismail',
+          phone: '+60123456789',
+          email: '',
+          companyName: '',
+          language: 'en',
+          notes: '',
+          notificationsOptOut: true,
+        },
+      ],
+    };
+    renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Renovation Phase 2');
+    // Opted-out clients stay selectable — the option label carries the hint.
+    expect(
+      screen.getByRole('option', { name: 'Ahmad bin Ismail (notifications off)' }),
+    ).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Client (optional)'), 'c1');
+    await userEvent.click(screen.getByRole('button', { name: /create draft/i }));
+
+    expect(projectsData.createProject).toHaveBeenCalledWith(
+      'wksA',
+      expect.objectContaining({ clientId: 'c1', clientName: 'Ahmad bin Ismail' }),
+      'u1',
+      'Alice Tan',
+    );
   });
 
   it('rejects an empty project name client-side', async () => {

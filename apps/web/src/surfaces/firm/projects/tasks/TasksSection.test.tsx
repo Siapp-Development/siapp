@@ -26,6 +26,10 @@ vi.mock('../../settings/useTeamData.ts', () => ({
   }),
 }));
 
+vi.mock('../../collaborators/useCollaborators.ts', () => ({
+  useCollaborators: () => ({ status: 'ready', rows: [] }),
+}));
+
 vi.mock('./TaskDetailPanel.tsx', () => ({
   TaskDetailPanel: (props: { task: { id: string } }) => (
     <div data-testid="task-detail-panel" data-task-id={props.task.id} />

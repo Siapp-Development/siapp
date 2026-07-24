@@ -20,6 +20,10 @@ vi.mock('./useProjects.ts', () => ({
   updateProject: projectData.updateProject,
 }));
 
+vi.mock('../clients/useClients.ts', () => ({
+  useClients: () => ({ status: 'ready', rows: [] }),
+}));
+
 vi.mock('./tasks/TasksSection.tsx', () => ({
   TasksSection: (props: { canEdit: boolean }) => (
     <div data-testid="tasks-section" data-can-edit={props.canEdit} />
@@ -42,6 +46,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     vertical: 'construction',
     lifecycle: 'draft',
     status: 'planning',
+    clientId: '',
     clientNameDenorm: '',
     ownerNameDenorm: 'Alice Tan',
     startDate: new Date('2026-07-01T00:00:00'),

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
 import type { IMemberRow } from '../../settings/useTeamData.ts';
+import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import type { TDocumentsState } from '../documents/useDocuments.ts';
 import type { ITaskRow, TTaskUpdatesState } from './useTasks.ts';
 
@@ -89,6 +90,7 @@ function renderPanel(overrides: Partial<Parameters<typeof TaskDetailPanel>[0]> =
       allTasks={[taskRow(), taskRow({ id: 't2', title: 'Order rebar' })]}
       phases={[]}
       members={[member('u1', 'Alice Tan'), member('u2', 'Sam Lee')]}
+      collaborators={[]}
       departments={departments}
       role="pm"
       memberDepartments={['dep-ops']}
@@ -174,6 +176,67 @@ describe('TaskDetailPanel details', () => {
       { action: 'assigned', to: 'Sam Lee' },
       'u1',
       'Alice Tan',
+    );
+  });
+
+  it('assigns an active collaborator with their phone and flags opted-out ones (#16)', async () => {
+    const collaborators: ICollaboratorRow[] = [
+      {
+        id: 'col1',
+        name: 'Lim Electrical',
+        phone: '+60198765432',
+        email: '',
+        company: '',
+        trade: 'Electrical',
+        type: 'company',
+        status: 'active',
+        notificationsOptOut: false,
+        lastTaskAt: null,
+      },
+      {
+        id: 'col2',
+        name: 'Quiet Sub',
+        phone: '+60111222333',
+        email: '',
+        company: '',
+        trade: '',
+        type: 'individual',
+        status: 'active',
+        notificationsOptOut: true,
+        lastTaskAt: null,
+      },
+      {
+        id: 'col3',
+        name: 'Gone Sub',
+        phone: '+60144555666',
+        email: '',
+        company: '',
+        trade: '',
+        type: 'individual',
+        status: 'archived',
+        notificationsOptOut: false,
+        lastTaskAt: null,
+      },
+    ];
+    renderPanel({ collaborators });
+
+    const select = screen.getByLabelText('Assign collaborator');
+    expect(screen.getByRole('option', { name: 'Quiet Sub (notifications off)' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Gone Sub/ })).not.toBeInTheDocument();
+
+    await userEvent.selectOptions(select, 'col1');
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(tasksData.updateTask).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      't1',
+      expect.objectContaining({
+        assignees: [
+          { type: 'collaborator', id: 'col1', name: 'Lim Electrical', phone: '+60198765432' },
+        ],
+      }),
+      false,
     );
   });
 

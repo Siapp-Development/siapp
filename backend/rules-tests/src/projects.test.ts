@@ -274,6 +274,48 @@ describe('project update', () => {
     );
   });
 
+  it('allows linking a client with a paired denorm name (#16)', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: 'c1',
+        clientNameDenorm: 'Acme',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('allows unlinking the client back to both-empty (#16)', async () => {
+    await seedDoc(
+      testEnv,
+      PROJ_PATH,
+      validProject('proj-site', { clientId: 'c1', clientNameDenorm: 'Acme' }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: '',
+        clientNameDenorm: '',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies a clientId without a denorm name, and vice versa (#16)', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: 'c1',
+        clientNameDenorm: '',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: '',
+        clientNameDenorm: 'Acme',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
   it('denies viewer updates', async () => {
     await assertFails(
       updateDoc(doc(dbAs('viewer'), PROJ_PATH), { name: 'Hacked', updatedAt: Timestamp.now() }),
