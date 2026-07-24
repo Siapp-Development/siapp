@@ -24,11 +24,14 @@ function QuietHoursForm({ workspaceId, initial }: IQuietHoursFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // Re-sync when another admin's save lands via the live subscription.
+  // Re-sync when another admin's save lands via the live subscription —
+  // and drop the stale "saved" confirmation, since the values shown no
+  // longer come from this user's last submit.
   useEffect(() => {
     setEnabled(initial.enabled);
     setStart(initial.start);
     setEnd(initial.end);
+    setSaved(false);
   }, [initial.enabled, initial.start, initial.end]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
