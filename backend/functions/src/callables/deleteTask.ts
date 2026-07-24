@@ -19,6 +19,7 @@ import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/
 import { taskDeletedActivityId, writeProjectActivity } from '../lib/activityLog.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { canSeeRestrictedTask, restrictionsOf, type TMemberRole } from '../lib/restrictedTasks.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 
 interface IMemberClaims {
   role: TMemberRole;
@@ -54,6 +55,7 @@ export const deleteTask = onCall(async (request) => {
 
   const { role, departments } = requireEditorClaims(request, workspaceId);
   const uid = request.auth!.uid;
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const db = getFirestore();
   const taskRef = db.doc(`workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`);

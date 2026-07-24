@@ -32,7 +32,7 @@ import './globalOptions.js';
 
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
@@ -59,6 +59,8 @@ import {
 } from './lib/activityLog.js';
 import { writeAuditLog } from './lib/auditLog.js';
 import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
+import { sweepTrialExpiry } from './scheduled/trialExpirySweep.js';
+import { recordMessageUsage } from './triggers/messageUsage.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
 import { impersonateUser } from './admin/impersonateUser.js';
@@ -340,6 +342,42 @@ export const onDueSoonSweep = onSchedule('0 0 * * *', async () => {
   const written = await sweepDueSoon(new Date());
   logger.info('onDueSoonSweep: sweep complete', { written });
 });
+
+/**
+ * Daily trial-expiry sweep (#24, D7) at 00:15 UTC — after dueSoonSweep.
+ * Expired trials flip to `billingStatus: 'read_only'` (rules-enforced).
+ */
+export const onTrialExpirySweep = onSchedule('15 0 * * *', async () => {
+  const expired = await sweepTrialExpiry(new Date());
+  logger.info('onTrialExpirySweep: sweep complete', { expired });
+});
+
+/**
+ * WhatsApp usage counting at enqueue time (#24, D4): every non-suppressed
+ * `messages` record bumps `whatsappAllowance.used` + the monthly
+ * `usageCounters` rollup; crossing 90% enqueues the once-per-period owner
+ * DM (D5). See `triggers/messageUsage.ts`.
+ *
+ * Collection path: `workspaces/{workspaceId}/messages/{messageId}`
+ */
+export const onMessageCreated = onDocumentCreated(
+  'workspaces/{workspaceId}/messages/{messageId}',
+  async (event) => {
+    const data = event.data?.data();
+    if (data === undefined) {
+      return;
+    }
+    try {
+      await recordMessageUsage(event.params.workspaceId, data);
+    } catch (error) {
+      logger.error('onMessageCreated: usage counting failed', {
+        workspaceId: event.params.workspaceId,
+        messageId: event.params.messageId,
+        error,
+      });
+    }
+  },
+);
 
 /**
  * Syncs Firebase Auth custom claims whenever a member document changes

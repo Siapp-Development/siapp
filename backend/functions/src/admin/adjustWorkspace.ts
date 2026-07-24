@@ -1,14 +1,17 @@
 /**
  * `adminAdjustWorkspace` callable — mutates plan / seat count / renewal date
- * on an existing workspace. Guarded by `assertAdminCall`.
+ * / billing status on an existing workspace. Guarded by `assertAdminCall`.
+ * #24: plan or seat changes recompute the WA allowance in the same patch;
+ * `billingStatus` is the founder's manual read-only lever (D7).
  */
 
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 
-import type { TWorkspacePlan } from './adminTypes.js';
+import type { TBillingStatus, TWorkspacePlan } from './adminTypes.js';
 import { assertAdminCall, callerIp } from './adminGuard.js';
 import { writeAdminLog } from './writeAdminLog.js';
+import { includedForPlan } from '../lib/billing.js';
 import { writeAuditLog } from '../lib/auditLog.js';
 
 export interface IAdjustInput {
@@ -17,6 +20,7 @@ export interface IAdjustInput {
   seatLimit?: number;
   /** ISO 8601 date string */
   planExpiresAt?: string;
+  billingStatus?: TBillingStatus;
 }
 
 export interface IAdjustResult {
@@ -28,7 +32,7 @@ export async function adjustWorkspace(
 ): Promise<IAdjustResult> {
   assertAdminCall(request);
 
-  const { wid, plan, seatLimit, planExpiresAt } = request.data;
+  const { wid, plan, seatLimit, planExpiresAt, billingStatus } = request.data;
 
   if (
     typeof wid !== 'string' ||
@@ -37,10 +41,15 @@ export async function adjustWorkspace(
     throw new HttpsError('invalid-argument', 'wid is required');
   }
 
-  if (plan === undefined && seatLimit === undefined && planExpiresAt === undefined) {
+  if (
+    plan === undefined &&
+    seatLimit === undefined &&
+    planExpiresAt === undefined &&
+    billingStatus === undefined
+  ) {
     throw new HttpsError(
       'invalid-argument',
-      'At least one of plan, seatLimit, or planExpiresAt must be provided',
+      'At least one of plan, seatLimit, planExpiresAt, or billingStatus must be provided',
     );
   }
 
@@ -85,6 +94,22 @@ export async function adjustWorkspace(
     patch['planExpiresAt'] = new Date(planExpiresAt);
   }
 
+  if (billingStatus !== undefined) {
+    if (!['active', 'read_only'].includes(billingStatus)) {
+      throw new HttpsError('invalid-argument', 'billingStatus must be active or read_only');
+    }
+    patch['billingStatus'] = billingStatus;
+  }
+
+  // #24: plan/seat changes imply a new WA allowance (D-020 arithmetic) —
+  // recomputed in the same patch so allowance and plan can never drift.
+  if (plan !== undefined || seatLimit !== undefined) {
+    const effectivePlan = plan ?? (before['plan'] as TWorkspacePlan);
+    const effectiveSeats =
+      seatLimit ?? (typeof before['seatLimit'] === 'number' ? before['seatLimit'] : 1);
+    patch['whatsappAllowance.includedPerPeriod'] = includedForPlan(effectivePlan, effectiveSeats);
+  }
+
   await wsRef.update(patch);
 
   // Determine the action for the audit log.
@@ -94,7 +119,9 @@ export async function adjustWorkspace(
       ? 'workspace.plan_change'
       : seatLimit !== undefined
         ? 'workspace.seat_adjust'
-        : 'workspace.renewal_adjust';
+        : planExpiresAt !== undefined
+          ? 'workspace.renewal_adjust'
+          : 'workspace.status_change';
 
   await writeAdminLog({
     actorUid: request.auth!.uid,

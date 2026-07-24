@@ -14,6 +14,7 @@ import type {
   TActorType,
   TAdminAction,
   TAuditAction,
+  TBillingStatus,
   TCollaboratorStatus,
   TCollaboratorType,
   TDocumentScope,
@@ -188,6 +189,12 @@ export interface IWorkspaceDoc {
   ownerId: string;
   plan: TWorkspacePlan;
   planExpiresAt: Date;
+  /**
+   * Billing state (#24, D2). Absent = 'active' (no backfill). 'read_only'
+   * is set by the trial-expiry sweep or the founder via adminAdjustWorkspace;
+   * every firm/portal/collab write path is denied while set.
+   */
+  billingStatus?: TBillingStatus;
   seatLimit: number;
   seatsUsed: number;
   branding: IWorkspaceBranding;

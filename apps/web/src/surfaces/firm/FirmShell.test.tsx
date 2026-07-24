@@ -42,6 +42,13 @@ vi.mock('./settings/NotificationSettingsPage.tsx', () => ({
     <h1>Notifications — {workspaceName}</h1>
   ),
 }));
+// #24: banners + billing page subscribe to Firestore — covered by their own tests.
+vi.mock('./billing/BillingBanners.tsx', () => ({ BillingBanners: () => null }));
+vi.mock('./billing/BillingSettingsPage.tsx', () => ({
+  BillingSettingsPage: ({ workspaceName }: { workspaceName: string }) => (
+    <h1>Billing — {workspaceName}</h1>
+  ),
+}));
 
 const signedIn: TAuthState = {
   status: 'signedIn',
@@ -122,6 +129,11 @@ describe('FirmShell', () => {
     expect(within(subNav).getByRole('link', { name: 'Notifications' })).toHaveAttribute(
       'aria-current',
       'page',
+    );
+    // #24: owners see the Billing tab.
+    expect(within(subNav).getByRole('link', { name: 'Billing' })).toHaveAttribute(
+      'href',
+      '/acme/settings/billing',
     );
   });
 

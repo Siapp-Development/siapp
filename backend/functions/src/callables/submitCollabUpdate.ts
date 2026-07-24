@@ -19,6 +19,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { collabUid } from '../lib/portalTokens.js';
 import { writeProjectActivity } from '../lib/activityLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 import {
   isCollaboratorAssignee,
   passesCollabVisibility,
@@ -105,6 +106,7 @@ export const submitCollabUpdate = onCall(async (request) => {
   }
 
   const { wid, pid, tid, colid } = claims;
+  await assertWorkspaceActive(wid); // #24 D2/D3: reads stay open, writes blocked
   const db = getFirestore();
   const taskRef = db.doc(`workspaces/${wid}/projects/${pid}/tasks/${tid}`);
   const [projectSnap, taskSnap, collaboratorSnap] = await Promise.all([

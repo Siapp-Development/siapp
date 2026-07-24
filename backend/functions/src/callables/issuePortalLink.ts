@@ -22,6 +22,7 @@ import {
   hashSecret,
 } from '../lib/portalTokens.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 
 /** Apex origin carried in portal URLs (D-036: portal lives on siapp.app). */
 const portalOrigin = defineString('PORTAL_ORIGIN', { default: 'https://siapp.app' });
@@ -82,6 +83,7 @@ export const issuePortalLink = onCall(async (request) => {
   }
 
   const uid = requireIssuerUid(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const db = getFirestore();
   const projectSnap = await db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get();

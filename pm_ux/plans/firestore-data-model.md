@@ -108,6 +108,7 @@ workspaces/{wid}
   ownerId: string,             // creator's uid
   plan: 'trial' | 'standard' | 'business',   // MVP: all paying workspaces = 'standard' (single tier per D-030); other values reserved for post-MVP
   planExpiresAt: Timestamp,
+  billingStatus?: 'active' | 'read_only',    // #24 (D2): absent = 'active' (no backfill). 'read_only' denies all firm/portal/collab writes at rules level; reads stay open (D3). Set by the trial-expiry sweep or the founder admin panel.
   seatLimit: number,
   seatsUsed: number,           // maintained by Cloud Function on member changes
   branding: {
@@ -536,7 +537,7 @@ JWT signature is verified server-side; this doc enables fast lookup, revocation,
 ```typescript
 {
   period: string,
-  whatsappConv: number,         // counted on Twilio webhook delivery
+  whatsappConv: number,         // #24 (D4): counted when the message is ENQUEUED (messages/{mid} onCreate), not on Twilio delivery — MVP has no Twilio webhook yet; conservative overcount is acceptable for billing
   smsSegments: number,
   storageBytes: number,
   activeProjects: number,
@@ -680,13 +681,13 @@ Firestore limit: **1 sustained write/sec per document**.
 | `onDelete members/{uid}` | `decrementSeatsUsed` + `removeCustomClaim` | Reverse of above. |
 | `onWrite departments/{depId}` | `recomputeDepartmentMemberCount` | Maintains `departments.memberCount`. |
 | `onWrite collaborators/{colid}` | `syncPhoneIndex` | Maintains `phoneIndex/{phone}`. |
-| `onCreate messages/{mid}` (status delivered) | `incrementUsageCounter` | Bumps sharded counter on `usageCounters/{currentPeriod}`. |
+| `onCreate messages/{mid}` | `onMessageCreated` (#24, D4) | Counts usage at enqueue time: bumps `usageCounters/{currentPeriod}.whatsappConv` + `workspaces.whatsappAllowance.used` in a transaction; enqueues the 90% owner WA alert once per period. Suppressed/alert messages don't count. |
 | `onCreate updates/{updid}` (status_change, photo_added) | `updateTaskState` + `triggerNotifications` | Cascades changes; enqueues WhatsApp messages. Gated by `project.lifecycle` (see below). |
 | `onUpdate projects/{pid}` (lifecycle → published) | `firePublishWelcomeMessages` | Sends one-time welcome WA to client + first assignment WA to any pre-assigned collaborators. Idempotent on `project.publishedAt`. |
 | `onUpdate projects/{pid}` (lifecycle → completed) | `setRetentionDates` + `fireCompletionMessages` | Sets `retentionUntil` on documents; sends handover WA to client; suppresses further outbound. |
 | `onUpdate projects/{pid}` (lifecycle → archived | deleted) | `revokeExternalAccess` | Invalidates client + collaborator magic-link JWTs; suppresses all outbound. |
 | `scheduled daily` | `expireMagicLinks` | Marks expired links revoked. |
-| `scheduled daily` | `expireTrials` | Sets workspace to read-only after day 30. |
+| `scheduled daily` | `onTrialExpirySweep` (#24, D7) | Sets `billingStatus: 'read_only'` on trial workspaces past `planExpiresAt`. Paid lapses are flipped manually from the admin panel. |
 
 ## Storage layout (Firebase Storage)
 

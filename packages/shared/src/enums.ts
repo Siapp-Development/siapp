@@ -25,6 +25,10 @@ export type TInviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 // Billing plan tiers
 export type TWorkspacePlan = 'trial' | 'standard' | 'business';
 
+// Workspace billing state (#24, D2). Absent on the doc = 'active' — no
+// backfill; rules and clients must treat a missing field as active.
+export type TBillingStatus = 'active' | 'read_only';
+
 // Actor locale
 export type TLocale = 'en' | 'ms';
 
@@ -80,6 +84,7 @@ export type TMessageStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed'
 export type TActorType = 'user' | 'collaborator' | 'client' | 'system' | 'admin';
 
 // Outbound notification trigger events
+// #24 adds 'wa_quota_90': once-per-period owner DM when WA usage crosses 90%.
 export type TNotificationTrigger =
   | 'project_welcome'
   | 'task_assigned'
@@ -87,7 +92,8 @@ export type TNotificationTrigger =
   | 'task_due_soon'
   | 'task_blocked'
   | 'need_help'
-  | 'inbound_auto_reply';
+  | 'inbound_auto_reply'
+  | 'wa_quota_90';
 
 // Message queue recipient kind (#18, D7): widens the client/collaborator
 // phone-ref pair with firm members ('internal' recipients).
@@ -95,6 +101,7 @@ export type TMessageRecipientType = 'client' | 'collaborator' | 'member';
 
 // Why an enqueued message will never dispatch (#18, D8). Lifecycle reasons
 // are the D-027 "preview record" for non-published projects.
+// #24 adds 'billing': the workspace is read-only (trial expired / lapsed).
 export type TSuppressedReason =
   | 'lifecycle:draft'
   | 'lifecycle:completed'
@@ -102,14 +109,16 @@ export type TSuppressedReason =
   | 'lifecycle:deleted'
   | 'opt_out'
   | 'no_recipient'
-  | 'no_phone';
+  | 'no_phone'
+  | 'billing';
 
-// Admin audit-log action kinds (#10 admin panel)
+// Admin audit-log action kinds (#10 admin panel; #24 adds status_change)
 export type TAdminAction =
   | 'workspace.provision'
   | 'workspace.plan_change'
   | 'workspace.seat_adjust'
   | 'workspace.renewal_adjust'
+  | 'workspace.status_change'
   | 'user.impersonate';
 
 // Project activity timeline event kinds (#23, D2). Server-written only.
@@ -159,4 +168,5 @@ export type TAuditAction =
   | 'collab_link.issue'
   | 'collab_link.reset'
   | 'admin.workspace_adjust'
-  | 'admin.impersonate';
+  | 'admin.impersonate'
+  | 'billing.trial_expired';

@@ -12,6 +12,7 @@ import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/
 
 import { MYT_TIMEZONE, isValidTimeString, type IQuietHours } from '../lib/quietHours.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 
 function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): string {
   const uid = request.auth?.uid;
@@ -66,6 +67,7 @@ export const updateNotificationSettings = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'workspaceId is required.');
   }
   const actorUid = requireWorkspaceAdmin(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
   const quietHours = parseQuietHoursInput(data['quietHours']);
 
   const db = getFirestore();
