@@ -21,6 +21,7 @@
  *     onProjectDocumentWrite → project activity timeline; sensitive callables
  *     + member/client/collaborator triggers → workspace auditLog.
  *   - deleteTask (#23, Q5): attributed task hard-delete.
+ *   - exportProject (#25): owner/admin per-project JSON export (audit-logged).
  *
  * Each export is discovered by the Functions runtime.
  * Deploy: `pnpm --filter @siapp/functions deploy`
@@ -89,6 +90,10 @@ export { updateNotificationSettings } from './callables/updateNotificationSettin
 
 export { issuePortalLink } from './callables/issuePortalLink.js';
 export { redeemPortalLink } from './callables/redeemPortalLink.js';
+
+// ── Data export callable (#25) ──────────────────────────────────────────────
+
+export { exportProject } from './callables/exportProject.js';
 // ── Collaborator task-page callables (#22) ────────────────────────────
 
 export { issueCollabLink } from './callables/issueCollabLink.js';

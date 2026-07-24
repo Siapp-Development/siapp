@@ -19,6 +19,7 @@ import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
 import { useClients } from '../clients/useClients.ts';
 import { ActivitySection } from './activity/ActivitySection.tsx';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
+import { ExportSection } from './export/ExportSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { MilestonesEditor } from './milestones/MilestonesEditor.tsx';
 import { PortalLinkCard } from './PortalLinkCard.tsx';
@@ -418,6 +419,10 @@ export function ProjectDetailPage({
           />
 
           <MilestonesEditor workspaceId={workspaceId} projectId={project.id} canEdit={canEdit} />
+
+          {(role === 'owner' || role === 'admin') && (
+            <ExportSection workspaceId={workspaceId} projectId={project.id} role={role} />
+          )}
 
           <LifecycleActions workspaceId={workspaceId} project={project} role={role} />
         </>

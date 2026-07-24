@@ -313,3 +313,48 @@ export type TInviteErrorCode =
   | 'invite/email-unverified'
   | 'invite/already-member'
   | 'invite/already-in-workspace';
+
+/**
+ * exportProject (#25): owner/admin-only per-project data export. The
+ * callable assembles the full JSON snapshot server-side (D1: direct
+ * response, ~9 MB guard); the web app derives per-entity CSVs from the same
+ * payload client-side (D2). Documents are metadata + `storagePath` only —
+ * the browser resolves fresh download URLs via the client SDK (D3).
+ */
+export interface IExportProjectRequest {
+  workspaceId: string;
+  projectId: string;
+}
+
+/** A Firestore doc flattened for export: `id` + fields, Timestamps → ISO strings. */
+export type TExportRecord = { id: string } & Record<string, unknown>;
+
+/** Task record with its `updates` stream nested (natural CSV split). */
+export interface IExportTaskRecord {
+  id: string;
+  updates: TExportRecord[];
+  [key: string]: unknown;
+}
+
+/** Document metadata record; soft-deleted docs are included, flagged (D6). */
+export interface IExportDocumentRecord {
+  id: string;
+  /** True when the doc carries a `deletedAt` (soft delete — D6). */
+  deleted: boolean;
+  [key: string]: unknown;
+}
+
+/** Versioned export envelope (`exportVersion: 1`). */
+export interface IExportProjectResponse {
+  exportVersion: 1;
+  /** ISO instant the export was assembled. */
+  exportedAt: string;
+  workspaceId: string;
+  projectId: string;
+  project: TExportRecord;
+  phases: TExportRecord[];
+  milestones: TExportRecord[];
+  tasks: IExportTaskRecord[];
+  activity: TExportRecord[];
+  documents: IExportDocumentRecord[];
+}
