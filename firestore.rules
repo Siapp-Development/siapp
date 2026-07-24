@@ -19,6 +19,8 @@ rules_version = '2';
 //   task-update / document reads (20-access-control-departments.md)
 // - #14 adds: document metadata writes for owner/admin/pm (create +
 //   soft-delete only; bytes live in Storage under storage.rules)
+// - #15 adds: duplicatedFromProjectId provenance on project create
+//   (create-only — absent from the update allowlist, so immutable)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -311,9 +313,15 @@ service cloud.firestore {
             'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
             'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
             'startDate', 'targetEndDate', 'actualEndDate',
-            'summary', 'visibility', 'createdAt', 'updatedAt', 'createdBy'
+            'summary', 'visibility', 'createdAt', 'updatedAt', 'createdBy',
+            'duplicatedFromProjectId'
           ])
           && validProjectFields()
+          // #15 duplicate provenance — create-only (immutable via the update
+          // allowlist), non-empty string when present.
+          && (!('duplicatedFromProjectId' in request.resource.data)
+            || (request.resource.data.duplicatedFromProjectId is string
+              && request.resource.data.duplicatedFromProjectId.size() > 0))
           && request.resource.data.id == pid
           && request.resource.data.vertical in ['construction', 'legal', 'other']
           && request.resource.data.lifecycle == 'draft'

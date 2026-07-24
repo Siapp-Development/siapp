@@ -125,7 +125,8 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-function mapTask(id: string, data: DocumentData): ITaskRow {
+/** Maps a raw task doc to a row; exported for the #15 duplicate reader. */
+export function mapTask(id: string, data: DocumentData): ITaskRow {
   return {
     restricted: false,
     id,
@@ -145,6 +146,38 @@ function mapTask(id: string, data: DocumentData): ITaskRow {
     order: typeof data['order'] === 'number' ? data['order'] : 0,
     createdBy: String(data['createdBy'] ?? ''),
   };
+}
+
+/** Maps a raw phase doc to a row; exported for the #15 duplicate reader. */
+export function mapPhase(id: string, data: DocumentData): IPhaseRow {
+  return {
+    id,
+    name: String(data['name'] ?? ''),
+    order: typeof data['order'] === 'number' ? data['order'] : 0,
+    startDate: asDate(data['startDate']),
+    endDate: asDate(data['endDate']),
+    status: (data['status'] ?? 'todo') as TPhaseStatus,
+  };
+}
+
+/**
+ * Task queries provable against the #13 list rules: owner/admin subscribe to
+ * the whole collection; pm/viewer get one query for unrestricted tasks plus
+ * one `array-contains` query per claim department (results deduped by id).
+ */
+export function taskQueriesFor(
+  tasksPath: string,
+  seesEverything: boolean,
+  departments: string[],
+): Query[] {
+  return seesEverything
+    ? [query(collection(db, tasksPath))]
+    : [
+        query(collection(db, tasksPath), where('restrictedToDepartments', '==', [])),
+        ...departments.map((dep) =>
+          query(collection(db, tasksPath), where('restrictedToDepartments', 'array-contains', dep)),
+        ),
+      ];
 }
 
 function mapHeader(header: IRestrictedTaskHeader): IRestrictedHeaderRow {
@@ -188,14 +221,7 @@ export function useTasks(
     setDocsByQuery(null);
     setFailed(false);
     const deps = departmentsKey === '' ? [] : departmentsKey.split('\u0000');
-    const queries: Query[] = seesEverything
-      ? [query(collection(db, tasksPath))]
-      : [
-          query(collection(db, tasksPath), where('restrictedToDepartments', '==', [])),
-          ...deps.map((dep) =>
-            query(collection(db, tasksPath), where('restrictedToDepartments', 'array-contains', dep)),
-          ),
-        ];
+    const queries = taskQueriesFor(tasksPath, seesEverything, deps);
     const unsubscribes = queries.map((q, index) =>
       onSnapshot(
         q,
@@ -278,17 +304,7 @@ export function usePhases(workspaceId: string, projectId: string): TPhasesState 
       collection(db, `workspaces/${workspaceId}/projects/${projectId}/phases`),
       (snapshot) => {
         const rows = snapshot.docs
-          .map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              name: String(data['name'] ?? ''),
-              order: typeof data['order'] === 'number' ? data['order'] : 0,
-              startDate: asDate(data['startDate']),
-              endDate: asDate(data['endDate']),
-              status: (data['status'] ?? 'todo') as TPhaseStatus,
-            };
-          })
+          .map((docSnap) => mapPhase(docSnap.id, docSnap.data()))
           .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
         setState({ status: 'ready', rows });
       },

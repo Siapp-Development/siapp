@@ -10,7 +10,16 @@
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import type { TMemberRole } from '@siapp/shared';
-import { Timestamp, deleteDoc, deleteField, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  Timestamp,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.ts';
 
@@ -36,6 +45,30 @@ afterAll(async () => {
 
 function dbAs(role: TMemberRole, wid: string = WKS_A) {
   return testEnv.authenticatedContext(`user-${role}`, { ...memberClaims(wid, role) }).firestore();
+}
+
+/** A task doc that passes the #13 create rule for `user-<role>` callers. */
+function validTask(
+  id: string,
+  creator: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    title: 'Pour foundation',
+    status: 'todo',
+    assignees: [],
+    visibleToClient: false,
+    visibleToCollaboratorIds: [],
+    restrictedToDepartments: [],
+    sendWhatsapp: false,
+    dependsOn: [],
+    order: 1,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+    createdBy: creator,
+    ...extra,
+  };
 }
 
 /** A project doc that passes the #12 create rule for `user-<role>` callers. */
@@ -338,5 +371,94 @@ describe('project delete', () => {
     for (const role of ['owner', 'admin', 'pm', 'viewer'] as const) {
       await assertFails(deleteDoc(doc(dbAs(role), PROJ_PATH)));
     }
+  });
+});
+
+// #15 duplicate project (D-031): provenance is create-only and the copy is a
+// plain batched client write — the same rules as manual creation apply, so a
+// caller can never copy a task they couldn't see.
+describe('project duplicate (#15)', () => {
+  it('allows owner, admin and pm to create with duplicatedFromProjectId', async () => {
+    for (const role of ['owner', 'admin', 'pm'] as const) {
+      await assertSucceeds(
+        setDoc(
+          doc(dbAs(role), `workspaces/${WKS_A}/projects/copy-${role}`),
+          validProject(`copy-${role}`, { duplicatedFromProjectId: 'proj-site' }, `user-${role}`),
+        ),
+      );
+    }
+  });
+
+  it('denies create with a non-string or empty duplicatedFromProjectId', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/copy-x`),
+        validProject('copy-x', { duplicatedFromProjectId: 123 }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/copy-x`),
+        validProject('copy-x', { duplicatedFromProjectId: '' }),
+      ),
+    );
+  });
+
+  it('denies introducing duplicatedFromProjectId on update (immutable)', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), PROJ_PATH), {
+        duplicatedFromProjectId: 'proj-other',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies modifying or removing duplicatedFromProjectId on an existing copy', async () => {
+    const copyPath = `workspaces/${WKS_A}/projects/proj-copy`;
+    await seedDoc(
+      testEnv,
+      copyPath,
+      validProject('proj-copy', { duplicatedFromProjectId: 'proj-site' }),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), copyPath), {
+        duplicatedFromProjectId: 'proj-other',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), copyPath), {
+        duplicatedFromProjectId: deleteField(),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('allows a duplicate-shaped batch: project + task copies by the caller', async () => {
+    const db = dbAs('pm');
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, `workspaces/${WKS_A}/projects/batch-copy`),
+      validProject('batch-copy', { duplicatedFromProjectId: 'proj-site' }, 'user-pm'),
+    );
+    batch.set(
+      doc(db, `workspaces/${WKS_A}/projects/batch-copy/tasks/task-copy`),
+      validTask('task-copy', 'user-pm'),
+    );
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies a batch whose task copy is restricted to a department the pm lacks', async () => {
+    const db = dbAs('pm');
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, `workspaces/${WKS_A}/projects/batch-blocked`),
+      validProject('batch-blocked', { duplicatedFromProjectId: 'proj-site' }, 'user-pm'),
+    );
+    batch.set(
+      doc(db, `workspaces/${WKS_A}/projects/batch-blocked/tasks/task-fin`),
+      validTask('task-fin', 'user-pm', { restrictedToDepartments: ['dep-finance'] }),
+    );
+    await assertFails(batch.commit());
   });
 });

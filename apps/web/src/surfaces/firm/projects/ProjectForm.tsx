@@ -35,19 +35,43 @@ function fromDateInput(value: string): Date | null {
 export interface IProjectFormProps {
   /** When set, the form edits this project; otherwise it creates a new one. */
   project?: IProjectRow;
+  /** Initial values for a fresh form (duplicate mode). Ignored when `project` is set. */
+  prefill?: Partial<IProjectFormValues>;
+  /** Locks the vertical select — duplicate mode copies it from the source. */
+  verticalLocked?: boolean;
+  /** Maps a submit error to the message shown in the form's alert. */
+  errorMessage?: (error: unknown) => string;
   onSubmit: (values: IProjectFormValues) => Promise<void>;
   onCancel: () => void;
   submitLabel: string;
 }
 
-export function ProjectForm({ project, onSubmit, onCancel, submitLabel }: IProjectFormProps) {
-  const [name, setName] = useState(project?.name ?? '');
-  const [code, setCode] = useState(project?.code ?? '');
-  const [vertical, setVertical] = useState<TProjectVertical>(project?.vertical ?? 'construction');
-  const [status, setStatus] = useState<TProjectStatus>(project?.status ?? 'planning');
-  const [startDate, setStartDate] = useState(toDateInput(project?.startDate ?? new Date()));
-  const [targetEndDate, setTargetEndDate] = useState(toDateInput(project?.targetEndDate ?? null));
-  const [clientCanSee, setClientCanSee] = useState(project?.clientCanSee ?? true);
+export function ProjectForm({
+  project,
+  prefill,
+  verticalLocked = false,
+  errorMessage,
+  onSubmit,
+  onCancel,
+  submitLabel,
+}: IProjectFormProps) {
+  const [name, setName] = useState(project?.name ?? prefill?.name ?? '');
+  const [code, setCode] = useState(project?.code ?? prefill?.code ?? '');
+  const [vertical, setVertical] = useState<TProjectVertical>(
+    project?.vertical ?? prefill?.vertical ?? 'construction',
+  );
+  const [status, setStatus] = useState<TProjectStatus>(
+    project?.status ?? prefill?.status ?? 'planning',
+  );
+  const [startDate, setStartDate] = useState(
+    toDateInput(project?.startDate ?? prefill?.startDate ?? new Date()),
+  );
+  const [targetEndDate, setTargetEndDate] = useState(
+    toDateInput(project?.targetEndDate ?? prefill?.targetEndDate ?? null),
+  );
+  const [clientCanSee, setClientCanSee] = useState(
+    project?.clientCanSee ?? prefill?.clientCanSee ?? true,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,8 +103,8 @@ export function ProjectForm({ project, onSubmit, onCancel, submitLabel }: IProje
         targetEndDate: fromDateInput(targetEndDate),
         clientCanSee,
       });
-    } catch {
-      setError('Could not save the project.');
+    } catch (submitError) {
+      setError(errorMessage !== undefined ? errorMessage(submitError) : 'Could not save the project.');
       setPending(false);
     }
   }
@@ -115,6 +139,7 @@ export function ProjectForm({ project, onSubmit, onCancel, submitLabel }: IProje
               id="project-vertical"
               className="h-10 rounded-md border border-border bg-background px-3 text-sm"
               value={vertical}
+              disabled={verticalLocked}
               onChange={(event) => setVertical(event.target.value as TProjectVertical)}
             >
               {VERTICALS.map((option) => (
