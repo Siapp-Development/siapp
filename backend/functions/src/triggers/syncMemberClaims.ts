@@ -15,6 +15,7 @@ import {
   claimsPayloadSizeBytes,
   isClaimsNoOp,
   isMemberRole,
+  mergeMembershipClaims,
   toStringArray,
   type IMembershipRecord,
 } from '../lib/claims.js';
@@ -77,8 +78,11 @@ export async function syncMemberClaims(event: TMemberWriteEvent): Promise<void> 
     );
   }
 
+  // Existing claims must be read first so non-membership claims (isAdmin,
+  // #10) survive the rebuild — setCustomUserClaims replaces, never merges (#62).
+  let existingClaims: Record<string, unknown> | undefined;
   try {
-    await getAuth().setCustomUserClaims(memberId, payload);
+    existingClaims = (await getAuth().getUser(memberId)).customClaims;
   } catch (error) {
     if (isUserNotFound(error)) {
       // Member doc can precede the auth account (#10/#11 provisioning order);
@@ -88,6 +92,8 @@ export async function syncMemberClaims(event: TMemberWriteEvent): Promise<void> 
     }
     throw error;
   }
+
+  await getAuth().setCustomUserClaims(memberId, mergeMembershipClaims(existingClaims, payload));
 
   // Server-only stamp (enforced by firestore.rules) that tells the client's
   // AuthProvider to call getIdToken(true) now.

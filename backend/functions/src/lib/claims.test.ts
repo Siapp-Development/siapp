@@ -6,7 +6,9 @@ import {
   claimsPayloadSizeBytes,
   isClaimsNoOp,
   isMemberRole,
+  mergeMembershipClaims,
   toStringArray,
+  upsertMembershipClaim,
 } from './claims.js';
 
 describe('buildClaimsPayload', () => {
@@ -90,5 +92,72 @@ describe('field narrowing', () => {
   it('drops non-string department entries', () => {
     expect(toStringArray(['a', 1, 'b', null])).toEqual(['a', 'b']);
     expect(toStringArray('not-an-array')).toEqual([]);
+  });
+});
+
+describe('mergeMembershipClaims', () => {
+  const payload = buildClaimsPayload([{ workspaceId: 'wksA', role: 'owner', departments: [] }]);
+
+  it('preserves non-membership claims like isAdmin (#62 regression)', () => {
+    const merged = mergeMembershipClaims({ isAdmin: true }, payload);
+
+    expect(merged).toEqual({
+      isAdmin: true,
+      workspaces: { wksA: { role: 'owner', departments: [] } },
+    });
+  });
+
+  it('replaces the workspaces key wholesale so stale memberships are dropped', () => {
+    const merged = mergeMembershipClaims(
+      { isAdmin: true, workspaces: { stale: { role: 'pm', departments: [] } } },
+      payload,
+    );
+
+    expect(merged['workspaces']).toEqual({ wksA: { role: 'owner', departments: [] } });
+  });
+
+  it('handles users with no existing claims', () => {
+    expect(mergeMembershipClaims(undefined, payload)).toEqual({
+      workspaces: { wksA: { role: 'owner', departments: [] } },
+    });
+  });
+});
+
+describe('upsertMembershipClaim', () => {
+  it('adds a workspace without touching other memberships or isAdmin (#62 regression)', () => {
+    const merged = upsertMembershipClaim(
+      { isAdmin: true, workspaces: { wksA: { role: 'owner', departments: [] } } },
+      'wksB',
+      { role: 'pm', departments: [] },
+    );
+
+    expect(merged).toEqual({
+      isAdmin: true,
+      workspaces: {
+        wksA: { role: 'owner', departments: [] },
+        wksB: { role: 'pm', departments: [] },
+      },
+    });
+  });
+
+  it('overwrites an existing entry for the same workspace', () => {
+    const merged = upsertMembershipClaim(
+      { workspaces: { wksA: { role: 'viewer', departments: [] } } },
+      'wksA',
+      { role: 'admin', departments: ['electrical'] },
+    );
+
+    expect(merged['workspaces']).toEqual({
+      wksA: { role: 'admin', departments: ['electrical'] },
+    });
+  });
+
+  it('tolerates missing or malformed existing workspaces', () => {
+    expect(upsertMembershipClaim(undefined, 'wksA', { role: 'pm', departments: [] })).toEqual({
+      workspaces: { wksA: { role: 'pm', departments: [] } },
+    });
+    expect(
+      upsertMembershipClaim({ workspaces: 'garbage' }, 'wksA', { role: 'pm', departments: [] }),
+    ).toEqual({ workspaces: { wksA: { role: 'pm', departments: [] } } });
   });
 });

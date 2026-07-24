@@ -27,6 +27,7 @@ import {
 import { postmarkServerToken, sendInviteEmail } from '../lib/mail.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
+import { upsertMembershipClaim, isMemberRole } from '../lib/claims.js';
 
 /** Dashboard origin used in emailed invite links. */
 const appOrigin = defineString('APP_ORIGIN', { default: 'https://dashboard.siapp.app' });
@@ -327,9 +328,16 @@ export const acceptInvite = onCall(async (request) => {
   // Deterministic claims for the immediate redirect; the syncMemberClaims
   // trigger will rebuild the same payload (idempotent) and the
   // claimsUpdatedAt stamp tells the signed-in client to refresh its token.
-  await getAuth().setCustomUserClaims(uid, {
-    workspaces: { [workspaceId]: { role: accepted.role, departments: [] } },
-  });
+  // Existing claims are merged, not replaced — other memberships and
+  // non-membership claims like isAdmin must survive (#62).
+  const existingClaims = (await getAuth().getUser(uid)).customClaims;
+  await getAuth().setCustomUserClaims(
+    uid,
+    upsertMembershipClaim(existingClaims, workspaceId, {
+      role: isMemberRole(accepted.role) ? accepted.role : 'viewer',
+      departments: [],
+    }),
+  );
   await db
     .doc(`users/${uid}`)
     .set({ claimsUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
