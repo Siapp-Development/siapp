@@ -89,21 +89,27 @@ service cloud.firestore {
     }
 
     // Portal principal (#21, D1): custom token minted by redeemPortalLink
-    // with claims pinning ONE client to ONE project in ONE workspace.
+    // with claims pinning ONE client to ONE project in ONE workspace. The
+    // cid shape check rejects tokens without a client binding; the live
+    // clientId re-check happens in portalProjectLive / the project get rule.
     function isPortalClient(wid, pid) {
       return isSignedIn()
         && request.auth.token.portal != null
         && request.auth.token.portal.wid == wid
-        && request.auth.token.portal.pid == pid;
+        && request.auth.token.portal.pid == pid
+        && request.auth.token.portal.cid is string
+        && request.auth.token.portal.cid.size() > 0;
     }
 
-    // Portal reads re-check the D-027 lifecycle gate on every request (one
-    // get(); subcollections only — the project doc checks resource.data
-    // directly). Unpublish/archive/delete instantly closes the portal, which
-    // is what makes soft link-revocation (Q1) safe.
+    // Portal reads re-check the D-027 lifecycle gate AND the project's
+    // current client binding on every request (one get(); subcollections
+    // only — the project doc checks resource.data directly). Unpublish/
+    // archive/delete or re-linking the project to another client instantly
+    // closes the portal, which is what makes soft link-revocation (Q1) safe.
     function portalProjectLive(wid, pid) {
-      return get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid))
-        .data.lifecycle in ['published', 'completed'];
+      let project = get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)).data;
+      return project.lifecycle in ['published', 'completed']
+        && project.clientId == request.auth.token.portal.cid;
     }
 
     // Field validation for own users/{uid} writes. Whitelisted keys only —
@@ -495,11 +501,13 @@ service cloud.firestore {
       // callable (D-027) and summary through the onTaskWrite trigger.
       match /projects/{pid} {
         // #21: portal principals may get their one project while it is
-        // published/completed (resource.data — no extra get()); list stays
-        // firm-only so the portal can never enumerate projects.
+        // published/completed and still linked to their client
+        // (resource.data — no extra get()); list stays firm-only so the
+        // portal can never enumerate projects.
         allow get: if isFirmMember(wid)
           || (isPortalClient(wid, pid)
-            && resource.data.lifecycle in ['published', 'completed']);
+            && resource.data.lifecycle in ['published', 'completed']
+            && resource.data.clientId == request.auth.token.portal.cid);
         allow list: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
           && request.resource.data.keys().hasOnly([

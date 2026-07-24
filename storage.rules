@@ -33,14 +33,18 @@ service firebase.storage {
         && request.auth.token.workspaces[wid].role in roles;
     }
 
-    // Portal principal (#21) — same shape as firestore.rules. Lifecycle
-    // re-checks live in the Firestore metadata rules (no cross-service get
-    // here); tokens are short-lived and scoped to one project.
+    // Portal principal (#21) — same shape as firestore.rules, including the
+    // non-empty cid claim check so only properly-minted client-scoped tokens
+    // count. Lifecycle re-checks live in the Firestore metadata rules (no
+    // cross-service get here); tokens are short-lived and scoped to one
+    // project.
     function isPortalClient(wid, pid) {
       return isSignedIn()
         && request.auth.token.portal != null
         && request.auth.token.portal.wid == wid
-        && request.auth.token.portal.pid == pid;
+        && request.auth.token.portal.pid == pid
+        && request.auth.token.portal.cid is string
+        && request.auth.token.portal.cid.size() > 0;
     }
 
     // Mirrors ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (parity enforced

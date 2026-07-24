@@ -107,40 +107,45 @@ export const issuePortalLink = onCall(async (request) => {
   const linksRef = db.collection(`workspaces/${workspaceId}/magicLinks`);
   const now = Timestamp.now();
 
-  // Revoke every active link for this (project, client) pair — one active
-  // link invariant. Soft revoke (Q1): blocks re-redemption only.
-  const active = await linksRef
-    .where('audience', '==', 'client')
-    .where('scopeType', '==', 'project')
-    .where('scopeId', '==', projectId)
-    .where('subjectId', '==', clientId)
-    .where('revoked', '==', false)
-    .get();
-  const rotated = !active.empty;
-  for (const snap of active.docs) {
-    await snap.ref.update({
-      revoked: true,
-      revokedAt: FieldValue.serverTimestamp(),
-      revokedBy: uid,
-    });
-  }
-
   const { shortCode, secret, token } = generatePortalToken();
   const linkRef = linksRef.doc();
   const expiresAt = Timestamp.fromMillis(now.toMillis() + PORTAL_LINK_TTL_MS);
-  await linkRef.set({
-    id: linkRef.id,
-    shortCode,
-    secretHash: hashSecret(secret),
-    audience: 'client',
-    scopeType: 'project',
-    scopeId: projectId,
-    subjectId: clientId,
-    issuedAt: now,
-    expiresAt,
-    useCount: 0,
-    revoked: false,
-    createdBy: uid,
+
+  // Revoke every active link for this (project, client) pair and mint the
+  // replacement atomically — a transaction so two concurrent calls cannot
+  // both observe "no active link" and leave two live links (one active link
+  // invariant). Soft revoke (Q1): blocks re-redemption only.
+  const rotated = await db.runTransaction(async (tx) => {
+    const active = await tx.get(
+      linksRef
+        .where('audience', '==', 'client')
+        .where('scopeType', '==', 'project')
+        .where('scopeId', '==', projectId)
+        .where('subjectId', '==', clientId)
+        .where('revoked', '==', false),
+    );
+    for (const snap of active.docs) {
+      tx.update(snap.ref, {
+        revoked: true,
+        revokedAt: FieldValue.serverTimestamp(),
+        revokedBy: uid,
+      });
+    }
+    tx.set(linkRef, {
+      id: linkRef.id,
+      shortCode,
+      secretHash: hashSecret(secret),
+      audience: 'client',
+      scopeType: 'project',
+      scopeId: projectId,
+      subjectId: clientId,
+      issuedAt: now,
+      expiresAt,
+      useCount: 0,
+      revoked: false,
+      createdBy: uid,
+    });
+    return !active.empty;
   });
 
   await writeAuditLog(workspaceId, {
