@@ -81,27 +81,35 @@ export function taskDeletedActivityId(taskId: string): string {
 }
 
 /**
- * Per-invocation `users/{uid}` displayName resolver (D4). Memoized so a
- * multi-event write reads each profile once; missing/unnamed profiles fall
- * back to 'Unknown member'.
+ * Per-invocation actor displayName resolver (D4). Memoized so a multi-event
+ * write reads each profile once; missing/unnamed profiles fall back to
+ * 'Unknown member'. #22: collaborator actors (actorType 'collaborator',
+ * actorId = colid) resolve via `workspaces/{wid}/collaborators/{colid}`
+ * instead of `users/{uid}` — pass the workspaceId to enable it; fallback is
+ * 'A collaborator'.
  */
-export function createActorNameResolver(): (uid: string | null) => Promise<string> {
+export function createActorNameResolver(
+  workspaceId?: string,
+): (uid: string | null, actorType?: TActorType) => Promise<string> {
   const cache = new Map<string, Promise<string>>();
-  return (uid) => {
+  return (uid, actorType) => {
+    const collaborator = actorType === 'collaborator' && workspaceId !== undefined;
+    const fallback = collaborator ? 'A collaborator' : 'Unknown member';
     if (uid === null || uid === '') {
-      return Promise.resolve('Unknown member');
+      return Promise.resolve(fallback);
     }
-    let pending = cache.get(uid);
+    const path = collaborator ? `workspaces/${workspaceId}/collaborators/${uid}` : `users/${uid}`;
+    let pending = cache.get(path);
     if (pending === undefined) {
       pending = getFirestore()
-        .doc(`users/${uid}`)
+        .doc(path)
         .get()
         .then((snap) => {
-          const name = snap.get('displayName') as unknown;
-          return typeof name === 'string' && name !== '' ? name : 'Unknown member';
+          const name = snap.get(collaborator ? 'name' : 'displayName') as unknown;
+          return typeof name === 'string' && name !== '' ? name : fallback;
         })
-        .catch(() => 'Unknown member');
-      cache.set(uid, pending);
+        .catch(() => fallback);
+      cache.set(path, pending);
     }
     return pending;
   };

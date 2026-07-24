@@ -67,6 +67,20 @@ describe('deriveTaskActivity', () => {
     ]);
   });
 
+  it('attributes collab-principal updatedBy to the collaborator (#22)', () => {
+    const events = deriveTaskActivity(
+      't1',
+      { ...TASK_BASE },
+      { ...TASK_BASE, status: 'done', updatedBy: 'collab_w1_t1_col1' },
+    );
+    expect(events[0]).toMatchObject({
+      action: 'task_status_changed',
+      actorUid: 'col1',
+      actorType: 'collaborator',
+      payload: { from: 'todo', to: 'done' },
+    });
+  });
+
   it('marks task events visibleToClient only when the task is client-visible and unrestricted (#21 D4)', () => {
     const visible = { ...TASK_BASE, visibleToClient: true };
     expect(deriveTaskActivity('t1', undefined, visible)[0].visibleToClient).toBe(true);
@@ -166,6 +180,19 @@ describe('deriveDocumentActivity', () => {
   it('marks doc_added visibleToClient when the document is client-visible (#21 D4)', () => {
     const events = deriveDocumentActivity('d1', undefined, { ...DOC_BASE, visibleToClient: true });
     expect(events[0]).toMatchObject({ action: 'doc_added', visibleToClient: true });
+  });
+
+  it('carries the colid on collaborator doc_added so the name resolves (#22)', () => {
+    const events = deriveDocumentActivity('d1', undefined, {
+      ...DOC_BASE,
+      uploaderType: 'collaborator',
+      uploadedBy: 'col1',
+    });
+    expect(events[0]).toMatchObject({
+      action: 'doc_added',
+      actorUid: 'col1',
+      actorType: 'collaborator',
+    });
   });
 
   it('derives client_document_uploaded for client uploads — always portal-visible (#21)', () => {

@@ -308,6 +308,7 @@ export function ProjectDetailPage({
           uid={uid}
           userName={userName}
           canEdit={canEdit}
+          lifecycle={project.lifecycle}
         />
       )}
 

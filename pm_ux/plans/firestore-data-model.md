@@ -14,7 +14,7 @@ Closes **Q44** (blocker). Locks the structural choice that everything downstream
 2. **Denormalize for read patterns.** Names, counts, and rollups are duplicated onto parent docs so dashboards render in one read. Cloud Functions keep them consistent.
 3. **No joins, no cross-workspace queries** at MVP. If a use case needs them, it's a v2 feature, not a data-model change.
 4. **Magic-link access is server-mediated.** Collaborators and clients never touch Firestore from the client. A Cloud Run endpoint validates the JWT and uses the Admin SDK with `withConverter`-style scope checks.
-   > **Superseded for the client portal (#21, D1):** the portal redeems its link through the `redeemPortalLink` callable, which mints a Firebase **custom token** carrying `portal` claims (`wid`/`pid`/`cid`/`linkId`). After sign-in, the portal reads Firestore/Storage **directly through the client SDK**, gated by portal-claim rules (project get when live, phases/milestones, `visibleToClient` documents + activity, client-uploads). Collaborator (`/t`) access remains as described here.
+   > **Superseded for the client portal (#21, D1):** the portal redeems its link through the `redeemPortalLink` callable, which mints a Firebase **custom token** carrying `portal` claims (`wid`/`pid`/`cid`/`linkId`). After sign-in, the portal reads Firestore/Storage **directly through the client SDK**, gated by portal-claim rules (project get when live, phases/milestones, `visibleToClient` documents + activity, client-uploads). The collaborator task page (#22) follows the same pattern: `redeemCollabLink` mints a custom token with `collab` claims (`wid`/`pid`/`tid`/`colid`/`linkId`, uid `collab_{wid}_{tid}_{colid}`); reads go through collab-claim rules and writes go through the `submitCollabUpdate` callable plus rules-gated `collab-uploads/` Storage writes.
 5. **Pre-aggregate, don't compute.** Counts (`summary.totalTasks`, `usageCounters`) are maintained on writes — never computed at read time.
 6. **Indexes are part of the model.** Every list view in the UI maps to a composite index defined upfront.
 
@@ -281,6 +281,9 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   description?: string,
   phaseId?: string,
   status: 'todo' | 'in_progress' | 'blocked' | 'done',
+  blockedReason?: string,          // #22 (D-d): collaborator "need help" reason (≤ 1000 chars).
+                                   // Set by submitCollabUpdate alongside status: 'blocked';
+                                   // cleared whenever status leaves 'blocked'.
 
   startDate?: Timestamp,           // optional kickoff date; pairs with dependsOn for sequencing (D-031)
   dueDate?: Timestamp,
@@ -393,14 +396,14 @@ department-gated via `restrictedToDepartments` (same semantics as tasks, see
   name: string,
   mimeType: string,
   sizeBytes: number,
-  storagePath: string,           // Firebase Storage path. Client uploads land under `.../projects/{projId}/client-uploads/{uuid}-{filename}` per D-034.
+  storagePath: string,           // Firebase Storage path. Client uploads land under `.../projects/{projId}/client-uploads/{uuid}-{filename}` per D-034; collaborator uploads under `.../projects/{projId}/collab-uploads/{uuid}-{filename}` (#22, D-f).
   scope: 'project' | 'task',
   scopeId: string,
   uploadedBy: string,            // uid, colid, or cid (client)
   uploaderType: 'firm_member' | 'collaborator' | 'client',  // D-034: client uploads via portal are always `uploaderType: 'client'`, `scope: 'project'`, `visibleToClient: true`.
   uploadedAt: Timestamp,
   visibleToClient: boolean,      // for task-scoped docs: defaults to the parent task's `visibleToClient` at upload time. Applies equally to firm and collaborator uploads (D-029). Client-uploaded docs are always true.
-  visibleToCollaboratorIds: string[],
+  visibleToCollaboratorIds: string[], // collaborator uploads (#22) pin this to `[colid]` so the uploader can read the doc back.
   restrictedToDepartments: string[], // inherits task restriction; can be set directly for project-scoped docs. Client uploads always start with `[]` (unrestricted within the firm).
   scanStatus: 'pending' | 'clean' | 'infected',
   retentionUntil?: Timestamp,    // for Q54 — set on project close
@@ -458,15 +461,18 @@ department-gated via `restrictedToDepartments` (same semantics as tasks, see
 `shortCode` is the URL-safe identifier (e.g. `a8K2pQ`). Looked up first, then validated against the JWT.
 
 > **Implemented shape for client portal links (#21, D2):** the doc id is a random `linkId` (not the shortCode); `shortCode` is an indexed field resolved via a collection-group query. The URL token is `{shortCode}_{secret}` and only `secretHash` (SHA-256 of the secret) is stored — the raw secret is never at rest, so issuing always **rotates** (old links are revoked, a fresh one is minted). TTL is 90 days; one active link per project+client pair.
+>
+> **Collaborator task links (#22, D-a/D-e)** reuse the same collection and shape with `audience: 'collaborator'` / `scopeType: 'task'`: `scopeId` is the task id, `subjectId` the colid, and `projectId` (below) carries the project so redemption can build the doc path. One active rotating link per (task, collaborator) pair; links are revoked when the collaborator is unassigned, and issuing requires the project to be `published` or `completed`.
 
 ```typescript
 {
   shortCode: string,           // indexed field (portal links: doc id = linkId)
-  secretHash?: string,         // portal links only — SHA-256 of the URL secret
+  secretHash?: string,         // portal + collab links — SHA-256 of the URL secret
   audience: 'collaborator' | 'client',
   scopeType: 'task' | 'project',
   scopeId: string,             // taskId or projectId
   subjectId: string,           // colid or cid
+  projectId?: string,          // #22: set on collaborator task links (scopeId is the taskId)
   issuedAt: Timestamp,
   expiresAt: Timestamp,
   lastUsedAt?: Timestamp,
@@ -556,6 +562,18 @@ user.customClaims = {
 
 Security rules read this for O(1) membership + role + department checks without an extra Firestore read. Watch the 1 KB claims budget; if it's ever exceeded, drop `departments` from claims and read `members/{uid}` once per session.
 
+Portal (#21) and collaborator (#22) sessions use **custom tokens** with their own claim shapes instead of `workspaces`:
+
+```typescript
+// Client portal session (uid: portal_{wid}_{pid}_{cid})
+{ portal: { wid: string, pid: string, cid: string, linkId: string } }
+
+// Collaborator task session (uid: collab_{wid}_{tid}_{colid})
+{ collab: { wid: string, pid: string, tid: string, colid: string, linkId: string } }
+```
+
+Rules pin every portal read to the claimed project and every collab read/write to the claimed task; the deterministic uid lets the task-activity trigger attribute `updatedBy: collab_…` writes to the collaborator.
+
 ## Required composite indexes
 
 Define in `firestore.indexes.json`. List view → index mapping:
@@ -570,6 +588,8 @@ Define in `firestore.indexes.json`. List view → index mapping:
 | Failed messages dashboard | `messages` | `status ASC, createdAt DESC` |
 | Active magic links | `magicLinks` | `revoked ASC, expiresAt DESC` |
 | Collaborator history | `tasks` (collection group) | `assignees.id ASC, completedAt DESC` |
+| Collaborator's own notes on /t (#22) | `updates` | `authorId ASC, createdAt DESC` |
+| Collaborator-visible files on /t (#22) | `documents` | `visibleToCollaboratorIds CONTAINS, deletedAt ASC, scopeId ASC` |
 
 **Collection-group queries** are used sparingly — only for "my tasks" cross-project view. Each requires explicit indexing.
 
@@ -583,7 +603,7 @@ Every project carries a `lifecycle` field, set on create and changed only by exp
 |---|---|---|---|---|---|
 | `draft` (default on create) | Project created (blank, duplicated, or Siapp-Admin starter); before publish | **Suppressed.** Events still written to `updates/*` and a `would_have_sent: true` flag on the corresponding `outbox` doc for preview. No Twilio calls made. | None — portal returns "This project hasn't started yet" if a client URL is opened. | Not generated. Pre-assignments stored on tasks; queued until publish. | ✅ Full edit |
 | `published` | PM explicitly publishes the project | **Active.** Triggers fire per task/recipient toggles. On the transition itself: one welcome WA to client + one assignment WA per pre-assigned collaborator. | ✅ Full read per `visibleToClient` rules. | ✅ Generated on assignment. | ✅ Full edit |
-| `completed` | PM marks project done (or final milestone closes) | **Suppressed** except a one-time "project completed" handover WA to client. | ✅ Read-only. | Existing links revoked; no new links issued. | ⚠️ Read-only except admin can re-open → returns to `published` |
+| `completed` | PM marks project done (or final milestone closes) | **Suppressed** except a one-time "project completed" handover WA to client. | ✅ Read-only. | ✅ Links keep working and can still be issued (#22, matches portal issuance). | ⚠️ Read-only except admin can re-open → returns to `published` |
 | `archived` | PM archives a completed/abandoned project; hides from default lists | **Suppressed.** All outbound dropped silently. | Revoked. Portal URL returns 404. | Revoked. | 🚫 Read-only |
 | `deleted` | Owner soft-deletes the project | **Suppressed.** | Revoked. | Revoked. | 🚫 Hidden everywhere. Hard-purged after retention window (see [14-legal-compliance.md](./14-legal-compliance.md)). |
 

@@ -23,7 +23,9 @@ export type TProjectActivityAction =
   | 'project_deleted'
   | 'project_reopened'
   | 'client_link_changed'
-  | 'client_document_uploaded';
+  | 'client_document_uploaded'
+  | 'collaborator_note_added'
+  | 'collaborator_need_help';
 
 export type TActorType = 'user' | 'collaborator' | 'client' | 'system' | 'admin';
 
@@ -45,8 +47,12 @@ export type TAuditAction =
   | 'collaborator.update'
   | 'portal_link.issue'
   | 'portal_link.reset'
+  | 'collab_link.issue'
+  | 'collab_link.reset'
   | 'admin.workspace_adjust'
   | 'admin.impersonate';
+
+import { parseCollabUid } from './portalTokens.js';
 
 type TDocData = Record<string, unknown> | undefined;
 
@@ -163,10 +169,17 @@ export function deriveTaskActivity(
   }
 
   const updatedBy = str(after, 'updatedBy');
-  const actor: Pick<IDerivedActivityEvent, 'actorUid' | 'actorType'> = {
-    actorUid: updatedBy !== '' ? updatedBy : null,
-    actorType: updatedBy !== '' ? 'user' : 'system',
-  };
+  // #22: submitCollabUpdate stamps updatedBy with the collab principal uid
+  // (`collab_{wid}_{tid}_{colid}`) — attribute those events to the
+  // collaborator, with the colid as actor id for name resolution.
+  const collabActor = parseCollabUid(updatedBy);
+  const actor: Pick<IDerivedActivityEvent, 'actorUid' | 'actorType'> =
+    collabActor !== null
+      ? { actorUid: collabActor.colid, actorType: 'collaborator' }
+      : {
+          actorUid: updatedBy !== '' ? updatedBy : null,
+          actorType: updatedBy !== '' ? 'user' : 'system',
+        };
   const events: IDerivedActivityEvent[] = [];
 
   const fromStatus = str(before, 'status');
@@ -265,7 +278,12 @@ export function deriveDocumentActivity(
       {
         ...base,
         action: 'doc_added',
-        actorUid: actorType === 'user' && uploadedBy !== '' ? uploadedBy : null,
+        // #22: collaborator uploads carry the colid so the trigger can
+        // resolve the collaborator's real name for the firm feed.
+        actorUid:
+          (actorType === 'user' || actorType === 'collaborator') && uploadedBy !== ''
+            ? uploadedBy
+            : null,
         actorType: uploadedBy !== '' ? actorType : 'system',
         visibleToClient: after['visibleToClient'] === true,
         payload: {},

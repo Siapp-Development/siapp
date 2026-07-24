@@ -53,6 +53,60 @@ vi.mock('@/surfaces/portal/updates/usePortalUpdates.ts', () => ({
   UPDATES_PAGE_SIZE: 30,
 }));
 
+// The collaborator page (#22) redeems its token the same way — mock the
+// session + task hook modules so no firebase code loads here either.
+const collabSession = vi.hoisted(() => ({
+  workspaceId: 'wks-1',
+  projectId: 'proj-1',
+  taskId: 'task-1',
+  collaboratorId: 'col-1',
+  branding: { firmName: 'Studio North' },
+  task: {
+    title: 'Install signage',
+    description: '',
+    status: 'todo',
+    dueDate: null,
+    projectName: 'Roadside Cafe Fitout',
+  },
+}));
+
+vi.mock('@/surfaces/collab/useCollabSession.ts', async () => {
+  const { createContext, useContext } = await import('react');
+  const SessionContext = createContext<unknown>(null);
+  return {
+    useCollabSession: () => ({
+      state: { status: 'ready', session: collabSession },
+      retry: () => {},
+    }),
+    CollabSessionProvider: SessionContext.Provider,
+    useCollabSessionContext: () => useContext(SessionContext),
+  };
+});
+
+vi.mock('@/surfaces/collab/useCollabTask.ts', () => ({
+  useCollabTask: () => ({
+    status: 'ready',
+    task: {
+      title: 'Install signage',
+      description: 'Mount the fascia sign.',
+      status: 'todo',
+      dueDate: null,
+      blockedReason: '',
+      visibleToClient: false,
+      restrictedToDepartments: [],
+    },
+  }),
+  useCollabUpdates: () => ({ status: 'ready', rows: [] }),
+  useCollabDocuments: () => ({ status: 'ready', rows: [] }),
+  validateCollabFile: () => null,
+  collabDownloadUrl: vi.fn(),
+  uploadCollabDocument: vi.fn(),
+}));
+
+vi.mock('@/lib/callables.ts', () => ({
+  submitCollabUpdate: vi.fn(),
+}));
+
 import { apexRoutes } from '@/routes/apexRouter.tsx';
 
 function renderAt(path: string) {
@@ -98,11 +152,13 @@ describe('apexRouter', () => {
     expect(document.documentElement.dataset.surface).toBe('portal');
   });
 
-  it('lazy-loads the collaborator page at /t/:token and surfaces the token', async () => {
+  it('lazy-loads the collaborator task page at /t/:token', async () => {
     renderAt('/t/xyz');
 
-    expect(await screen.findByRole('heading', { level: 1, name: /your task/i })).toBeInTheDocument();
-    expect(screen.getByText('xyz')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Install signage' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/studio north/i)).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 });

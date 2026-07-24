@@ -107,3 +107,32 @@ export const CLIENT_ALLOWED_DOCUMENT_MIME_TYPES = [
  * backend/functions/src/lib/portalTokens.ts.
  */
 export const PORTAL_LINK_TTL_DAYS = 90;
+
+/**
+ * Collaborator task-link lifetime (#22, E1): 90 days from issue, mirroring
+ * the portal. One active link per (task, collaborator); issuance rotates.
+ * Mirrored in backend/functions/src/lib/portalTokens.ts.
+ */
+export const COLLAB_LINK_TTL_DAYS = 90;
+
+/**
+ * Max upload size for collaborator uploads from /t (#22, D-f) — enforced in
+ * storage.rules and firestore.rules; keep the three in sync.
+ */
+export const MAX_COLLAB_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Content types accepted for collaborator uploads (#22, D-f): images, PDF
+ * and Word only. Mirrored verbatim in storage.rules and firestore.rules
+ * (parity enforced by a rules test). No image/svg+xml — SVGs can carry
+ * scripts.
+ */
+export const COLLAB_ALLOWED_DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+] as const;

@@ -87,3 +87,37 @@ export function buildPortalUrl(origin: string, token: string): string {
   const base = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   return `${base}/p/${token}`;
 }
+
+/** Mirrors COLLAB_LINK_TTL_DAYS in @siapp/shared (#22). */
+export const COLLAB_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Deterministic collaborator principal uid (#22, E1): one auth user per
+ * (task, collaborator) pair, so re-redemption never accumulates ghosts.
+ * ids are Firestore auto-ids (no underscores), so the uid splits cleanly:
+ * ['collab', wid, tid, colid].
+ */
+export function collabUid(wid: string, tid: string, colid: string): string {
+  return `collab_${wid}_${tid}_${colid}`;
+}
+
+/**
+ * The collaborator id from a `collab_{wid}_{tid}_{colid}` uid, or null when
+ * the value is not a collab principal uid (#22 activity attribution).
+ */
+export function parseCollabUid(uid: string): { wid: string; tid: string; colid: string } | null {
+  if (!uid.startsWith('collab_')) {
+    return null;
+  }
+  const parts = uid.split('_');
+  if (parts.length !== 4 || parts[1] === '' || parts[2] === '' || parts[3] === '') {
+    return null;
+  }
+  return { wid: parts[1], tid: parts[2], colid: parts[3] };
+}
+
+/** `https://siapp.app/t/{shortCode}_{secret}` on the apex origin (D-036). */
+export function buildCollabUrl(origin: string, token: string): string {
+  const base = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+  return `${base}/t/${token}`;
+}

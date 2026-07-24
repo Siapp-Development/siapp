@@ -65,6 +65,8 @@ export interface ITaskRow {
   dependsOn: string[];
   order: number;
   createdBy: string;
+  /** #22 (D-d): collaborator need-help reason — set while status is blocked. */
+  blockedReason: string;
 }
 
 /** Dimmed header row for a task the member cannot read (A3/A5d). */
@@ -167,6 +169,7 @@ export function mapTask(id: string, data: DocumentData): ITaskRow {
     dependsOn: asStringArray(data['dependsOn']),
     order: typeof data['order'] === 'number' ? data['order'] : 0,
     createdBy: String(data['createdBy'] ?? ''),
+    blockedReason: typeof data['blockedReason'] === 'string' ? data['blockedReason'] : '',
   };
 }
 
@@ -447,6 +450,8 @@ export async function updateTask(
     dueDate: values.dueDate !== null ? Timestamp.fromDate(values.dueDate) : deleteField(),
     ...(nowDone && !wasDone ? { completedAt: serverTimestamp() } : {}),
     ...(!nowDone ? { completedAt: deleteField() } : {}),
+    // #22 (D-d): leaving 'blocked' clears the collaborator's help reason.
+    ...(values.status !== 'blocked' ? { blockedReason: deleteField() } : {}),
     assignees: values.assignees,
     visibleToClient: values.visibleToClient,
     restrictedToDepartments: values.restrictedToDepartments,

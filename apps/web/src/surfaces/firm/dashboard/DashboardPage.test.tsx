@@ -72,6 +72,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     dependsOn: [],
     order: 0,
     createdBy: UID,
+    blockedReason: '',
     projectId: 'p1',
     projectName: 'Bungalow build',
     ...overrides,
