@@ -101,6 +101,11 @@ deploys are incremental.
   `roles/secretmanager.viewer`, or a new `defineSecret` was added whose secret
   doesn't exist yet (`gcloud secrets create <NAME> --project siapp-prod` then
   `gcloud secrets versions add`). See §1 for the runtime-SA accessor grant.
+- **"non-interactive mode but have no value for … <PARAM>"** — a new
+  `defineString`/`defineInt` param was added; CI can't prompt for values (code
+  defaults don't count). Add the value to
+  [backend/functions/.env.siapp-prod](../backend/functions/.env.siapp-prod)
+  (committed, public values only — secrets go through `defineSecret`).
 - **Functions prompt about deleting a function** — the workflow passes
   `--force`, so removals are applied automatically. If a function disappears
   unexpectedly, check that it's still exported from

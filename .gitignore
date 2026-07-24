@@ -11,6 +11,9 @@ logs/
 
 # keep the example env committed
 !.env.example
+# functions deploy-time params (public values, no secrets) — CI deploys are
+# non-interactive and can't prompt for them (#57)
+!backend/functions/.env.siapp-prod
 
 # pnpm (replace npm lock file)
 package-lock.json
