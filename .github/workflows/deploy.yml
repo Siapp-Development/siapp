@@ -1,0 +1,87 @@
+name: Deploy
+
+# Production deploy (#57): runs after CI succeeds on main (i.e. after every PR
+# merge), plus a manual button for re-deploys. Deploys everything Firebase:
+# the three hosting sites (apex/dashboard/admin — targets in .firebaserc),
+# Cloud Functions, Firestore rules + indexes, and Storage rules.
+# backend/api (Cloud Run skeleton) is intentionally not deployed — nothing
+# routes to it yet.
+
+on:
+    workflow_run:
+        workflows: [CI]
+        types: [completed]
+        branches: [main]
+    workflow_dispatch:
+
+# One deploy at a time; never cancel a deploy mid-flight. Queued runs collapse
+# so the newest commit wins.
+concurrency:
+    group: deploy-production
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        name: Deploy to Firebase (siapp-prod)
+        runs-on: ubuntu-latest
+        # workflow_run fires on failure too — only deploy when CI was green.
+        if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+        permissions:
+            contents: read
+
+        environment: production
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  # For workflow_run events, check out the exact commit CI
+                  # validated — not whatever main points at by the time the
+                  # runner starts.
+                  ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+            - name: Set up pnpm
+              uses: pnpm/action-setup@v4
+              # version is resolved from the "packageManager" field in package.json
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version-file: ".nvmrc"
+                  cache: "pnpm"
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build
+              run: pnpm build
+              env:
+                  # Main-branch builds upload source maps to Sentry (#27).
+                  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+            - name: Check bundle isolation
+              run: node scripts/check-bundle-isolation.mjs
+
+            - name: Write deploy credentials
+              # Deployer service-account key (setup: plans/runbook-deploy.md).
+              # firebase-tools picks it up via GOOGLE_APPLICATION_CREDENTIALS.
+              run: |
+                  printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/gcp-sa-key.json"
+                  echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-sa-key.json" >> "$GITHUB_ENV"
+              env:
+                  FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+            - name: Deploy hosting, functions, rules and indexes
+              # --force answers the non-interactive prompts (e.g. confirming
+              # deletion of functions removed from the codebase). The functions
+              # predeploy hook in firebase.json compiles backend/functions.
+              run: pnpm exec firebase deploy
+                  --only hosting,functions,firestore,storage
+                  --project siapp-prod
+                  --force
+                  --non-interactive
+
+            - name: Scrub deploy credentials
+              if: always()
+              run: rm -f "$RUNNER_TEMP/gcp-sa-key.json"
