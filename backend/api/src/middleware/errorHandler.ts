@@ -22,6 +22,13 @@ export function errorHandler(logger: Logger) {
     }
 
     // Unexpected error — log full stack and return 500.
+    //
+    // #27 Sentry wiring point (Part B): when process.env.SENTRY_DSN is set,
+    // initialize @sentry/node once at app bootstrap and call
+    // Sentry.captureException(err) right here before responding. Until the
+    // API deploys, the structured pino JSON below is the error signal —
+    // Cloud Logging / Error Reporting parse it once the service runs on
+    // Cloud Run. See plans/runbook-observability.md (B1).
     logger.error({ err }, 'Unhandled error');
     res.status(500).json({
       error: {

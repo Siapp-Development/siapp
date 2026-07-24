@@ -3,12 +3,17 @@
  * actions (Copy · Call · WhatsApp) and a read-only "Notifications off"
  * badge when the server-only opt-out flag is set (D-035). Creating and
  * editing is owner/admin/pm-only; clients have no delete at MVP.
+ * #26: consent badges, and the owner/admin-only "Delete personal data"
+ * (PDPA) action — erased rows are frozen (rules deny edits) and render
+ * anonymized.
  */
 
 import { Button, Card, CardContent, CardHeader } from '@siapp/ui';
 import type { TLocale, TMemberRole } from '@siapp/shared';
 import { useState } from 'react';
 
+import { DeletePersonalDataDialog } from '../pdpa/DeletePersonalDataDialog.tsx';
+import { NoConsentBadge, PdpaErasedBadge } from '../pdpa/PdpaBadges.tsx';
 import { ClientForm } from './ClientForm.tsx';
 import { NotificationsOffBadge, PhoneActions } from './PhoneActions.tsx';
 import { createClient, updateClient, useClients, type IClientRow } from './useClients.ts';
@@ -20,6 +25,7 @@ const LANGUAGE_LABELS: Record<TLocale, string> = {
 
 export interface IClientsListPageProps {
   workspaceId: string;
+  workspaceName: string;
   role: TMemberRole;
   uid: string;
 }
@@ -27,10 +33,12 @@ export interface IClientsListPageProps {
 interface IClientRowItemProps {
   client: IClientRow;
   canManage: boolean;
+  canDeleteData: boolean;
   onEdit: (client: IClientRow) => void;
+  onDeleteData: (client: IClientRow) => void;
 }
 
-function ClientRowItem({ client, canManage, onEdit }: IClientRowItemProps) {
+function ClientRowItem({ client, canManage, canDeleteData, onEdit, onDeleteData }: IClientRowItemProps) {
   return (
     <li className="rounded-md border border-border px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -40,19 +48,30 @@ function ClientRowItem({ client, canManage, onEdit }: IClientRowItemProps) {
             <span className="text-xs text-muted-foreground">{client.companyName}</span>
           )}
           {client.notificationsOptOut && <NotificationsOffBadge />}
+          {client.pdpaErased && <PdpaErasedBadge />}
+          {!client.pdpaErased && client.waConsentGranted !== true && <NoConsentBadge />}
         </span>
-        {canManage && (
-          <Button type="button" variant="outline" size="sm" onClick={() => onEdit(client)}>
-            Edit {client.name}
-          </Button>
-        )}
+        <span className="flex flex-wrap items-center gap-2">
+          {canManage && !client.pdpaErased && (
+            <Button type="button" variant="outline" size="sm" onClick={() => onEdit(client)}>
+              Edit {client.name}
+            </Button>
+          )}
+          {canDeleteData && !client.pdpaErased && (
+            <Button type="button" variant="outline" size="sm" onClick={() => onDeleteData(client)}>
+              Delete personal data ({client.name})
+            </Button>
+          )}
+        </span>
       </div>
-      <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <span>{client.phone}</span>
-        <PhoneActions phone={client.phone} name={client.name} />
-        {client.email !== '' && <span>· {client.email}</span>}
-        <span>· {LANGUAGE_LABELS[client.language]}</span>
-      </p>
+      {!client.pdpaErased && (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>{client.phone}</span>
+          <PhoneActions phone={client.phone} name={client.name} />
+          {client.email !== '' && <span>· {client.email}</span>}
+          <span>· {LANGUAGE_LABELS[client.language]}</span>
+        </p>
+      )}
       {client.notes !== '' && (
         <p className="mt-1 text-sm text-muted-foreground">{client.notes}</p>
       )}
@@ -60,12 +79,15 @@ function ClientRowItem({ client, canManage, onEdit }: IClientRowItemProps) {
   );
 }
 
-export function ClientsListPage({ workspaceId, role, uid }: IClientsListPageProps) {
+export function ClientsListPage({ workspaceId, workspaceName, role, uid }: IClientsListPageProps) {
   const clients = useClients(workspaceId);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingDataFor, setDeletingDataFor] = useState<IClientRow | null>(null);
 
   const canManage = role === 'owner' || role === 'admin' || role === 'pm';
+  // #26 D4: PDPA deletion is stricter than manage — owner/admin only.
+  const canDeleteData = role === 'owner' || role === 'admin';
   const rows = clients.status === 'ready' ? clients.rows : [];
   const editing = rows.find((client) => client.id === editingId);
 
@@ -93,6 +115,7 @@ export function ClientsListPage({ workspaceId, role, uid }: IClientsListPageProp
           <CardContent>
             <ClientForm
               submitLabel="Add client"
+              firmName={workspaceName}
               onCancel={() => setCreating(false)}
               onSubmit={async (values) => {
                 await createClient(workspaceId, values, uid);
@@ -118,10 +141,11 @@ export function ClientsListPage({ workspaceId, role, uid }: IClientsListPageProp
             <ClientForm
               key={editing.id}
               client={editing}
+              firmName={workspaceName}
               submitLabel="Save changes"
               onCancel={() => setEditingId(null)}
               onSubmit={async (values) => {
-                await updateClient(workspaceId, editing.id, values);
+                await updateClient(workspaceId, editing.id, values, uid, editing.waConsentGranted);
                 setEditingId(null);
               }}
             />
@@ -139,13 +163,25 @@ export function ClientsListPage({ workspaceId, role, uid }: IClientsListPageProp
               key={client.id}
               client={client}
               canManage={canManage}
+              canDeleteData={canDeleteData}
               onEdit={(row) => {
                 setCreating(false);
                 setEditingId(row.id);
               }}
+              onDeleteData={(row) => setDeletingDataFor(row)}
             />
           ))}
         </ul>
+      )}
+
+      {deletingDataFor !== null && (
+        <DeletePersonalDataDialog
+          workspaceId={workspaceId}
+          subjectType="client"
+          subjectId={deletingDataFor.id}
+          subjectName={deletingDataFor.name}
+          onClose={() => setDeletingDataFor(null)}
+        />
       )}
     </div>
   );

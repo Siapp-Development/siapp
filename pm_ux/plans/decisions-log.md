@@ -324,6 +324,8 @@ The rule: **structure carries, content clears.** Anything you'd rebuild by hand 
 
 **Revisit when:** ≥ 10 paying firms AND at least 3 of them have asked unprompted for either custom domain OR "remove your branding from my portal". Either signal is the cue to spec a Business tier and start building the toggles. Until then, do not entertain one-off white-label requests — they are a distraction.
 
+**Amendment (2026-07, #24 / D-019):** Tiers now exist as *billing metadata only*. `workspaces.plan` may be `'trial' | 'standard' | 'business'`, and plan + seat count drive the per-tier WhatsApp allowance arithmetic (`whatsappAllowance.includedPerPeriod`) and the implied manual-invoice price shown in the founder admin panel and the firm's [Bill] page. **No per-tier feature gates were added** — every workspace still gets the identical product surface, and the rest of D-030 (no custom domain, no theming split, "Powered by Siapp" always on) stands unchanged. Enforcement introduced alongside: `billingStatus: 'read_only'` blocks all writes at rules level when a trial expires or a renewal lapses.
+
 ---
 
 ## 2026-06-27 — Collaborator-uploaded docs are client-visible by default; collaborator can soft-delete their own uploads (D-029)

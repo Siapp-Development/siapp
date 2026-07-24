@@ -7,13 +7,14 @@
  */
 
 import { Alert, Button, Card, CardContent, CardHeader, Input, Label, cn } from '@siapp/ui';
-import type { TMemberRole, TTaskAssignee, TTaskStatus } from '@siapp/shared';
+import type { TMemberRole, TProjectLifecycle, TTaskAssignee, TTaskStatus } from '@siapp/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
 import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import { TaskAttachments } from '../documents/DocumentsSection.tsx';
+import { CollabLinkButton } from './CollabLinkButton.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import {
@@ -232,6 +233,8 @@ export interface ITaskDetailPanelProps {
   departments: readonly IDepartmentRow[];
   role: TMemberRole;
   memberDepartments: readonly string[];
+  /** Project lifecycle — collab task links need published/completed (#22). */
+  lifecycle: TProjectLifecycle;
   canEdit: boolean;
   uid: string;
   userName: string;
@@ -250,6 +253,7 @@ export function TaskDetailPanel({
   departments,
   role,
   memberDepartments,
+  lifecycle,
   canEdit,
   uid,
   userName,
@@ -267,6 +271,7 @@ export function TaskDetailPanel({
   const [visibleToClient, setVisibleToClient] = useState(task.visibleToClient);
   const [restrictedTo, setRestrictedTo] = useState<string[]>(task.restrictedToDepartments);
   const [sendWhatsapp, setSendWhatsapp] = useState(task.sendWhatsapp);
+  const [notify, setNotify] = useState(task.notify);
   const [dependsOn, setDependsOn] = useState<string[]>(task.dependsOn);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -302,6 +307,10 @@ export function TaskDetailPanel({
     );
   }
 
+  function toggleNotify(key: keyof typeof notify): void {
+    setNotify((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const trimmedTitle = title.trim();
@@ -328,9 +337,11 @@ export function TaskDetailPanel({
           visibleToClient,
           restrictedToDepartments: restrictedTo,
           sendWhatsapp,
+          notify,
           dependsOn,
         },
         task.status === 'done',
+        uid,
       );
       const entries: Array<Promise<void>> = [];
       if (status !== task.status) {
@@ -426,6 +437,12 @@ export function TaskDetailPanel({
         </Button>
       </CardHeader>
       <CardContent>
+        {/* #22 (D-d): surface the collaborator's help request to the firm. */}
+        {task.status === 'blocked' && task.blockedReason !== '' && (
+          <Alert variant="destructive" className="mb-4">
+            Blocked: {task.blockedReason}
+          </Alert>
+        )}
         {tab === 'activity' ? (
           <ActivityFeed
             workspaceId={workspaceId}
@@ -437,6 +454,26 @@ export function TaskDetailPanel({
           />
         ) : (
           <div className="flex flex-col gap-6">
+            {/* #22 (D-e): one rotating task link per collaborator assignee. */}
+            {task.assignees.some((entry) => entry.type === 'collaborator') && (
+              <section aria-label="Collaborator task links" className="flex flex-col gap-2">
+                <h4 className="text-sm font-medium">Collaborator task links</h4>
+                {task.assignees
+                  .filter((entry) => entry.type === 'collaborator')
+                  .map((entry) => (
+                    <CollabLinkButton
+                      key={entry.id}
+                      workspaceId={workspaceId}
+                      projectId={projectId}
+                      taskId={task.id}
+                      collaboratorId={entry.id}
+                      collaboratorName={entry.name}
+                      lifecycle={lifecycle}
+                      role={role}
+                    />
+                  ))}
+              </section>
+            )}
             {!canEdit ? (
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
@@ -648,6 +685,60 @@ export function TaskDetailPanel({
                     />
                     Send WhatsApp updates for this task
                   </label>
+                  {/* Disabled (not hidden) when the master toggle is off — the
+                      config is kept so re-enabling restores it (#18 D2). */}
+                  <fieldset
+                    disabled={!sendWhatsapp}
+                    className={cn('ml-6 flex flex-col gap-2', !sendWhatsapp && 'opacity-50')}
+                  >
+                    <legend className="sr-only">WhatsApp notification options</legend>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">Send when</p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.statusChange}
+                          onChange={() => toggleNotify('statusChange')}
+                        />
+                        Status changes
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.dueSoon}
+                          onChange={() => toggleNotify('dueSoon')}
+                        />
+                        Due date is approaching
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.blocked}
+                          onChange={() => toggleNotify('blocked')}
+                        />
+                        Task becomes blocked
+                      </label>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">Send to</p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.toClient}
+                          onChange={() => toggleNotify('toClient')}
+                        />
+                        Client
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.toInternal}
+                          onChange={() => toggleNotify('toInternal')}
+                        />
+                        Internal team (assignees)
+                      </label>
+                    </div>
+                  </fieldset>
                   {selectableDepartments.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <p className="text-sm text-muted-foreground">

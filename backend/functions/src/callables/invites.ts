@@ -25,6 +25,9 @@ import {
   type TInviteErrorCode,
 } from '../lib/invites.js';
 import { postmarkServerToken, sendInviteEmail } from '../lib/mail.js';
+import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
+import { upsertMembershipClaim, isMemberRole } from '../lib/claims.js';
 
 /** Dashboard origin used in emailed invite links. */
 const appOrigin = defineString('APP_ORIGIN', { default: 'https://dashboard.siapp.app' });
@@ -71,6 +74,7 @@ function inviteError(code: TInviteErrorCode, message: string): HttpsError {
 export const createInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   const uid = requireWorkspaceAdmin(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const email = normalizeEmail(requireStringField(request, 'email'));
   if (email === null) {
@@ -130,6 +134,16 @@ export const createInvite = onCall({ secrets: [postmarkServerToken] }, async (re
     inviteUrl,
   });
 
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.create',
+    targetType: 'invite',
+    targetId: inviteRef.id,
+    after: { email, role },
+    ...callableRequestMeta(request),
+  });
+
   return { inviteId: inviteRef.id, inviteUrl, emailSent };
 });
 
@@ -154,12 +168,22 @@ export const revokeInvite = onCall(async (request) => {
       revokedBy: uid,
     });
   });
+
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.revoke',
+    targetType: 'invite',
+    targetId: inviteId,
+    ...callableRequestMeta(request),
+  });
+
   return { ok: true };
 });
 
 export const resendInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
-  requireWorkspaceAdmin(request, workspaceId);
+  const callerUid = requireWorkspaceAdmin(request, workspaceId);
   const inviteId = requireStringField(request, 'inviteId');
 
   const db = getFirestore();
@@ -193,6 +217,15 @@ export const resendInvite = onCall({ secrets: [postmarkServerToken] }, async (re
     inviteUrl,
   });
 
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: callerUid,
+    action: 'invite.resend',
+    targetType: 'invite',
+    targetId: inviteId,
+    ...callableRequestMeta(request),
+  });
+
   return { inviteId, inviteUrl, emailSent };
 });
 
@@ -201,6 +234,7 @@ export const acceptInvite = onCall(async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   const inviteId = requireStringField(request, 'inviteId');
   const token = requireStringField(request, 'token');
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const callerEmail = normalizeEmail(request.auth?.token.email);
   if (callerEmail === null) {
@@ -294,12 +328,29 @@ export const acceptInvite = onCall(async (request) => {
   // Deterministic claims for the immediate redirect; the syncMemberClaims
   // trigger will rebuild the same payload (idempotent) and the
   // claimsUpdatedAt stamp tells the signed-in client to refresh its token.
-  await getAuth().setCustomUserClaims(uid, {
-    workspaces: { [workspaceId]: { role: accepted.role, departments: [] } },
-  });
+  // Existing claims are merged, not replaced — other memberships and
+  // non-membership claims like isAdmin must survive (#62).
+  const existingClaims = (await getAuth().getUser(uid)).customClaims;
+  await getAuth().setCustomUserClaims(
+    uid,
+    upsertMembershipClaim(existingClaims, workspaceId, {
+      role: isMemberRole(accepted.role) ? accepted.role : 'viewer',
+      departments: [],
+    }),
+  );
   await db
     .doc(`users/${uid}`)
     .set({ claimsUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.accept',
+    targetType: 'invite',
+    targetId: inviteId,
+    after: { role: accepted.role },
+    ...callableRequestMeta(request),
+  });
 
   logger.info(`acceptInvite: ${uid} joined ${workspaceId} as ${accepted.role}`);
   return { workspaceId, workspaceSlug: accepted.workspaceSlug, role: accepted.role };

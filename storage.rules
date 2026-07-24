@@ -9,6 +9,17 @@ rules_version = '2';
 //
 // Objects are immutable (no update/delete): document removal is a Firestore
 // soft delete; bytes stay for retention until a purge job exists.
+//
+// #21: portal principals (custom-token claims portal.{wid,pid,cid}) may read
+// project files and upload to client-uploads/ (≤10MB, client mime allowlist).
+// Client-visibility of individual files is enforced at the Firestore metadata
+// layer (documents/{did} rules) — same unguessable-uuid tradeoff as reads.
+//
+// #22: collaborator principals (custom-token claims collab.{wid,pid,tid,colid})
+// may upload to collab-uploads/ (≤25MB, collab mime allowlist, D-f) and read
+// project files; the portal client may also read collab-uploads/ because
+// collaborator uploads inherit the task's visibleToClient (D-029) — per-file
+// visibility is enforced at the Firestore metadata layer.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -26,6 +37,29 @@ service firebase.storage {
     function hasRole(wid, roles) {
       return isFirmMember(wid)
         && request.auth.token.workspaces[wid].role in roles;
+    }
+
+    // Portal principal (#21) — same shape as firestore.rules, including the
+    // non-empty cid claim check so only properly-minted client-scoped tokens
+    // count. Lifecycle re-checks live in the Firestore metadata rules (no
+    // cross-service get here); tokens are short-lived and scoped to one
+    // project.
+    function isPortalClient(wid, pid) {
+      return isSignedIn()
+        && request.auth.token.portal != null
+        && request.auth.token.portal.wid == wid
+        && request.auth.token.portal.pid == pid
+        && request.auth.token.portal.cid is string
+        && request.auth.token.portal.cid.size() > 0;
+    }
+
+    // Collaborator principal (#22) — same shape as firestore.rules.
+    // Lifecycle + visibility re-checks live in the Firestore metadata rules.
+    function isCollabPrincipal(wid, pid) {
+      return isSignedIn()
+        && request.auth.token.collab != null
+        && request.auth.token.collab.wid == wid
+        && request.auth.token.collab.pid == pid;
     }
 
     // Mirrors ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (parity enforced
@@ -47,21 +81,59 @@ service firebase.storage {
       ];
     }
 
+    // Mirrors CLIENT_ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (#21) —
+    // tighter than the firm list: no spreadsheets/presentations.
+    function isClientAllowedContentType() {
+      return request.resource.contentType in [
+        'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword'
+      ];
+    }
+
     // Firm uploads live directly under the project prefix (single segment —
     // client-uploads/ is deliberately not matched here).
     match /workspaces/{wid}/projects/{pid}/{fileName} {
-      allow read: if isFirmMember(wid);
+      allow read: if isFirmMember(wid)
+        || isPortalClient(wid, pid)
+        // #22: firm files shared with a collaborator (visibleToCollaboratorIds
+        // gates the metadata; unguessable-uuid tradeoff as above).
+        || isCollabPrincipal(wid, pid);
       allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
         && request.resource.size <= 25 * 1024 * 1024
         && isAllowedContentType();
       allow update, delete: if false;
     }
 
-    // Client/collaborator portal uploads (#21/#22) are written server-side;
-    // firm members may read them.
+    // Client portal uploads (#21, D7): portal principals write bytes
+    // directly; Firestore metadata (validPortalDocumentCreate) pins the
+    // identity fields. Firm members read; objects stay immutable.
     match /workspaces/{wid}/projects/{pid}/client-uploads/{fileName} {
-      allow read: if isFirmMember(wid);
-      allow write: if false;
+      allow read: if isFirmMember(wid) || isPortalClient(wid, pid);
+      allow create: if isPortalClient(wid, pid)
+        && request.resource.size <= 10 * 1024 * 1024
+        && isClientAllowedContentType();
+      allow update, delete: if false;
+    }
+
+    // Collaborator uploads (#22, D-f): collab principals write bytes
+    // directly; Firestore metadata (validCollabDocumentCreate) pins the
+    // identity fields. Firm members and the portal client read (D-029:
+    // collaborator uploads inherit the task's client visibility).
+    match /workspaces/{wid}/projects/{pid}/collab-uploads/{fileName} {
+      allow read: if isFirmMember(wid)
+        || isPortalClient(wid, pid)
+        || isCollabPrincipal(wid, pid);
+      allow create: if isCollabPrincipal(wid, pid)
+        && request.resource.size <= 25 * 1024 * 1024
+        // COLLAB_ALLOWED_DOCUMENT_MIME_TYPES is identical to the client
+        // list, so the same helper serves both (parity via rules test).
+        && isClientAllowedContentType();
+      allow update, delete: if false;
     }
   }
 }

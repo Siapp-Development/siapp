@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 
 import type { TTasksState, TPhasesState, ITaskRow, IRestrictedHeaderRow } from './useTasks.ts';
 
@@ -54,9 +55,11 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
+    notify: { ...TASK_NOTIFY_DEFAULTS },
     dependsOn: [],
     order: 1,
     createdBy: 'u1',
+    blockedReason: '',
     ...overrides,
   };
 }
@@ -85,6 +88,7 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
       uid="u1"
       userName="Alice Tan"
       canEdit
+      lifecycle="published"
       {...overrides}
     />,
   );

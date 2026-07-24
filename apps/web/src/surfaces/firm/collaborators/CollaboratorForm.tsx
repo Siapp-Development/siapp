@@ -2,6 +2,7 @@
  * Create / edit form for a collaborator's firm-editable fields (#16).
  * Server-only fields (notificationsOptOut, lastTaskAt) never appear here;
  * archival is a separate action on the list page, not a form field.
+ * #26: captures the firm-attested WhatsApp/SMS consent (D1).
  */
 
 import { Alert, Button, Input, Label } from '@siapp/ui';
@@ -9,6 +10,7 @@ import type { TCollaboratorType } from '@siapp/shared';
 import { useState, type FormEvent } from 'react';
 
 import { normalizePhone } from '../clients/normalizePhone.ts';
+import { ConsentCheckbox } from '../pdpa/ConsentCheckbox.tsx';
 import type { ICollaboratorFormValues, ICollaboratorRow } from './useCollaborators.ts';
 
 const TYPE_LABELS: Record<TCollaboratorType, string> = {
@@ -20,6 +22,8 @@ const TYPES = Object.keys(TYPE_LABELS) as TCollaboratorType[];
 export interface ICollaboratorFormProps {
   /** When set, the form edits this collaborator; otherwise it creates one. */
   collaborator?: ICollaboratorRow;
+  /** For the consent attestation copy (#26 D1). */
+  firmName: string;
   onSubmit: (values: ICollaboratorFormValues) => Promise<void>;
   onCancel: () => void;
   submitLabel: string;
@@ -27,6 +31,7 @@ export interface ICollaboratorFormProps {
 
 export function CollaboratorForm({
   collaborator,
+  firmName,
   onSubmit,
   onCancel,
   submitLabel,
@@ -37,6 +42,9 @@ export function CollaboratorForm({
   const [company, setCompany] = useState(collaborator?.company ?? '');
   const [trade, setTrade] = useState(collaborator?.trade ?? '');
   const [type, setType] = useState<TCollaboratorType>(collaborator?.type ?? 'individual');
+  const [waConsentGranted, setWaConsentGranted] = useState(
+    collaborator?.waConsentGranted === true,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +70,7 @@ export function CollaboratorForm({
         company: company.trim(),
         trade: trade.trim(),
         type,
+        waConsentGranted,
       });
     } catch {
       setError('Could not save the collaborator.');
@@ -133,6 +142,13 @@ export function CollaboratorForm({
           />
         </div>
       </div>
+      <ConsentCheckbox
+        firmName={firmName}
+        checked={waConsentGranted}
+        onChange={setWaConsentGranted}
+        storedGranted={collaborator?.waConsentGranted ?? null}
+        storedRecordedAt={collaborator?.waConsentRecordedAt ?? null}
+      />
       <div className="flex gap-2">
         <Button type="submit" disabled={pending} aria-busy={pending}>
           {pending ? 'Saving…' : submitLabel}

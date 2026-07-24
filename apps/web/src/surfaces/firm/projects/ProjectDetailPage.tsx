@@ -17,8 +17,12 @@ import { Link, useParams } from 'react-router';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
 import { useClients } from '../clients/useClients.ts';
+import { ActivitySection } from './activity/ActivitySection.tsx';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
+import { ExportSection } from './export/ExportSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
+import { MilestonesEditor } from './milestones/MilestonesEditor.tsx';
+import { PortalLinkCard } from './PortalLinkCard.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
 import { TasksSection } from './tasks/TasksSection.tsx';
@@ -228,7 +232,7 @@ export function ProjectDetailPage({
   const state = useProject(workspaceId, projectId);
   const clients = useClients(workspaceId);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<'tasks' | 'documents' | 'details'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'documents' | 'activity' | 'details'>('tasks');
 
   if (state.status === 'loading') {
     return <p className="text-sm">Loading project…</p>;
@@ -238,7 +242,7 @@ export function ProjectDetailPage({
       <div>
         <p className="text-sm">This project could not be loaded.</p>
         <Button asChild variant="outline" size="sm" className="mt-4">
-          <Link to={`/${workspaceSlug}`}>Back to projects</Link>
+          <Link to={`/${workspaceSlug}/projects`}>Back to projects</Link>
         </Button>
       </div>
     );
@@ -252,7 +256,10 @@ export function ProjectDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link to={`/${workspaceSlug}`} className="text-sm text-muted-foreground hover:text-primary">
+        <Link
+          to={`/${workspaceSlug}/projects`}
+          className="text-sm text-muted-foreground hover:text-primary"
+        >
           ← Projects
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -271,6 +278,7 @@ export function ProjectDetailPage({
           [
             { id: 'tasks', label: 'Tasks' },
             { id: 'documents', label: 'Documents' },
+            { id: 'activity', label: 'Activity' },
             { id: 'details', label: 'Details' },
           ] as const
         ).map((entry) => (
@@ -301,6 +309,7 @@ export function ProjectDetailPage({
           uid={uid}
           userName={userName}
           canEdit={canEdit}
+          lifecycle={project.lifecycle}
         />
       )}
 
@@ -313,6 +322,15 @@ export function ProjectDetailPage({
           uid={uid}
           userName={userName}
           canEdit={canEdit}
+        />
+      )}
+
+      {tab === 'activity' && (
+        <ActivitySection
+          workspaceId={workspaceId}
+          projectId={project.id}
+          role={role}
+          departments={departments}
         />
       )}
 
@@ -391,6 +409,20 @@ export function ProjectDetailPage({
               )}
             </CardContent>
           </Card>
+
+          <PortalLinkCard
+            workspaceId={workspaceId}
+            projectId={project.id}
+            lifecycle={project.lifecycle}
+            clientId={project.clientId}
+            role={role}
+          />
+
+          <MilestonesEditor workspaceId={workspaceId} projectId={project.id} canEdit={canEdit} />
+
+          {(role === 'owner' || role === 'admin') && (
+            <ExportSection workspaceId={workspaceId} projectId={project.id} role={role} />
+          )}
 
           <LifecycleActions workspaceId={workspaceId} project={project} role={role} />
         </>

@@ -4,7 +4,13 @@
  * generics) so both sides agree on the wire shape.
  */
 
-import type { TInviteRole, TMemberRole, TProjectLifecycle, TTaskStatus } from './enums.ts';
+import type {
+  TInviteRole,
+  TMemberRole,
+  TProjectLifecycle,
+  TTaskStatus,
+  TWorkspacePlan,
+} from './enums.ts';
 
 export interface ICreateInviteRequest {
   workspaceId: string;
@@ -85,6 +91,21 @@ export interface IGetRestrictedTaskHeadersRequest {
 }
 
 /**
+ * deleteTask (#23, Q5): task hard-delete is callable-only so `task_deleted`
+ * activity/audit entries are attributed to the acting uid. Client-side
+ * Firestore deletes are denied by rules.
+ */
+export interface IDeleteTaskRequest {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}
+
+export interface IDeleteTaskResponse {
+  ok: boolean;
+}
+
+/**
  * Safe projection of a department-restricted task the caller cannot read
  * (#13): enough to render the list row + "Restricted" badge, nothing more.
  */
@@ -103,6 +124,179 @@ export interface IGetRestrictedTaskHeadersResponse {
   headers: IRestrictedTaskHeader[];
 }
 
+/**
+ * updateNotificationSettings (#18, D1): owner/admin write the workspace
+ * quiet-hours window. The workspace doc stays client-write-denied; timezone
+ * is fixed server-side (D6) so the wire shape carries only the editables.
+ */
+export interface IUpdateNotificationSettingsRequest {
+  workspaceId: string;
+  quietHours: {
+    enabled: boolean;
+    /** 'HH:mm' 24-hour wall clock in Malaysia time. */
+    start: string;
+    end: string;
+  };
+}
+
+export interface IUpdateNotificationSettingsResponse {
+  quietHours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+    timezone: 'Asia/Kuala_Lumpur';
+  };
+}
+
+/**
+ * issuePortalLink (#21, D2): firm owner/admin/pm mints a client portal magic
+ * link for a published/completed project with a linked client. One active
+ * link per (project, client): every issue revokes any previous active link
+ * and returns a fresh URL (raw secrets are never at rest, so an existing
+ * link's URL cannot be re-surfaced). `reset: true` marks the rotation as an
+ * explicit reset in the audit log.
+ */
+export interface IIssuePortalLinkRequest {
+  workspaceId: string;
+  projectId: string;
+  /** Explicit firm-side "Reset link" \u2014 audit-logged as portal_link.reset. */
+  reset?: boolean;
+}
+
+export interface IIssuePortalLinkResponse {
+  /** Full portal URL: `https://siapp.app/p/{shortCode}_{secret}`. */
+  url: string;
+  /** ISO instant the link stops redeeming (PORTAL_LINK_TTL_DAYS from issue). */
+  expiresAt: string;
+}
+
+/** redeemPortalLink (#21, D1): unauthenticated; the URL token is the credential. */
+export interface IRedeemPortalLinkRequest {
+  token: string;
+}
+
+/** Firm branding snapshot delivered in the redeem response (#21, D6). */
+export interface IPortalBranding {
+  firmName: string;
+  logoUrl?: string;
+  primaryColor?: string;
+}
+
+/**
+ * Redeem outcomes. Every failure path (unknown code, bad secret, revoked,
+ * expired, archived/deleted project) surfaces the single uniform
+ * `portal/invalid_or_expired` error code \u2014 no enumeration signal.
+ */
+export type TRedeemPortalLinkResponse =
+  | {
+      status: 'ok';
+      customToken: string;
+      workspaceId: string;
+      projectId: string;
+      branding: IPortalBranding;
+      /** Workspace `plan` \u2014 drives the tier-dependent portal footer. */
+      tier: TWorkspacePlan;
+    }
+  | { status: 'not_started'; firmName: string };
+
+/** Stable error code for every portal-link redemption failure (#21). */
+export type TPortalErrorCode = 'portal/invalid_or_expired';
+
+/**
+ * issueCollabLink (#22, E1): firm owner/admin/pm mints a task-scoped
+ * collaborator magic link for a collaborator-type assignee of a task on a
+ * published/completed project. One active link per (task, collaborator):
+ * every issue revokes any previous active link and returns a fresh URL.
+ */
+export interface IIssueCollabLinkRequest {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  collaboratorId: string;
+  /** Explicit firm-side "Reset link" — audit-logged as collab_link.reset. */
+  reset?: boolean;
+}
+
+export interface IIssueCollabLinkResponse {
+  /** Full task URL: `https://siapp.app/t/{shortCode}_{secret}`. */
+  url: string;
+  /** ISO instant the link stops redeeming (COLLAB_LINK_TTL_DAYS from issue). */
+  expiresAt: string;
+}
+
+/** redeemCollabLink (#22): unauthenticated; the URL token is the credential. */
+export interface IRedeemCollabLinkRequest {
+  token: string;
+}
+
+/** Task snapshot delivered in the collab redeem response (first paint). */
+export interface ICollabTaskSnapshot {
+  title: string;
+  description: string;
+  status: TTaskStatus;
+  /** ISO date, or null when the task has no due date. */
+  dueDate: string | null;
+  projectName: string;
+}
+
+/**
+ * Collab redeem outcomes. Every failure path (unknown code, bad secret,
+ * revoked, expired, unassigned, archived/deleted project) surfaces the single
+ * uniform `collab/invalid_or_expired` error code — no enumeration signal.
+ */
+export type TRedeemCollabLinkResponse =
+  | {
+      status: 'ok';
+      customToken: string;
+      workspaceId: string;
+      projectId: string;
+      taskId: string;
+      collaboratorId: string;
+      branding: IPortalBranding;
+      task: ICollabTaskSnapshot;
+    }
+  | { status: 'not_started'; firmName: string };
+
+/** Stable error code for every collab-link redemption failure (#22). */
+export type TCollabErrorCode = 'collab/invalid_or_expired';
+
+/**
+ * submitCollabUpdate (#22, D-b): the only collaborator write path for
+ * status / need-help / notes. Uploads stay direct (rules-gated Storage +
+ * pinned metadata create). Discriminated union — validation server-side.
+ */
+export type TSubmitCollabUpdateKind = 'status' | 'need_help' | 'note';
+
+export interface ICollabStatusUpdate {
+  kind: 'status';
+  to: 'in_progress' | 'done';
+}
+
+export interface ICollabNeedHelpUpdate {
+  kind: 'need_help';
+  /** Required, 1–1000 chars (D-d) — lands on task.blockedReason. */
+  reason: string;
+}
+
+export interface ICollabNoteUpdate {
+  kind: 'note';
+  /** 1–5000 chars — appended to the task updates stream. */
+  text: string;
+}
+
+export type TCollabUpdatePayload =
+  | ICollabStatusUpdate
+  | ICollabNeedHelpUpdate
+  | ICollabNoteUpdate;
+
+export interface ISubmitCollabUpdateRequest {
+  update: TCollabUpdatePayload;
+}
+
+export interface ISubmitCollabUpdateResponse {
+  ok: boolean;
+}
+
 /** Stable error codes for the project lifecycle callable. */
 export type TProjectErrorCode =
   | 'project/not-found'
@@ -119,3 +313,85 @@ export type TInviteErrorCode =
   | 'invite/email-unverified'
   | 'invite/already-member'
   | 'invite/already-in-workspace';
+
+/**
+ * exportProject (#25): owner/admin-only per-project data export. The
+ * callable assembles the full JSON snapshot server-side (D1: direct
+ * response, ~9 MB guard); the web app derives per-entity CSVs from the same
+ * payload client-side (D2). Documents are metadata + `storagePath` only —
+ * the browser resolves fresh download URLs via the client SDK (D3).
+ */
+export interface IExportProjectRequest {
+  workspaceId: string;
+  projectId: string;
+}
+
+/** A Firestore doc flattened for export: `id` + fields, Timestamps → ISO strings. */
+export type TExportRecord = { id: string } & Record<string, unknown>;
+
+/** Task record with its `updates` stream nested (natural CSV split). */
+export interface IExportTaskRecord {
+  id: string;
+  updates: TExportRecord[];
+  [key: string]: unknown;
+}
+
+/** Document metadata record; soft-deleted docs are included, flagged (D6). */
+export interface IExportDocumentRecord {
+  id: string;
+  /** True when the doc carries a `deletedAt` (soft delete — D6). */
+  deleted: boolean;
+  [key: string]: unknown;
+}
+
+/** Versioned export envelope (`exportVersion: 1`). */
+export interface IExportProjectResponse {
+  exportVersion: 1;
+  /** ISO instant the export was assembled. */
+  exportedAt: string;
+  workspaceId: string;
+  projectId: string;
+  project: TExportRecord;
+  phases: TExportRecord[];
+  milestones: TExportRecord[];
+  tasks: IExportTaskRecord[];
+  activity: TExportRecord[];
+  documents: IExportDocumentRecord[];
+}
+
+/** PDPA erasure subject kind (#26). */
+export type TPdpaSubjectType = 'client' | 'collaborator';
+
+/**
+ * deletePersonalData (#26, D3/D4): owner/admin-only PDPA erasure. Anonymizes
+ * the client/collaborator doc in place (sets the server-only `pdpaErased`
+ * freeze marker), revokes their magic links, scrubs name denorms and redacts
+ * message-queue PII (D6). Idempotent — re-running on an erased subject
+ * re-scrubs and succeeds. Writes `pdpa.delete_request` +
+ * `pdpa.delete_fulfilled` audit entries.
+ */
+export interface IDeletePersonalDataRequest {
+  workspaceId: string;
+  subjectType: TPdpaSubjectType;
+  subjectId: string;
+}
+
+/** Per-collection scrub counts surfaced in the confirmation dialog. */
+export interface IPdpaScrubCounts {
+  /** Projects whose clientNameDenorm was anonymized (client subjects). */
+  projects: number;
+  /** Tasks whose assignee entries were anonymized (collaborator subjects). */
+  tasks: number;
+  /** Task updates whose authorNameDenorm was anonymized (collaborators). */
+  taskUpdates: number;
+  /** Activity entries whose actorNameDenorm was anonymized. */
+  activity: number;
+  /** Message-queue docs redacted (recipientPhone + PII variables, D6). */
+  messages: number;
+  /** Magic links revoked. */
+  magicLinks: number;
+}
+
+export interface IDeletePersonalDataResponse {
+  scrubbed: IPdpaScrubCounts;
+}

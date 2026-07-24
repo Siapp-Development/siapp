@@ -86,6 +86,7 @@ export function WorkspaceListPage() {
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium">Slug</th>
                 <th className="py-2 pr-4 font-medium">Plan</th>
+                <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Seats</th>
                 <th className="py-2 pr-4 font-medium">Est. MRR</th>
                 <th className="py-2 pr-4 font-medium">Expires</th>
@@ -102,6 +103,15 @@ export function WorkspaceListPage() {
                   </td>
                   <td className="py-2 pr-4 text-muted-foreground">{ws.slug}</td>
                   <td className="py-2 pr-4 capitalize">{ws.plan}</td>
+                  <td className="py-2 pr-4">
+                    {ws.billingStatus === 'read_only' ? (
+                      <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                        Read-only
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Active</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4">
                     {ws.seatsUsed} / {ws.seatLimit}
                   </td>

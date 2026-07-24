@@ -1,6 +1,7 @@
 /**
  * Live Firestore subscriptions + direct writes for the tasks surface (#13).
- * Task/phase CRUD is client-side (rules-validated for owner/admin/pm);
+ * Task/phase CRUD is client-side (rules-validated for owner/admin/pm) except
+ * task hard-delete, which flows through the deleteTask callable (#23 Q5);
  * activity entries are append-only client writes pinned to the caller.
  *
  * Department need-to-know: rules prove list queries against the query, so
@@ -12,12 +13,14 @@
 
 import type {
   IRestrictedTaskHeader,
+  ITaskNotifyConfig,
   TMemberRole,
   TPhaseStatus,
   TTaskAssignee,
   TTaskStatus,
   TTaskUpdateAction,
 } from '@siapp/shared';
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 import {
   Timestamp,
   collection,
@@ -36,7 +39,7 @@ import {
 } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getRestrictedTaskHeaders } from '@/lib/callables.ts';
+import { deleteTask as deleteTaskCallable, getRestrictedTaskHeaders } from '@/lib/callables.ts';
 import { db } from '@/lib/firebase.ts';
 
 // ---------------------------------------------------------------------------
@@ -58,9 +61,12 @@ export interface ITaskRow {
   visibleToCollaboratorIds: string[];
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  notify: ITaskNotifyConfig;
   dependsOn: string[];
   order: number;
   createdBy: string;
+  /** #22 (D-d): collaborator need-help reason — set while status is blocked. */
+  blockedReason: string;
 }
 
 /** Dimmed header row for a task the member cannot read (A3/A5d). */
@@ -125,6 +131,23 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+/** Effective notify config: stored map with defaults for absent keys (#18 D2). */
+function mapNotify(value: unknown): ITaskNotifyConfig {
+  const raw = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  return {
+    statusChange:
+      typeof raw['statusChange'] === 'boolean'
+        ? raw['statusChange']
+        : TASK_NOTIFY_DEFAULTS.statusChange,
+    dueSoon: typeof raw['dueSoon'] === 'boolean' ? raw['dueSoon'] : TASK_NOTIFY_DEFAULTS.dueSoon,
+    blocked: typeof raw['blocked'] === 'boolean' ? raw['blocked'] : TASK_NOTIFY_DEFAULTS.blocked,
+    toClient:
+      typeof raw['toClient'] === 'boolean' ? raw['toClient'] : TASK_NOTIFY_DEFAULTS.toClient,
+    toInternal:
+      typeof raw['toInternal'] === 'boolean' ? raw['toInternal'] : TASK_NOTIFY_DEFAULTS.toInternal,
+  };
+}
+
 /** Maps a raw task doc to a row; exported for the #15 duplicate reader. */
 export function mapTask(id: string, data: DocumentData): ITaskRow {
   return {
@@ -142,9 +165,11 @@ export function mapTask(id: string, data: DocumentData): ITaskRow {
     visibleToCollaboratorIds: asStringArray(data['visibleToCollaboratorIds']),
     restrictedToDepartments: asStringArray(data['restrictedToDepartments']),
     sendWhatsapp: data['sendWhatsapp'] === true,
+    notify: mapNotify(data['notify']),
     dependsOn: asStringArray(data['dependsOn']),
     order: typeof data['order'] === 'number' ? data['order'] : 0,
     createdBy: String(data['createdBy'] ?? ''),
+    blockedReason: typeof data['blockedReason'] === 'string' ? data['blockedReason'] : '',
   };
 }
 
@@ -369,6 +394,8 @@ export interface ITaskFormValues {
   visibleToClient: boolean;
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  /** Absent on quick-add — backend applies TASK_NOTIFY_DEFAULTS (#18). */
+  notify?: ITaskNotifyConfig;
   dependsOn: string[];
 }
 
@@ -394,11 +421,13 @@ export async function createTask(
     visibleToCollaboratorIds: [],
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
+    ...(values.notify !== undefined ? { notify: values.notify } : {}),
     dependsOn: values.dependsOn,
     order,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: uid,
+    updatedBy: uid,
   });
   return ref.id;
 }
@@ -409,6 +438,7 @@ export async function updateTask(
   taskId: string,
   values: ITaskFormValues,
   wasDone: boolean,
+  uid: string,
 ): Promise<void> {
   const nowDone = values.status === 'done';
   await updateDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
@@ -420,21 +450,30 @@ export async function updateTask(
     dueDate: values.dueDate !== null ? Timestamp.fromDate(values.dueDate) : deleteField(),
     ...(nowDone && !wasDone ? { completedAt: serverTimestamp() } : {}),
     ...(!nowDone ? { completedAt: deleteField() } : {}),
+    // #22 (D-d): leaving 'blocked' clears the collaborator's help reason.
+    ...(values.status !== 'blocked' ? { blockedReason: deleteField() } : {}),
     assignees: values.assignees,
     visibleToClient: values.visibleToClient,
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
+    ...(values.notify !== undefined ? { notify: values.notify } : {}),
     dependsOn: values.dependsOn,
     updatedAt: serverTimestamp(),
+    // #23: rules require updatedBy == auth.uid so activity is attributable.
+    updatedBy: uid,
   });
 }
 
+/**
+ * #23 Q5: hard-deletes flow through the deleteTask callable so the activity
+ * entry is attributed (rules deny client task deletes).
+ */
 export async function deleteTask(
   workspaceId: string,
   projectId: string,
   taskId: string,
 ): Promise<void> {
-  await deleteDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`));
+  await deleteTaskCallable({ workspaceId, projectId, taskId });
 }
 
 export interface IPhaseFormValues {

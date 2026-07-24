@@ -3,7 +3,7 @@
  */
 
 import { httpsCallable } from 'firebase/functions';
-import type { TWorkspacePlan } from '@siapp/shared';
+import type { TBillingStatus, TWorkspacePlan } from '@siapp/shared';
 
 import { functions } from '@/lib/firebase.ts';
 
@@ -38,6 +38,8 @@ export interface IAdjustInput {
   seatLimit?: number;
   /** ISO 8601 date string */
   planExpiresAt?: string;
+  /** #24: founder read-only lever (trial expiry / lapsed renewals). */
+  billingStatus?: TBillingStatus;
 }
 
 export interface IAdjustResult {

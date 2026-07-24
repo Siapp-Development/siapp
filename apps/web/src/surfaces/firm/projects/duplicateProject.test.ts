@@ -5,6 +5,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
+
 // duplicateProject.ts pulls in the Firestore writer alongside the pure
 // planner; stub the app singletons so importing it never boots Firebase.
 vi.mock('@/lib/firebase.ts', () => ({ db: {} }));
@@ -38,6 +40,7 @@ function taskSource(overrides: Partial<IDuplicateTaskSource> = {}): IDuplicateTa
     visibleToClient: false,
     restrictedToDepartments: [],
     sendWhatsapp: false,
+    notify: { ...TASK_NOTIFY_DEFAULTS },
     dependsOn: [],
     ...overrides,
   };
@@ -97,13 +100,14 @@ describe('buildDuplicatePlan', () => {
           visibleToClient: true,
           restrictedToDepartments: ['dep-electrical'],
           sendWhatsapp: true,
+          notify: { statusChange: false, dueSoon: true, blocked: true, toClient: false, toInternal: true },
         }),
       ],
       stubIdFor(),
     );
 
     const task = plan.tasks[0];
-    // Carried per D-031.
+    // Carried per D-031 (+ notify per #18 D2).
     expect(task).toMatchObject({
       title: 'Wire panels',
       description: 'Per spec §4',
@@ -111,6 +115,7 @@ describe('buildDuplicatePlan', () => {
       visibleToClient: true,
       restrictedToDepartments: ['dep-electrical'],
       sendWhatsapp: true,
+      notify: { statusChange: false, dueSoon: true, blocked: true, toClient: false, toInternal: true },
     });
     // Cleared per D-031 (status resets to the shipped 'todo' enum, decision 7).
     expect(task?.status).toBe('todo');

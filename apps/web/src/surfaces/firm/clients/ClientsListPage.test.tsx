@@ -15,6 +15,9 @@ vi.mock('./useClients.ts', () => ({
   createClient: clientsData.createClient,
   updateClient: clientsData.updateClient,
 }));
+vi.mock('@/lib/callables.ts', () => ({
+  deletePersonalData: vi.fn(),
+}));
 
 import { ClientsListPage } from './ClientsListPage.tsx';
 
@@ -28,12 +31,17 @@ function clientRow(overrides: Partial<IClientRow> = {}): IClientRow {
     language: 'en',
     notes: '',
     notificationsOptOut: false,
+    waConsentGranted: true,
+    waConsentRecordedAt: new Date('2026-01-05T00:00:00Z'),
+    pdpaErased: false,
     ...overrides,
   };
 }
 
 function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
-  return render(<ClientsListPage workspaceId="wksA" role={role} uid="u1" />);
+  return render(
+    <ClientsListPage workspaceId="wksA" workspaceName="Firm A" role={role} uid="u1" />,
+  );
 }
 
 beforeEach(() => {
@@ -108,6 +116,7 @@ describe('ClientsListPage', () => {
         companyName: '',
         language: 'en',
         notes: '',
+        waConsentGranted: false,
       },
       'u1',
     );
@@ -138,13 +147,71 @@ describe('ClientsListPage', () => {
     await user.type(nameInput, 'Ahmad Ismail');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
 
-    expect(clientsData.updateClient).toHaveBeenCalledWith('wksA', 'c1', {
-      name: 'Ahmad Ismail',
-      phone: '+60123456789',
-      email: '',
-      companyName: '',
-      language: 'en',
-      notes: '',
-    });
+    expect(clientsData.updateClient).toHaveBeenCalledWith(
+      'wksA',
+      'c1',
+      {
+        name: 'Ahmad Ismail',
+        phone: '+60123456789',
+        email: '',
+        companyName: '',
+        language: 'en',
+        notes: '',
+        waConsentGranted: true,
+      },
+      'u1',
+      true,
+    );
+  });
+
+  it('shows the no-consent badge when a client has no consent record', () => {
+    clientsData.state = {
+      status: 'ready',
+      rows: [clientRow({ waConsentGranted: null, waConsentRecordedAt: null })],
+    };
+    renderPage();
+    expect(screen.getByText('No WhatsApp consent')).toBeInTheDocument();
+  });
+
+  it('freezes erased clients: badge shown, edit and phone hidden', () => {
+    clientsData.state = {
+      status: 'ready',
+      rows: [
+        clientRow({
+          name: 'Deleted client',
+          pdpaErased: true,
+          waConsentGranted: null,
+          waConsentRecordedAt: null,
+        }),
+      ],
+    };
+    renderPage();
+    expect(screen.getByText('Personal data deleted')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete personal data/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('+60123456789')).not.toBeInTheDocument();
+  });
+
+  it('offers the delete-personal-data action to owner/admin only', () => {
+    clientsData.state = { status: 'ready', rows: [clientRow()] };
+    const { unmount } = renderPage('owner');
+    expect(
+      screen.getByRole('button', { name: 'Delete personal data (Ahmad bin Ismail)' }),
+    ).toBeInTheDocument();
+    unmount();
+
+    renderPage('pm');
+    expect(screen.queryByRole('button', { name: /Delete personal data/ })).not.toBeInTheDocument();
+  });
+
+  it('opens the deletion dialog from the row action', async () => {
+    const user = userEvent.setup();
+    clientsData.state = { status: 'ready', rows: [clientRow()] };
+    renderPage();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Delete personal data (Ahmad bin Ismail)' }),
+    );
+    expect(screen.getByRole('dialog', { name: /Delete personal data/ })).toBeInTheDocument();
   });
 });
