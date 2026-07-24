@@ -11,6 +11,7 @@ import type { TMemberRole } from '@siapp/shared';
 import { useState } from 'react';
 import { Link } from 'react-router';
 
+import { useClients } from '../clients/useClients.ts';
 import {
   DuplicateBlockedError,
   DuplicateTooLargeError,
@@ -86,6 +87,7 @@ export function ProjectsListPage({
   userName,
 }: IProjectsListPageProps) {
   const projects = useProjects(workspaceId);
+  const clients = useClients(workspaceId);
   const [creating, setCreating] = useState(false);
   const [createMode, setCreateMode] = useState<'blank' | 'duplicate'>('blank');
   const [sourceId, setSourceId] = useState('');
@@ -94,6 +96,7 @@ export function ProjectsListPage({
   const canCreate = role === 'owner' || role === 'admin' || role === 'pm';
 
   const rows = projects.status === 'ready' ? projects.rows : [];
+  const clientOptions = clients.status === 'ready' ? clients.rows : [];
   const visible = rows.filter(
     (project) =>
       project.lifecycle !== 'deleted' && (showArchived || project.lifecycle !== 'archived'),
@@ -159,6 +162,7 @@ export function ProjectsListPage({
 
             {createMode === 'blank' && (
               <ProjectForm
+                clients={clientOptions}
                 submitLabel="Create draft"
                 onCancel={() => setCreating(false)}
                 onSubmit={async (values) => {
@@ -196,11 +200,14 @@ export function ProjectsListPage({
                     </p>
                     <ProjectForm
                       key={source.id}
+                      clients={clientOptions}
                       prefill={{
                         name: `Copy of ${source.name}`,
                         code: '',
                         vertical: source.vertical,
                         status: 'planning',
+                        clientId: '',
+                        clientName: '',
                         startDate: new Date(),
                         targetEndDate: null,
                         clientCanSee: source.clientCanSee,

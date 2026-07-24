@@ -39,3 +39,11 @@ export const PREVIEWABLE_MIME_TYPES = [
   'image/webp',
   'image/gif',
 ] as const;
+
+/**
+ * A collaborator counts as "Active" on the A7 list when a task they were
+ * assigned to was completed within this window (#16); otherwise "Idle".
+ * `lastTaskAt` is stamped server-side by the onTaskWrite trigger. A
+ * configurable threshold (Settings → Team) is a deferred follow-up.
+ */
+export const COLLABORATOR_ACTIVE_WINDOW_DAYS = 60;

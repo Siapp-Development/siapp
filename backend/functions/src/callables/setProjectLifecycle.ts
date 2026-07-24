@@ -23,6 +23,7 @@ import {
   type TProjectErrorCode,
   type TProjectLifecycle,
 } from '../lib/projectLifecycle.js';
+import { countWaRecipients } from '../lib/optOut.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
 // NodeNext build cannot consume) — pm_ux/plans/21-cost-estimation.md §2.8.
@@ -55,7 +56,8 @@ interface IPublishPreview {
  * Messages the publish transition would fire: one welcome WA to the client
  * (when a client is linked) plus one assignment WA per collaborator
  * pre-assigned to a task with `sendWhatsapp: true` (deduplicated per
- * collaborator, matching one assignment message each).
+ * collaborator, matching one assignment message each). #16 (D-035):
+ * recipients with a server-set `notificationsOptOut` are excluded.
  */
 async function computePublishPreview(
   workspaceId: string,
@@ -81,7 +83,21 @@ async function computePublishPreview(
     }
   }
 
-  const waCount = collaboratorIds.size + (clientId !== '' ? 1 : 0);
+  const clientSnap =
+    clientId !== ''
+      ? await db.doc(`workspaces/${workspaceId}/clients/${clientId}`).get()
+      : null;
+  const collaboratorSnaps = await Promise.all(
+    [...collaboratorIds].map((id) =>
+      db.doc(`workspaces/${workspaceId}/collaborators/${id}`).get(),
+    ),
+  );
+
+  const waCount = countWaRecipients({
+    clientLinked: clientId !== '',
+    clientData: clientSnap?.data(),
+    collaboratorDocs: collaboratorSnaps.map((snap) => snap.data()),
+  });
   return {
     waCount,
     estimatedCostMyr: Math.round(waCount * WA_UTILITY_COST_MYR * 100) / 100,

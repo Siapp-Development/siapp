@@ -21,6 +21,9 @@ rules_version = '2';
 //   soft-delete only; bytes live in Storage under storage.rules)
 // - #15 adds: duplicatedFromProjectId provenance on project create
 //   (create-only — absent from the update allowlist, so immutable)
+// - #16 adds: client + collaborator CRUD for owner/admin/pm (no hard
+//   deletes; notificationsOptOut / lastTaskAt are SERVER-ONLY — absent from
+//   every allowlist, so a firm can never set or clear an opt-out, D-035)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -109,7 +112,43 @@ service cloud.firestore {
         && d.memberCount is int;
     }
 
+    // Field validation shared by client create/update (#16). Only the
+    // firm-editable keys — notificationsOptOut is validated nowhere on
+    // purpose: it is server-only (STOP webhook, D-035).
+    function validClientFields() {
+      let d = request.resource.data;
+      return d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 120
+        && d.phone is string
+        && d.phone.matches('\\+[1-9][0-9]{6,14}')
+        && (!('email' in d) || (d.email is string && d.email.size() <= 254))
+        && (!('companyName' in d) || (d.companyName is string && d.companyName.size() <= 120))
+        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 2000))
+        && d.language in ['en', 'ms'];
+    }
+
+    // Field validation shared by collaborator create/update (#16).
+    // notificationsOptOut and lastTaskAt are deliberately absent (server-only).
+    function validCollaboratorFields() {
+      let d = request.resource.data;
+      return d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 120
+        && d.phone is string
+        && d.phone.matches('\\+[1-9][0-9]{6,14}')
+        && (!('email' in d) || (d.email is string && d.email.size() <= 254))
+        && (!('company' in d) || (d.company is string && d.company.size() <= 120))
+        && (!('trade' in d) || (d.trade is string && d.trade.size() <= 120))
+        && d.type in ['individual', 'company']
+        && d.status in ['active', 'archived'];
+    }
+
     // Type validation for the client-editable project fields (#12).
+    // #16: clientId and clientNameDenorm must be paired — either both empty
+    // (no client linked) or both non-empty. No exists() check on clientId
+    // (matches the phaseId precedent; a stale id only mislabels the firm's
+    // own project inside its own workspace).
     function validProjectFields() {
       let d = request.resource.data;
       return d.name is string
@@ -119,6 +158,8 @@ service cloud.firestore {
         && d.status in ['planning', 'active', 'on_hold', 'completed', 'archived']
         && d.clientId is string
         && d.clientNameDenorm is string
+        && ((d.clientId == '' && d.clientNameDenorm == '')
+          || (d.clientId.size() > 0 && d.clientNameDenorm.size() > 0))
         && d.startDate is timestamp
         && (!('targetEndDate' in d) || d.targetEndDate is timestamp)
         && (!('actualEndDate' in d) || d.actualEndDate is timestamp)
@@ -292,14 +333,65 @@ service cloud.firestore {
           && resource.data.memberCount == 0;
       }
 
+      // Clients (#16): workspace-visible; owner/admin/pm manage them. No
+      // hard delete (project.clientId denorms would orphan) and no archive
+      // field at MVP — clients are edit-only. notificationsOptOut is
+      // server-only: absent from the create allowlist and allowed in the
+      // update allowlist only so a server-stamped doc stays editable — the
+      // diff check keeps firms from ever writing or clearing it. Only the
+      // STOP webhook (Admin SDK) writes it (D-035).
       match /clients/{cid} {
         allow read: if isFirmMember(wid);
-        allow write: if false;
+        allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'phone', 'email', 'companyName', 'language',
+            'notes', 'createdAt', 'createdBy'
+          ])
+          && validClientFields()
+          && request.resource.data.id == cid
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdBy == request.auth.uid;
+        // The merged doc may carry a server-stamped notificationsOptOut, but
+        // the diff must never touch it (nor the identity fields).
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'phone', 'email', 'companyName', 'language',
+            'notes', 'notificationsOptOut', 'createdAt', 'createdBy'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'phone', 'email', 'companyName', 'language', 'notes'])
+          && validClientFields();
+        allow delete: if false;
       }
 
+      // Collaborators (#16): workspace-visible; owner/admin/pm manage them.
+      // Removal is archival via `status` (task assignees + phoneIndex refs
+      // would orphan on delete). notificationsOptOut and lastTaskAt are
+      // server-only: absent from the create allowlist and allowed in the
+      // update allowlist only so server-stamped docs stay editable — the
+      // diff check keeps firms from ever writing them.
       match /collaborators/{colid} {
         allow read: if isFirmMember(wid);
-        allow write: if false;
+        allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
+            'status', 'createdAt', 'invitedBy'
+          ])
+          && validCollaboratorFields()
+          && request.resource.data.id == colid
+          && request.resource.data.status == 'active'
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.invitedBy == request.auth.uid;
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
+            'status', 'notificationsOptOut', 'lastTaskAt', 'createdAt',
+            'invitedBy'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'phone', 'email', 'company', 'trade', 'type', 'status'])
+          && validCollaboratorFields();
+        allow delete: if false;
       }
 
       // Projects (#12): field CRUD is client-side for owner/admin/pm;

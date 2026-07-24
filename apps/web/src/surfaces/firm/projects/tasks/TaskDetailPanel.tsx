@@ -12,6 +12,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
+import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import { TaskAttachments } from '../documents/DocumentsSection.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
@@ -227,6 +228,7 @@ export interface ITaskDetailPanelProps {
   allTasks: readonly ITaskRow[];
   phases: readonly IPhaseRow[];
   members: readonly IMemberRow[];
+  collaborators: readonly ICollaboratorRow[];
   departments: readonly IDepartmentRow[];
   role: TMemberRole;
   memberDepartments: readonly string[];
@@ -244,6 +246,7 @@ export function TaskDetailPanel({
   allTasks,
   phases,
   members,
+  collaborators,
   departments,
   role,
   memberDepartments,
@@ -278,6 +281,13 @@ export function TaskDetailPanel({
   const otherTasks = allTasks.filter((row) => row.id !== task.id);
   const unassignedMembers = members.filter(
     (member) => !assignees.some((entry) => entry.type === 'user' && entry.id === member.uid),
+  );
+  // Archived collaborators can't take new work; opted-out ones can (D-035) —
+  // the option label carries the "(notifications off)" hint instead.
+  const assignableCollaborators = collaborators.filter(
+    (collaborator) =>
+      collaborator.status === 'active' &&
+      !assignees.some((entry) => entry.type === 'collaborator' && entry.id === collaborator.id),
   );
 
   function toggleRestrictedDept(depId: string): void {
@@ -579,6 +589,40 @@ export function TaskDetailPanel({
                         {unassignedMembers.map((member) => (
                           <option key={member.uid} value={member.uid}>
                             {member.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {assignableCollaborators.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="task-assign-collaborator">Assign collaborator</Label>
+                      <select
+                        id="task-assign-collaborator"
+                        className="h-10 max-w-64 rounded-md border border-border bg-background px-3 text-sm"
+                        value=""
+                        onChange={(event) => {
+                          const collaborator = assignableCollaborators.find(
+                            (entry) => entry.id === event.target.value,
+                          );
+                          if (collaborator !== undefined) {
+                            setAssignees((prev) => [
+                              ...prev,
+                              {
+                                type: 'collaborator',
+                                id: collaborator.id,
+                                name: collaborator.name,
+                                phone: collaborator.phone,
+                              },
+                            ]);
+                          }
+                        }}
+                      >
+                        <option value="">Choose a collaborator…</option>
+                        {assignableCollaborators.map((collaborator) => (
+                          <option key={collaborator.id} value={collaborator.id}>
+                            {collaborator.name}
+                            {collaborator.notificationsOptOut ? ' (notifications off)' : ''}
                           </option>
                         ))}
                       </select>

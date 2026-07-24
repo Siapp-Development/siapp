@@ -2,6 +2,8 @@ import { Button } from '@siapp/ui';
 import { Link, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
+import { ClientsListPage } from './clients/ClientsListPage.tsx';
+import { CollaboratorsListPage } from './collaborators/CollaboratorsListPage.tsx';
 import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
 import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
@@ -69,9 +71,20 @@ export function FirmShell() {
               </Link>
             </li>
             <li>
-              <a href="#main" className="text-foreground hover:text-primary">
+              <Link
+                to={`/${workspace.slug}/clients`}
+                className="text-foreground hover:text-primary"
+              >
                 Clients
-              </a>
+              </Link>
+            </li>
+            <li>
+              <Link
+                to={`/${workspace.slug}/collaborators`}
+                className="text-foreground hover:text-primary"
+              >
+                Collaborators
+              </Link>
             </li>
             <li>
               <Link
@@ -116,6 +129,22 @@ export function FirmShell() {
                 departments={state.claims.workspaces[workspace.id]?.departments ?? []}
                 uid={state.user.uid}
                 userName={state.user.displayName ?? state.user.email ?? ''}
+              />
+            }
+          />
+          <Route
+            path="clients"
+            element={
+              <ClientsListPage workspaceId={workspace.id} role={role} uid={state.user.uid} />
+            }
+          />
+          <Route
+            path="collaborators"
+            element={
+              <CollaboratorsListPage
+                workspaceId={workspace.id}
+                role={role}
+                uid={state.user.uid}
               />
             }
           />

@@ -27,6 +27,7 @@ export interface IProjectRow {
   vertical: TProjectVertical;
   lifecycle: TProjectLifecycle;
   status: TProjectStatus;
+  clientId: string;
   clientNameDenorm: string;
   ownerNameDenorm: string;
   startDate: Date | null;
@@ -64,6 +65,7 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
     vertical: (data['vertical'] ?? 'other') as TProjectVertical,
     lifecycle: (data['lifecycle'] ?? 'draft') as TProjectLifecycle,
     status: (data['status'] ?? 'planning') as TProjectStatus,
+    clientId: typeof data['clientId'] === 'string' ? data['clientId'] : '',
     clientNameDenorm: String(data['clientNameDenorm'] ?? ''),
     ownerNameDenorm: String(data['ownerNameDenorm'] ?? ''),
     startDate: asDate(data['startDate']),
@@ -125,6 +127,10 @@ export interface IProjectFormValues {
   code: string;
   vertical: TProjectVertical;
   status: TProjectStatus;
+  /** '' when no client is linked; rules require clientId/clientName paired (#16). */
+  clientId: string;
+  /** Denormalized display name for the linked client; '' when unlinked. */
+  clientName: string;
   startDate: Date;
   targetEndDate: Date | null;
   clientCanSee: boolean;
@@ -133,8 +139,8 @@ export interface IProjectFormValues {
 /**
  * Creates a draft project. The doc shape must satisfy the #12 create rule:
  * lifecycle 'draft', zeroed summary, collaboratorsCount 0, caller as
- * ownerUid/createdBy. Clients are linked from #16 onward — until then
- * clientId stays ''.
+ * ownerUid/createdBy. clientId/clientNameDenorm are paired — both set or
+ * both '' (#16).
  */
 export async function createProject(
   workspaceId: string,
@@ -150,8 +156,8 @@ export async function createProject(
     vertical: values.vertical,
     lifecycle: 'draft',
     status: values.status,
-    clientId: '',
-    clientNameDenorm: '',
+    clientId: values.clientId,
+    clientNameDenorm: values.clientName,
     ownerUid: uid,
     ownerNameDenorm: ownerName,
     startDate: Timestamp.fromDate(values.startDate),
@@ -178,6 +184,8 @@ export async function updateProject(
     name: values.name,
     code: values.code !== '' ? values.code : deleteField(),
     status: values.status,
+    clientId: values.clientId,
+    clientNameDenorm: values.clientName,
     startDate: Timestamp.fromDate(values.startDate),
     targetEndDate:
       values.targetEndDate !== null ? Timestamp.fromDate(values.targetEndDate) : deleteField(),

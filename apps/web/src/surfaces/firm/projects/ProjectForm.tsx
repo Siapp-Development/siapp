@@ -32,11 +32,20 @@ function fromDateInput(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+export interface IProjectFormClientOption {
+  id: string;
+  name: string;
+  /** Server-only flag (D-035) — surfaced as a label suffix, never edited. */
+  notificationsOptOut: boolean;
+}
+
 export interface IProjectFormProps {
   /** When set, the form edits this project; otherwise it creates a new one. */
   project?: IProjectRow;
   /** Initial values for a fresh form (duplicate mode). Ignored when `project` is set. */
   prefill?: Partial<IProjectFormValues>;
+  /** Workspace clients for the optional client link (#16). */
+  clients?: readonly IProjectFormClientOption[];
   /** Locks the vertical select — duplicate mode copies it from the source. */
   verticalLocked?: boolean;
   /** Maps a submit error to the message shown in the form's alert. */
@@ -49,6 +58,7 @@ export interface IProjectFormProps {
 export function ProjectForm({
   project,
   prefill,
+  clients = [],
   verticalLocked = false,
   errorMessage,
   onSubmit,
@@ -63,6 +73,7 @@ export function ProjectForm({
   const [status, setStatus] = useState<TProjectStatus>(
     project?.status ?? prefill?.status ?? 'planning',
   );
+  const [clientId, setClientId] = useState(project?.clientId ?? prefill?.clientId ?? '');
   const [startDate, setStartDate] = useState(
     toDateInput(project?.startDate ?? prefill?.startDate ?? new Date()),
   );
@@ -91,6 +102,22 @@ export function ProjectForm({
       setError('Enter a start date.');
       return;
     }
+    // Resolve the denormalized client name from the selected row; fall back to
+    // the existing denorm when the link is unchanged but the client list is
+    // still loading. Rules require the id/name pair to be set together.
+    let clientName = '';
+    if (clientId !== '') {
+      const selected = clients.find((client) => client.id === clientId);
+      if (selected !== undefined) {
+        clientName = selected.name;
+      } else if (project !== undefined && clientId === project.clientId) {
+        clientName = project.clientNameDenorm;
+      }
+      if (clientName === '') {
+        setError('Pick a client from the list, or leave it as No client.');
+        return;
+      }
+    }
     setPending(true);
     setError(null);
     try {
@@ -99,6 +126,8 @@ export function ProjectForm({
         code: code.trim(),
         vertical,
         status,
+        clientId,
+        clientName,
         startDate: start,
         targetEndDate: fromDateInput(targetEndDate),
         clientCanSee,
@@ -161,6 +190,28 @@ export function ProjectForm({
             {STATUSES.map((option) => (
               <option key={option} value={option}>
                 {STATUS_LABELS[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="project-client">Client (optional)</Label>
+          <select
+            id="project-client"
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+            value={clientId}
+            onChange={(event) => setClientId(event.target.value)}
+          >
+            <option value="">No client</option>
+            {project !== undefined &&
+              project.clientId !== '' &&
+              !clients.some((client) => client.id === project.clientId) && (
+                <option value={project.clientId}>{project.clientNameDenorm}</option>
+              )}
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.name}
+                {client.notificationsOptOut ? ' (notifications off)' : ''}
               </option>
             ))}
           </select>
