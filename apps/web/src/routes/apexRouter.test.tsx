@@ -1,7 +1,57 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The portal shell redeems the token against Firebase — mock the session
+// hook module wholesale so no firebase code loads in this router test.
+const portalSession = vi.hoisted(() => ({
+  workspaceId: 'wks-1',
+  projectId: 'proj-1',
+  clientId: 'client-1',
+  branding: { firmName: 'Studio North' },
+  tier: 'standard',
+}));
+
+vi.mock('@/surfaces/portal/usePortalSession.ts', async () => {
+  const { createContext, useContext } = await import('react');
+  const SessionContext = createContext<unknown>(null);
+  return {
+    usePortalSession: () => ({
+      state: { status: 'ready', session: portalSession },
+      retry: () => {},
+    }),
+    PortalSessionProvider: SessionContext.Provider,
+    usePortalSessionContext: () => useContext(SessionContext),
+    portalErrorCode: () => null,
+  };
+});
+
+vi.mock('@/surfaces/portal/usePortalProject.ts', () => ({
+  usePortalProject: () => ({
+    status: 'ready',
+    project: {
+      name: 'Roadside Cafe Fitout',
+      lifecycle: 'published',
+      startDate: null,
+      targetEndDate: null,
+      progressPct: 40,
+    },
+    phases: [],
+    milestones: [],
+  }),
+  currentPhase: () => null,
+  nextMilestone: () => null,
+}));
+
+vi.mock('@/surfaces/portal/updates/usePortalUpdates.ts', () => ({
+  usePortalUpdates: () => ({
+    state: { status: 'ready', rows: [], hasMore: false },
+    loadMore: () => {},
+  }),
+  updateLabel: () => 'Project updated',
+  UPDATES_PAGE_SIZE: 30,
+}));
 
 import { apexRoutes } from '@/routes/apexRouter.tsx';
 
@@ -29,18 +79,21 @@ describe('apexRouter', () => {
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveFocus();
   });
 
-  it('lazy-loads the portal shell at /p/:token and surfaces the token', async () => {
+  it('lazy-loads the portal shell at /p/:token with branded header and nav', async () => {
     renderAt('/p/abc');
 
-    expect(await screen.findByRole('heading', { level: 1, name: /your project/i })).toBeInTheDocument();
-    expect(screen.getByText('abc')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Studio North')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Portal sections' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 
   it('applies the portal surface theme once the /p tree mounts', async () => {
     renderAt('/p/abc');
 
-    await screen.findByRole('heading', { level: 1, name: /your project/i });
+    await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' });
 
     expect(document.documentElement.dataset.surface).toBe('portal');
   });
