@@ -337,6 +337,7 @@ export function TaskDetailPanel({
           dependsOn,
         },
         task.status === 'done',
+        uid,
       );
       const entries: Array<Promise<void>> = [];
       if (status !== task.status) {

@@ -85,6 +85,21 @@ export interface IGetRestrictedTaskHeadersRequest {
 }
 
 /**
+ * deleteTask (#23, Q5): task hard-delete is callable-only so `task_deleted`
+ * activity/audit entries are attributed to the acting uid. Client-side
+ * Firestore deletes are denied by rules.
+ */
+export interface IDeleteTaskRequest {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}
+
+export interface IDeleteTaskResponse {
+  ok: boolean;
+}
+
+/**
  * Safe projection of a department-restricted task the caller cannot read
  * (#13): enough to render the list row + "Restricted" badge, nothing more.
  */

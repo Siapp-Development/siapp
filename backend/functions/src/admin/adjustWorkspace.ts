@@ -9,6 +9,7 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import type { TWorkspacePlan } from './adminTypes.js';
 import { assertAdminCall, callerIp } from './adminGuard.js';
 import { writeAdminLog } from './writeAdminLog.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 
 export interface IAdjustInput {
   wid: string;
@@ -102,6 +103,23 @@ export async function adjustWorkspace(
     targetType: 'workspace',
     targetId: wid,
     before,
+    after: patch,
+    ip: callerIp(request),
+  });
+
+  // #23 Q2: mirror into the workspace's own auditLog so firm owners can see
+  // plan/seat adjustments in their trail. Before is limited to patched keys.
+  const beforeSubset: Record<string, unknown> = {};
+  for (const key of Object.keys(patch)) {
+    beforeSubset[key] = before[key] ?? null;
+  }
+  await writeAuditLog(wid, {
+    actorType: 'admin',
+    actorId: request.auth!.uid,
+    action: 'admin.workspace_adjust',
+    targetType: 'workspace',
+    targetId: wid,
+    before: beforeSubset,
     after: patch,
     ip: callerIp(request),
   });

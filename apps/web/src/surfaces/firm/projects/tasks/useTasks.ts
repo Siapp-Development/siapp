@@ -1,6 +1,7 @@
 /**
  * Live Firestore subscriptions + direct writes for the tasks surface (#13).
- * Task/phase CRUD is client-side (rules-validated for owner/admin/pm);
+ * Task/phase CRUD is client-side (rules-validated for owner/admin/pm) except
+ * task hard-delete, which flows through the deleteTask callable (#23 Q5);
  * activity entries are append-only client writes pinned to the caller.
  *
  * Department need-to-know: rules prove list queries against the query, so
@@ -38,7 +39,7 @@ import {
 } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getRestrictedTaskHeaders } from '@/lib/callables.ts';
+import { deleteTask as deleteTaskCallable, getRestrictedTaskHeaders } from '@/lib/callables.ts';
 import { db } from '@/lib/firebase.ts';
 
 // ---------------------------------------------------------------------------
@@ -423,6 +424,7 @@ export async function createTask(
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     createdBy: uid,
+    updatedBy: uid,
   });
   return ref.id;
 }
@@ -433,6 +435,7 @@ export async function updateTask(
   taskId: string,
   values: ITaskFormValues,
   wasDone: boolean,
+  uid: string,
 ): Promise<void> {
   const nowDone = values.status === 'done';
   await updateDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
@@ -451,15 +454,21 @@ export async function updateTask(
     ...(values.notify !== undefined ? { notify: values.notify } : {}),
     dependsOn: values.dependsOn,
     updatedAt: serverTimestamp(),
+    // #23: rules require updatedBy == auth.uid so activity is attributable.
+    updatedBy: uid,
   });
 }
 
+/**
+ * #23 Q5: hard-deletes flow through the deleteTask callable so the activity
+ * entry is attributed (rules deny client task deletes).
+ */
 export async function deleteTask(
   workspaceId: string,
   projectId: string,
   taskId: string,
 ): Promise<void> {
-  await deleteDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`));
+  await deleteTaskCallable({ workspaceId, projectId, taskId });
 }
 
 export interface IPhaseFormValues {

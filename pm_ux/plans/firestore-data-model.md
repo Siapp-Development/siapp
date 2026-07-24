@@ -89,6 +89,7 @@ workspaces/{wid}
 │   │   ├── (task doc)
 │   │   └── updates/{updid}
 │   ├── documents/{did}
+│   ├── activity/{actid}       // project-level activity feed (#23)
 │   └── milestones/{mid}
 ├── magicLinks/{shortCode}
 ├── messages/{mid}
@@ -302,7 +303,10 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   order: number,                   // for manual sort within phase / board
   createdAt: Timestamp,
   updatedAt: Timestamp,
-  createdBy: string
+  createdBy: string,
+  updatedBy?: string               // uid of the last editor; required on every client update (#23).
+                                   // Rules enforce updatedBy == request.auth.uid on update; the
+                                   // activity trigger uses it to attribute task change events.
 }
 ```
 
@@ -335,6 +339,40 @@ Append-only. Drives task page activity feed, audit, and notifications.
     mimeType?: string
   },
   createdAt: Timestamp
+}
+```
+
+### `workspaces/{wid}/projects/{pid}/activity/{actid}` — project activity feed (#23)
+
+Added by #23 (impl plan D1). This doc originally modelled activity only as the task-scoped
+`updates/{updid}` stream above; D-033 (Activity tab) and D-027 §5 (feed markers) both assume a
+**project-level** feed, so #23 introduced this denormalized, append-only subcollection. Written
+exclusively by Cloud Functions (Admin SDK) — client `write: false`; reads are firm-member only and
+department-gated via `restrictedToDepartments` (same semantics as tasks, see
+20-access-control-departments.md).
+
+```typescript
+{
+  id: string,
+  action:                          // TProjectActivityAction (packages/shared/src/enums.ts)
+    | 'task_created' | 'task_status_changed' | 'task_assigned' | 'task_unassigned'
+    | 'task_due_date_changed' | 'task_deleted'
+    | 'doc_added' | 'doc_deleted'
+    | 'project_created' | 'project_published' | 'project_completed'
+    | 'project_archived' | 'project_deleted' | 'project_reopened'
+    | 'client_link_changed',
+  actorType: 'user' | 'client' | 'collaborator' | 'system',
+  actorId: string,                 // '' for system entries
+  actorNameDenorm: string,
+  taskId?: string,
+  taskTitleDenorm?: string,        // survives task deletion
+  docId?: string,
+  docNameDenorm?: string,
+  restrictedToDepartments: string[], // copied from the source task; [] = unrestricted
+  payload: { from?: unknown, to?: unknown },
+  wouldHaveNotified?: boolean,     // draft-lifecycle marker (D-027 §5): set on task_status_changed
+                                   // when notifications were suppressed because lifecycle !== 'published'
+  at: Timestamp                    // serverTimestamp
 }
 ```
 

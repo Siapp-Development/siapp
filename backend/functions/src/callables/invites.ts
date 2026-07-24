@@ -25,6 +25,7 @@ import {
   type TInviteErrorCode,
 } from '../lib/invites.js';
 import { postmarkServerToken, sendInviteEmail } from '../lib/mail.js';
+import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 
 /** Dashboard origin used in emailed invite links. */
 const appOrigin = defineString('APP_ORIGIN', { default: 'https://dashboard.siapp.app' });
@@ -130,6 +131,16 @@ export const createInvite = onCall({ secrets: [postmarkServerToken] }, async (re
     inviteUrl,
   });
 
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.create',
+    targetType: 'invite',
+    targetId: inviteRef.id,
+    after: { email, role },
+    ...callableRequestMeta(request),
+  });
+
   return { inviteId: inviteRef.id, inviteUrl, emailSent };
 });
 
@@ -154,12 +165,22 @@ export const revokeInvite = onCall(async (request) => {
       revokedBy: uid,
     });
   });
+
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.revoke',
+    targetType: 'invite',
+    targetId: inviteId,
+    ...callableRequestMeta(request),
+  });
+
   return { ok: true };
 });
 
 export const resendInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
-  requireWorkspaceAdmin(request, workspaceId);
+  const callerUid = requireWorkspaceAdmin(request, workspaceId);
   const inviteId = requireStringField(request, 'inviteId');
 
   const db = getFirestore();
@@ -191,6 +212,15 @@ export const resendInvite = onCall({ secrets: [postmarkServerToken] }, async (re
     inviterName: String(invite['invitedByNameDenorm'] ?? 'A teammate'),
     role: String(invite['role']),
     inviteUrl,
+  });
+
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: callerUid,
+    action: 'invite.resend',
+    targetType: 'invite',
+    targetId: inviteId,
+    ...callableRequestMeta(request),
   });
 
   return { inviteId, inviteUrl, emailSent };
@@ -300,6 +330,16 @@ export const acceptInvite = onCall(async (request) => {
   await db
     .doc(`users/${uid}`)
     .set({ claimsUpdatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: uid,
+    action: 'invite.accept',
+    targetType: 'invite',
+    targetId: inviteId,
+    after: { role: accepted.role },
+    ...callableRequestMeta(request),
+  });
 
   logger.info(`acceptInvite: ${uid} joined ${workspaceId} as ${accepted.role}`);
   return { workspaceId, workspaceSlug: accepted.workspaceSlug, role: accepted.role };

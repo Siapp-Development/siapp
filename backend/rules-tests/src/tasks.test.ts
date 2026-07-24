@@ -1,9 +1,12 @@
 /**
  * #13 task rules: phase CRUD for owner/admin/pm; task CRUD for owner/admin/pm
- * with department need-to-know enforced on create/update/delete (you can
- * never create, update into, or delete a task you couldn't see); append-only
- * task updates for any member who can see the parent task, with author
- * fields pinned to the caller and source pinned to 'web'.
+ * with department need-to-know enforced on create/update (you can never
+ * create or update into a task you couldn't see); append-only task updates
+ * for any member who can see the parent task, with author fields pinned to
+ * the caller and source pinned to 'web'.
+ * #23: task updates must stamp `updatedBy == auth.uid` (activity
+ * attribution) and client-side task deletes are denied outright — hard
+ * deletes flow through the deleteTask callable (Q5).
  */
 
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -201,6 +204,21 @@ describe('task create', () => {
     );
   });
 
+  it('allows create stamping updatedBy to the caller but denies spoofing it (#23)', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('admin'), `${TASKS_PATH}/task-ub`),
+        validTask('task-ub', { updatedBy: 'user-admin' }, 'user-admin'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('admin'), `${TASKS_PATH}/task-ub2`),
+        validTask('task-ub2', { updatedBy: 'someone-else' }, 'user-admin'),
+      ),
+    );
+  });
+
   it('denies invalid task payloads', async () => {
     const path = `${TASKS_PATH}/task-x`;
     const invalid: Array<Record<string, unknown>> = [
@@ -228,14 +246,35 @@ describe('task update', () => {
           title: `Edited by ${role}`,
           status: 'in_progress',
           updatedAt: Timestamp.now(),
+          updatedBy: `user-${role}`,
         }),
       );
     }
   });
 
+  it('denies updates missing updatedBy and denies spoofing it (#23)', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), TASK_PATH), {
+        title: 'No attribution',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), TASK_PATH), {
+        title: 'Spoofed',
+        updatedAt: Timestamp.now(),
+        updatedBy: 'user-admin',
+      }),
+    );
+  });
+
   it('denies viewer updates', async () => {
     await assertFails(
-      updateDoc(doc(dbAs('viewer'), TASK_PATH), { title: 'Nope', updatedAt: Timestamp.now() }),
+      updateDoc(doc(dbAs('viewer'), TASK_PATH), {
+        title: 'Nope',
+        updatedAt: Timestamp.now(),
+        updatedBy: 'user-viewer',
+      }),
     );
   });
 
@@ -247,7 +286,11 @@ describe('task update', () => {
     ];
     for (const patch of tampering) {
       await assertFails(
-        updateDoc(doc(dbAs('owner'), TASK_PATH), { ...patch, updatedAt: Timestamp.now() }),
+        updateDoc(doc(dbAs('owner'), TASK_PATH), {
+          ...patch,
+          updatedAt: Timestamp.now(),
+          updatedBy: 'user-owner',
+        }),
       );
     }
   });
@@ -257,6 +300,7 @@ describe('task update', () => {
       updateDoc(doc(dbAs('pm', WKS_A, [DEP_SITE]), RESTRICTED_TASK_PATH), {
         title: 'Nope',
         updatedAt: Timestamp.now(),
+        updatedBy: 'user-pm',
       }),
     );
   });
@@ -266,6 +310,7 @@ describe('task update', () => {
       updateDoc(doc(dbAs('pm', WKS_A, [DEP_FINANCE]), RESTRICTED_TASK_PATH), {
         title: 'Budget revision',
         updatedAt: Timestamp.now(),
+        updatedBy: 'user-pm',
       }),
     );
   });
@@ -275,6 +320,7 @@ describe('task update', () => {
       updateDoc(doc(dbAs('pm', WKS_A, [DEP_SITE]), TASK_PATH), {
         restrictedToDepartments: [DEP_FINANCE],
         updatedAt: Timestamp.now(),
+        updatedBy: 'user-pm',
       }),
     );
   });
@@ -284,16 +330,16 @@ describe('task update', () => {
       updateDoc(doc(dbAs('admin'), RESTRICTED_TASK_PATH), {
         title: 'Admin edit',
         updatedAt: Timestamp.now(),
+        updatedBy: 'user-admin',
       }),
     );
   });
 });
 
 describe('task delete', () => {
-  it('allows owner, admin and pm to delete an unrestricted task', async () => {
+  it('denies all client-side deletes — even owner/admin/pm (#23 Q5 callable)', async () => {
     for (const role of ['owner', 'admin', 'pm'] as const) {
-      await seedDoc(testEnv, `${TASKS_PATH}/task-d`, validTask('task-d'));
-      await assertSucceeds(deleteDoc(doc(dbAs(role), `${TASKS_PATH}/task-d`)));
+      await assertFails(deleteDoc(doc(dbAs(role), TASK_PATH)));
     }
   });
 

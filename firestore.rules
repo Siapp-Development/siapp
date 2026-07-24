@@ -24,6 +24,12 @@ rules_version = '2';
 // - #16 adds: client + collaborator CRUD for owner/admin/pm (no hard
 //   deletes; notificationsOptOut / lastTaskAt are SERVER-ONLY — absent from
 //   every allowlist, so a firm can never set or clear an opt-out, D-035)
+// - #23 adds: server-written per-project activity timeline (activity/{aid};
+//   firm-member reads department-gated on the denormalized
+//   restrictedToDepartments copy, all client writes denied); task `updatedBy`
+//   pinned to the caller on update (actor attribution, D4); task hard
+//   deletes are now DENIED client-side — they go through the deleteTask
+//   callable so task_deleted entries are attributed (Q5)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -237,7 +243,7 @@ service cloud.firestore {
           'visibleToClient', 'visibleToCollaboratorIds',
           'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
           'notify',
-          'order', 'createdAt', 'updatedAt', 'createdBy'
+          'order', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'
         ])
         && d.id == tid
         && d.title is string
@@ -484,17 +490,22 @@ service cloud.firestore {
           allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
             && validTaskFields(tid)
             && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
-            && request.resource.data.createdBy == request.auth.uid;
+            && request.resource.data.createdBy == request.auth.uid
+            // #23 D4: updatedBy, when present, must be the caller.
+            && (!('updatedBy' in request.resource.data)
+              || request.resource.data.updatedBy == request.auth.uid);
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
             && validTaskFields(tid)
             && canSeeRestricted(wid, restrictionsOf(resource.data))
             && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
             && !request.resource.data.diff(resource.data)
-              .affectedKeys().hasAny(['id', 'createdAt', 'createdBy']);
-          // Hard delete (no task soft-delete in the data model); the
-          // onTaskWrite trigger recomputes project.summary.
-          allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
-            && canSeeRestricted(wid, restrictionsOf(resource.data));
+              .affectedKeys().hasAny(['id', 'createdAt', 'createdBy'])
+            // #23 D4: every update stamps updatedBy with the caller's uid so
+            // the activity trigger can attribute the event.
+            && request.resource.data.updatedBy == request.auth.uid;
+          // #23 Q5: hard deletes moved behind the deleteTask callable so
+          // task_deleted activity/audit entries are attributed.
+          allow delete: if false;
 
           // Updates inherit the parent task's restriction (one get()).
           // Append-only activity stream (#13): any member who can see the
@@ -557,6 +568,18 @@ service cloud.firestore {
 
         match /milestones/{mid} {
           allow read: if isFirmMember(wid);
+          allow write: if false;
+        }
+
+        // Project activity timeline (#23, D1/D6): server-written only
+        // (Admin SDK). Entries sourced from a restricted task/doc carry a
+        // denormalized restrictedToDepartments copy, so reads gate without
+        // a get() and list queries stay provable.
+        match /activity/{aid} {
+          allow get: if isFirmMember(wid)
+            && canSeeRestricted(wid, restrictionsOf(resource.data));
+          allow list: if isFirmMember(wid)
+            && canSeeRestrictedList(wid, resource.data);
           allow write: if false;
         }
       }

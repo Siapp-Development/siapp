@@ -36,6 +36,12 @@ vi.mock('./documents/DocumentsSection.tsx', () => ({
   ),
 }));
 
+vi.mock('./activity/ActivitySection.tsx', () => ({
+  ActivitySection: (props: { role: string }) => (
+    <div data-testid="activity-section" data-role={props.role} />
+  ),
+}));
+
 import { ProjectDetailPage } from './ProjectDetailPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -95,6 +101,17 @@ beforeEach(() => {
 });
 
 describe('ProjectDetailPage', () => {
+  it('renders the Activity tab between Documents and Details (#23)', async () => {
+    renderPage('pm');
+
+    const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent);
+    expect(tabs).toEqual(['Tasks', 'Documents', 'Activity', 'Details']);
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }));
+    expect(screen.getByTestId('activity-section')).toHaveAttribute('data-role', 'pm');
+    expect(screen.queryByTestId('tasks-section')).not.toBeInTheDocument();
+  });
+
   it('shows the Tasks tab by default and renders project details under Details', async () => {
     projectData.state = {
       status: 'ready',

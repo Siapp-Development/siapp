@@ -13,6 +13,7 @@
 import type {
   TActorType,
   TAdminAction,
+  TAuditAction,
   TCollaboratorStatus,
   TCollaboratorType,
   TDocumentScope,
@@ -28,6 +29,7 @@ import type {
   TNotificationTrigger,
   TPhaseStatus,
   TPhoneRefType,
+  TProjectActivityAction,
   TProjectLifecycle,
   TProjectStatus,
   TProjectVertical,
@@ -376,6 +378,8 @@ export interface ITaskDoc {
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
+  /** Rules-pinned to the caller on every update (#23, D4 actor attribution). */
+  updatedBy?: string;
 }
 
 export interface ITaskUpdatePayload {
@@ -479,7 +483,7 @@ export interface IAuditLogDoc {
   id: string;
   actorType: TActorType;
   actorId: string;
-  action: string;
+  action: TAuditAction;
   targetType: string;
   targetId: string;
   before?: Record<string, unknown>;
@@ -487,6 +491,36 @@ export interface IAuditLogDoc {
   ip?: string;
   userAgent?: string;
   ts: Date;
+}
+
+/** Payload carried by a project activity entry (#23, D1). */
+export interface IProjectActivityPayload {
+  from?: unknown;
+  to?: unknown;
+}
+
+/**
+ * `/workspaces/{wid}/projects/{pid}/activity/{aid}` — per-project activity
+ * timeline (#23, D1). Server-written only (Admin SDK); read by firm members
+ * with department gating on the denormalized `restrictedToDepartments` copy
+ * (snapshotted from the source task/doc at event time, D6).
+ */
+export interface IProjectActivityDoc {
+  id: string;
+  action: TProjectActivityAction;
+  actorType: TActorType;
+  actorId: string;
+  actorNameDenorm: string;
+  taskId?: string;
+  taskTitleDenorm?: string;
+  docId?: string;
+  docNameDenorm?: string;
+  /** Copied from the source task/doc at event time; [] = unrestricted. */
+  restrictedToDepartments: string[];
+  payload: IProjectActivityPayload;
+  /** D-027 §5 draft-preview marker — suppressed notification would have fired. */
+  wouldHaveNotified?: boolean;
+  at: Date;
 }
 
 /** `/workspaces/{wid}/usageCounters/{period}` e.g. period = "2026-07" */

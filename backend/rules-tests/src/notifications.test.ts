@@ -107,6 +107,7 @@ describe('task notify map (#18, D2)', () => {
       updateDoc(doc(dbAs('pm'), TASK_PATH), {
         notify: VALID_NOTIFY,
         updatedAt: Timestamp.now(),
+        updatedBy: 'user-pm', // required on task updates since #23
       }),
     );
   });
