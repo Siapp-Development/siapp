@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,25 @@ const projectsData = vi.hoisted(() => ({
 vi.mock('./useProjects.ts', () => ({
   useProjects: () => projectsData.state,
   createProject: projectsData.createProject,
+}));
+
+const duplicateData = vi.hoisted(() => {
+  class DuplicateBlockedError extends Error {
+    readonly hiddenCount: number;
+
+    constructor(hiddenCount: number) {
+      super('blocked');
+      this.name = 'DuplicateBlockedError';
+      this.hiddenCount = hiddenCount;
+    }
+  }
+  class DuplicateTooLargeError extends Error {}
+  return { duplicateProject: vi.fn(), DuplicateBlockedError, DuplicateTooLargeError };
+});
+vi.mock('./duplicateProject.ts', () => ({
+  duplicateProject: duplicateData.duplicateProject,
+  DuplicateBlockedError: duplicateData.DuplicateBlockedError,
+  DuplicateTooLargeError: duplicateData.DuplicateTooLargeError,
 }));
 
 import { ProjectsListPage } from './ProjectsListPage.tsx';
@@ -46,6 +65,7 @@ function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
         workspaceSlug="acme"
         workspaceName="Acme Builders"
         role={role}
+        departments={[]}
         uid="u1"
         userName="Alice Tan"
       />
@@ -110,6 +130,7 @@ describe('ProjectsListPage', () => {
   it('hides the New project button from viewers', () => {
     renderPage('viewer');
     expect(screen.queryByRole('button', { name: /new project/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   });
 
   it('creates a draft project from the form', async () => {
@@ -142,5 +163,77 @@ describe('ProjectsListPage', () => {
 
     expect(screen.getByText(/must be 1–120 characters/i)).toBeInTheDocument();
     expect(projectsData.createProject).not.toHaveBeenCalled();
+  });
+
+  it('shows the Blank | Duplicate mode chooser to a pm, defaulting to Blank', async () => {
+    renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+
+    expect(screen.getByRole('radio', { name: /blank/i })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /duplicate from existing/i })).not.toBeChecked();
+  });
+
+  it('duplicates from a selected source with a prefilled, vertical-locked form', async () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [
+        projectRow({ vertical: 'legal', clientCanSee: false }),
+        projectRow({ id: 'p-del', name: 'Gone', lifecycle: 'deleted' }),
+      ],
+    };
+    duplicateData.duplicateProject.mockResolvedValue('p-copy');
+    renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+    await userEvent.click(screen.getByRole('radio', { name: /duplicate from existing/i }));
+
+    const sourceSelect = screen.getByLabelText('Source project');
+    expect(within(sourceSelect).queryByRole('option', { name: /gone/i })).not.toBeInTheDocument();
+    await userEvent.selectOptions(sourceSelect, 'p1');
+
+    expect(screen.getByLabelText('Name')).toHaveValue('Copy of Bungalow build');
+    expect(screen.getByLabelText('Vertical')).toBeDisabled();
+    expect(screen.getByLabelText('Vertical')).toHaveValue('legal');
+
+    await userEvent.click(screen.getByRole('button', { name: /create draft/i }));
+
+    expect(duplicateData.duplicateProject).toHaveBeenCalledWith({
+      workspaceId: 'wksA',
+      sourceProjectId: 'p1',
+      values: expect.objectContaining({
+        name: 'Copy of Bungalow build',
+        code: '',
+        vertical: 'legal',
+        status: 'planning',
+        targetEndDate: null,
+        clientCanSee: false,
+      }),
+      uid: 'u1',
+      ownerName: 'Alice Tan',
+      role: 'pm',
+      departments: [],
+    });
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+  });
+
+  it('shows the restricted-tasks block message when duplication is denied', async () => {
+    projectsData.state = { status: 'ready', rows: [projectRow()] };
+    duplicateData.duplicateProject.mockRejectedValue(
+      new duplicateData.DuplicateBlockedError(3),
+    );
+    renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+    await userEvent.click(screen.getByRole('radio', { name: /duplicate from existing/i }));
+    await userEvent.selectOptions(screen.getByLabelText('Source project'), 'p1');
+    await userEvent.click(screen.getByRole('button', { name: /create draft/i }));
+
+    expect(
+      screen.getByText(
+        /has 3 restricted task\(s\) you can't access — ask an owner or admin/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
   });
 });
