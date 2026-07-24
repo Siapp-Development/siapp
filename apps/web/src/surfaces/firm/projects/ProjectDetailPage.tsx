@@ -238,7 +238,7 @@ export function ProjectDetailPage({
       <div>
         <p className="text-sm">This project could not be loaded.</p>
         <Button asChild variant="outline" size="sm" className="mt-4">
-          <Link to={`/${workspaceSlug}`}>Back to projects</Link>
+          <Link to={`/${workspaceSlug}/projects`}>Back to projects</Link>
         </Button>
       </div>
     );
@@ -252,7 +252,10 @@ export function ProjectDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link to={`/${workspaceSlug}`} className="text-sm text-muted-foreground hover:text-primary">
+        <Link
+          to={`/${workspaceSlug}/projects`}
+          className="text-sm text-muted-foreground hover:text-primary"
+        >
           ← Projects
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
