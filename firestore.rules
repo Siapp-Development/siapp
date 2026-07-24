@@ -37,6 +37,14 @@ rules_version = '2';
 //   documents + activity reads, and a pinned client-upload create — all
 //   re-gated on lifecycle published/completed (D-027; makes Q1 soft revoke
 //   safe); milestones gain firm owner/admin/pm CRUD (Q2)
+// - #22 adds: collaborator principals (custom-token claims
+//   `collab.{wid,pid,tid,colid}`, minted by redeemCollabLink) get their ONE
+//   pinned task, their own task updates, and task-scoped shared documents —
+//   all re-gated on lifecycle + collaborator visibility; collaborator
+//   uploads create pinned metadata (collab-uploads/, D-f); task docs gain a
+//   client-writable-by-firm blockedReason (D-d); collaborator task/note
+//   writes go through the submitCollabUpdate callable (Admin SDK), never
+//   directly through rules
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -95,6 +103,32 @@ service cloud.firestore {
         && request.auth.token.portal != null
         && request.auth.token.portal.wid == wid
         && request.auth.token.portal.pid == pid;
+    }
+
+    // Collaborator principal (#22, D-a): custom token minted by
+    // redeemCollabLink with claims pinning ONE collaborator to ONE task in
+    // ONE project. Project-level check for the documents match (no tid in
+    // that path — the scopeId pin below does the task binding).
+    function isCollabProject(wid, pid) {
+      return isSignedIn()
+        && request.auth.token.collab != null
+        && request.auth.token.collab.wid == wid
+        && request.auth.token.collab.pid == pid;
+    }
+
+    function isCollabPrincipal(wid, pid, tid) {
+      return isCollabProject(wid, pid)
+        && request.auth.token.collab.tid == tid;
+    }
+
+    // Task-level collaborator visibility (#16 semantics): empty/missing
+    // visibleToCollaboratorIds = every collaborator assignee may see it.
+    // Re-checked on every read so hiding a collaborator instantly closes
+    // their /t page (what makes soft link-revocation safe, Q1).
+    function collabCanSeeTask(data) {
+      return data.get('visibleToCollaboratorIds', []).size() == 0
+        || data.get('visibleToCollaboratorIds', [])
+          .hasAny([request.auth.token.collab.colid]);
     }
 
     // Portal reads re-check the D-027 lifecycle gate on every request (one
@@ -282,6 +316,49 @@ service cloud.firestore {
         && d.deletedAt == null;
     }
 
+    // Field validation for collaborator uploads (#22, D-f). Mirrors
+    // COLLAB_ALLOWED_DOCUMENT_MIME_TYPES / MAX_COLLAB_DOCUMENT_SIZE_BYTES in
+    // @siapp/shared. Identity fields pin to the collab claims; the doc is
+    // task-scoped, visible to exactly this collaborator, and inherits
+    // visibleToClient (D-029) + restrictedToDepartments from the parent
+    // task so the need-to-know denorms stay consistent.
+    function validCollabDocumentCreate(wid, pid, did) {
+      let d = request.resource.data;
+      let task = get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(request.auth.token.collab.tid)).data;
+      return d.keys().hasOnly([
+          'id', 'name', 'mimeType', 'sizeBytes', 'storagePath',
+          'scope', 'scopeId', 'uploadedBy', 'uploaderType', 'uploadedAt',
+          'visibleToClient', 'visibleToCollaboratorIds',
+          'restrictedToDepartments', 'scanStatus', 'deletedAt'
+        ])
+        && d.id == did
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 255
+        && d.mimeType in [
+          'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
+          'image/gif',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword'
+        ]
+        && d.sizeBytes is int
+        && d.sizeBytes > 0
+        && d.sizeBytes <= 25 * 1024 * 1024
+        && d.storagePath.matches('workspaces/' + wid + '/projects/' + pid + '/collab-uploads/[^/]+')
+        && d.scope == 'task'
+        && d.scopeId == request.auth.token.collab.tid
+        && d.uploadedBy == request.auth.token.collab.colid
+        && d.uploaderType == 'collaborator'
+        && d.uploadedAt is timestamp
+        && d.visibleToClient == task.get('visibleToClient', false)
+        && d.visibleToCollaboratorIds is list
+        && d.visibleToCollaboratorIds.size() == 1
+        && d.visibleToCollaboratorIds[0] == request.auth.token.collab.colid
+        && d.restrictedToDepartments == task.get('restrictedToDepartments', [])
+        && d.scanStatus == 'pending'
+        && d.deletedAt == null;
+    }
+
     // Field validation shared by phase create/update (#13).
     function validPhaseFields(phid) {
       let d = request.resource.data;
@@ -324,7 +401,7 @@ service cloud.firestore {
           'startDate', 'dueDate', 'completedAt', 'assignees',
           'visibleToClient', 'visibleToCollaboratorIds',
           'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
-          'notify',
+          'notify', 'blockedReason',
           'order', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'
         ])
         && d.id == tid
@@ -334,6 +411,9 @@ service cloud.firestore {
         && (!('description' in d) || (d.description is string && d.description.size() <= 5000))
         && (!('phaseId' in d) || d.phaseId is string)
         && d.status in ['todo', 'in_progress', 'blocked', 'done']
+        // #22 (D-d): the need-help reason; cleared when leaving 'blocked'.
+        && (!('blockedReason' in d)
+          || (d.blockedReason is string && d.blockedReason.size() <= 1000))
         && (!('startDate' in d) || d.startDate is timestamp)
         && (!('dueDate' in d) || d.dueDate is timestamp)
         && (!('completedAt' in d) || d.completedAt is timestamp)
@@ -573,8 +653,13 @@ service cloud.firestore {
         // #13 opens the write path for owner/admin/pm — you can never
         // create, update into, or delete a task you couldn't see.
         match /tasks/{tid} {
-          allow get: if isFirmMember(wid)
-            && canSeeRestricted(wid, restrictionsOf(resource.data));
+          allow get: if (isFirmMember(wid)
+              && canSeeRestricted(wid, restrictionsOf(resource.data)))
+            // #22: the collab principal may get its ONE pinned task while
+            // the project is live and the task stays collaborator-visible.
+            || (isCollabPrincipal(wid, pid, tid)
+              && portalProjectLive(wid, pid)
+              && collabCanSeeTask(resource.data));
           allow list: if isFirmMember(wid)
             && canSeeRestrictedList(wid, resource.data);
           allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
@@ -602,10 +687,15 @@ service cloud.firestore {
           // task may append; author fields are pinned to the caller and
           // web-sourced actions only — WA/system entries are server-written.
           match /updates/{updid} {
-            allow read: if isFirmMember(wid)
+            allow read: if (isFirmMember(wid)
               && canSeeRestricted(wid, restrictionsOf(
                 get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
-              ));
+              )))
+              // #22 (D-c): collaborators read back ONLY their own entries —
+              // list queries must constrain authorId to the colid.
+              || (isCollabPrincipal(wid, pid, tid)
+                && portalProjectLive(wid, pid)
+                && resource.data.authorId == request.auth.token.collab.colid);
             allow create: if isFirmMember(wid)
               && canSeeRestricted(wid, restrictionsOf(
                 get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
@@ -644,6 +734,14 @@ service cloud.firestore {
             || (isPortalClient(wid, pid)
               && resource.data.visibleToClient == true
               && resource.data.deletedAt == null
+              && portalProjectLive(wid, pid))
+            // #22: collab principal sees only its own task's non-deleted
+            // docs that are shared with this collaborator.
+            || (isCollabProject(wid, pid)
+              && resource.data.scopeId == request.auth.token.collab.tid
+              && resource.data.visibleToCollaboratorIds
+                .hasAny([request.auth.token.collab.colid])
+              && resource.data.deletedAt == null
               && portalProjectLive(wid, pid));
           allow list: if (isFirmMember(wid)
               && canSeeRestrictedList(wid, resource.data))
@@ -651,6 +749,14 @@ service cloud.firestore {
             // and deletedAt (both referenced without .get() defaults).
             || (isPortalClient(wid, pid)
               && resource.data.visibleToClient == true
+              && resource.data.deletedAt == null
+              && portalProjectLive(wid, pid))
+            // Provable collab list: queries must constrain scopeId,
+            // visibleToCollaboratorIds (array-contains colid) and deletedAt.
+            || (isCollabProject(wid, pid)
+              && resource.data.scopeId == request.auth.token.collab.tid
+              && resource.data.visibleToCollaboratorIds
+                .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
               && portalProjectLive(wid, pid));
           allow create: if (hasRole(wid, ['owner', 'admin', 'pm'])
@@ -660,7 +766,11 @@ service cloud.firestore {
             // pinned-field validator; the trigger derives the activity entry.
             || (isPortalClient(wid, pid)
               && portalProjectLive(wid, pid)
-              && validPortalDocumentCreate(wid, pid, did));
+              && validPortalDocumentCreate(wid, pid, did))
+            // #22 (D-f): collaborator uploads — same posture, task-scoped.
+            || (isCollabProject(wid, pid)
+              && portalProjectLive(wid, pid)
+              && validCollabDocumentCreate(wid, pid, did));
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
             && canSeeRestricted(wid, restrictionsOf(resource.data))
             && resource.data.deletedAt == null
