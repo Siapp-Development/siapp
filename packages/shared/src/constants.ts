@@ -8,3 +8,34 @@
  * publish-dialog cost preview (D-027); refined when billing lands (#24).
  */
 export const WA_UTILITY_COST_MYR = 0.1;
+
+/** Max upload size for project/task documents (#14) — enforced in storage.rules and firestore.rules; keep the three in sync. */
+export const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Content types accepted for document uploads (#14). Mirrored verbatim in
+ * storage.rules (parity enforced by a rules test). `image/svg+xml` is
+ * deliberately excluded — SVGs can carry scripts and we preview inline.
+ */
+export const ALLOWED_DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+] as const;
+
+/** Subset of the allowlist the web app previews inline (iframe/img); the rest are download-only (#14). */
+export const PREVIEWABLE_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+] as const;

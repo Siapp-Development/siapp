@@ -382,7 +382,12 @@ export interface IProjectDocumentDoc {
   restrictedToDepartments: string[];
   scanStatus: TScanStatus;
   retentionUntil?: Date;
-  deletedAt?: Date;
+  /**
+   * Written as an explicit `null` at create — Firestore `== null` list
+   * filters do not match missing fields, and every documents query
+   * filters on `deletedAt == null` (#14).
+   */
+  deletedAt: Date | null;
   deletedBy?: string;
   deletedByType?: TUploaderType;
 }

@@ -14,6 +14,7 @@ import { Timestamp, doc, setDoc } from 'firebase/firestore';
 import type { IWorkspaceClaims, TMemberRole } from '@siapp/shared';
 
 const RULES_PATH = fileURLToPath(new URL('../../../firestore.rules', import.meta.url));
+const STORAGE_RULES_PATH = fileURLToPath(new URL('../../../storage.rules', import.meta.url));
 
 function emulatorHost(): { host: string; port: number } {
   // Set automatically by `firebase emulators:exec`; fall back to the
@@ -24,6 +25,15 @@ function emulatorHost(): { host: string; port: number } {
     return { host, port: Number(port) };
   }
   return { host: '127.0.0.1', port: 8080 };
+}
+
+function storageEmulatorHost(): { host: string; port: number } {
+  const fromEnv = process.env.FIREBASE_STORAGE_EMULATOR_HOST;
+  if (fromEnv) {
+    const [host, port] = fromEnv.split(':');
+    return { host, port: Number(port) };
+  }
+  return { host: '127.0.0.1', port: 9199 };
 }
 
 /**
@@ -38,6 +48,19 @@ export async function createTestEnv(projectId: string): Promise<RulesTestEnviron
       host,
       port,
       rules: readFileSync(RULES_PATH, 'utf8'),
+    },
+  });
+}
+
+/** Storage-rules variant of createTestEnv (#14) — boots against storage.rules. */
+export async function createStorageTestEnv(projectId: string): Promise<RulesTestEnvironment> {
+  const { host, port } = storageEmulatorHost();
+  return initializeTestEnvironment({
+    projectId,
+    storage: {
+      host,
+      port,
+      rules: readFileSync(STORAGE_RULES_PATH, 'utf8'),
     },
   });
 }

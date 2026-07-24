@@ -14,7 +14,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test && node --test scripts/check-bundle-isolation.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore \"pnpm --filter @siapp/rules-tests test:rules\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage \"pnpm --filter @siapp/rules-tests test:rules\"",
     "format": "prettier --write ."
   },
   "devDependencies": {

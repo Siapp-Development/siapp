@@ -17,6 +17,8 @@ rules_version = '2';
 // - #11 adds: invites (owner/admin read, server-only writes), departments
 //   CRUD for owner/admin, and department need-to-know gating on task /
 //   task-update / document reads (20-access-control-departments.md)
+// - #14 adds: document metadata writes for owner/admin/pm (create +
+//   soft-delete only; bytes live in Storage under storage.rules)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -125,6 +127,46 @@ service cloud.firestore {
     // the visibility field existed (e.g. starter projects).
     function collabCountOf(data) {
       return data.get('visibility', {}).get('collaboratorsCount', 0);
+    }
+
+    // Field validation for firm document uploads (#14). retentionUntil is
+    // deliberately absent from the allow-list — not client-writable.
+    // deletedAt must be an explicit null: every list query filters on
+    // `deletedAt == null`, which does not match missing fields.
+    function validDocumentCreate(wid, pid, did) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'mimeType', 'sizeBytes', 'storagePath',
+          'scope', 'scopeId', 'uploadedBy', 'uploaderType', 'uploadedAt',
+          'visibleToClient', 'visibleToCollaboratorIds',
+          'restrictedToDepartments', 'scanStatus', 'deletedAt'
+        ])
+        && d.id == did
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 255
+        && d.mimeType is string
+        && d.sizeBytes is int
+        && d.sizeBytes > 0
+        && d.sizeBytes <= 25 * 1024 * 1024
+        // wid/pid are alphanumeric auto-ids (no regex metachars); the single
+        // [^/]+ segment keeps metadata out of client-uploads/ and other
+        // nested prefixes.
+        && d.storagePath.matches('workspaces/' + wid + '/projects/' + pid + '/[^/]+')
+        && d.scope in ['project', 'task']
+        && (d.scope == 'project'
+          ? d.scopeId == pid
+          : (d.scopeId is string && d.scopeId.size() > 0))
+        && d.uploadedBy == request.auth.uid
+        && d.uploaderType == 'firm_member'
+        && d.uploadedAt is timestamp
+        && d.visibleToClient is bool
+        && d.visibleToCollaboratorIds is list
+        && d.visibleToCollaboratorIds.size() == 0
+        && d.restrictedToDepartments is list
+        && d.restrictedToDepartments.size() <= 10
+        && d.scanStatus == 'pending'
+        && d.deletedAt == null;
     }
 
     // Field validation shared by phase create/update (#13).
@@ -370,7 +412,8 @@ service cloud.firestore {
               && request.resource.data.authorNameDenorm is string
               && request.resource.data.source == 'web'
               && request.resource.data.action in
-                ['comment', 'status_change', 'eta_change', 'assigned']
+                ['comment', 'status_change', 'eta_change', 'assigned',
+                 'doc_added', 'doc_deleted']
               && request.resource.data.payload is map
               && (request.resource.data.action != 'comment'
                 || (request.resource.data.payload.text is string
@@ -381,12 +424,28 @@ service cloud.firestore {
           }
         }
 
+        // Documents (#14): metadata for Storage uploads. Firm owner/admin/pm
+        // create (you can never create a doc you couldn't see) and soft-delete
+        // (the only permitted update — no rename, no scanStatus writes; the
+        // Storage object is immutable and stays for retention). Hard delete
+        // denied. retentionUntil/scanStatus transitions are server-side.
         match /documents/{did} {
           allow get: if isFirmMember(wid)
             && canSeeRestricted(wid, restrictionsOf(resource.data));
           allow list: if isFirmMember(wid)
             && canSeeRestrictedList(wid, resource.data);
-          allow write: if false;
+          allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
+            && validDocumentCreate(wid, pid, did);
+          allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && canSeeRestricted(wid, restrictionsOf(resource.data))
+            && resource.data.deletedAt == null
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['deletedAt', 'deletedBy', 'deletedByType'])
+            && request.resource.data.deletedAt is timestamp
+            && request.resource.data.deletedBy == request.auth.uid
+            && request.resource.data.deletedByType == 'firm_member';
+          allow delete: if false;
         }
 
         match /milestones/{mid} {
