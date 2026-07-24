@@ -82,6 +82,15 @@ export function activityLine(row: IActivityRow): IActivityLine {
       return { actor, text: 'deleted task', subject: task, subjectStruck: true, detail: '' };
     case 'doc_added':
       return { actor, text: 'added document', subject: docName, subjectStruck: false, detail: '' };
+    case 'client_document_uploaded':
+      // Portal uploads are attributed to the client, not a firm member (#21).
+      return {
+        actor: 'The client',
+        text: 'shared document',
+        subject: docName,
+        subjectStruck: false,
+        detail: '',
+      };
     case 'doc_deleted':
       return { actor, text: 'deleted document', subject: docName, subjectStruck: true, detail: '' };
     case 'project_created':

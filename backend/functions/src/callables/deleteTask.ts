@@ -86,6 +86,7 @@ export const deleteTask = onCall(async (request) => {
       taskId,
       taskTitleDenorm: title,
       restrictedToDepartments: restrictions,
+      visibleToClient: false,
       payload: {},
     },
     taskDeletedActivityId(taskId),

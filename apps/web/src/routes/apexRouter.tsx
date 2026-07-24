@@ -11,12 +11,39 @@ import { MarketingHome } from '@/surfaces/marketing/MarketingHome.tsx';
 export const apexRoutes: RouteObject[] = [
   { path: '/', Component: MarketingHome },
   {
-    path: '/p/:token/*',
+    path: '/p/:token',
     HydrateFallback: LoadingFallback,
     lazy: async () => {
       const { PortalShell } = await import('@/surfaces/portal/PortalShell.tsx');
       return { Component: PortalShell };
     },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { PortalProjectPage } = await import('@/surfaces/portal/PortalProjectPage.tsx');
+          return { Component: PortalProjectPage };
+        },
+      },
+      {
+        path: 'documents',
+        lazy: async () => {
+          const { PortalDocumentsPage } = await import(
+            '@/surfaces/portal/documents/PortalDocumentsPage.tsx'
+          );
+          return { Component: PortalDocumentsPage };
+        },
+      },
+      {
+        path: 'updates',
+        lazy: async () => {
+          const { PortalUpdatesPage } = await import(
+            '@/surfaces/portal/updates/PortalUpdatesPage.tsx'
+          );
+          return { Component: PortalUpdatesPage };
+        },
+      },
+    ],
   },
   {
     path: '/t/:token',
