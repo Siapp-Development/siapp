@@ -135,11 +135,18 @@ service cloud.firestore {
           .hasAny([request.auth.token.collab.colid]);
     }
 
-    // Portal reads re-check the D-027 lifecycle gate AND the project's
-    // current client binding on every request (one get(); subcollections
-    // only — the project doc checks resource.data directly). Unpublish/
-    // archive/delete or re-linking the project to another client instantly
-    // closes the portal, which is what makes soft link-revocation (Q1) safe.
+    // Portal/collab reads re-check the D-027 lifecycle gate on every
+    // request (one get(); subcollections only — the project doc checks
+    // resource.data directly). Unpublish/archive/delete instantly closes
+    // the surface, which is what makes soft link-revocation (Q1) safe.
+    function projectLive(wid, pid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid))
+        .data.lifecycle in ['published', 'completed'];
+    }
+
+    // Portal reads additionally re-check the project's CURRENT client
+    // binding against the portal.cid claim — re-linking the project to
+    // another client instantly closes the old client's portal.
     function portalProjectLive(wid, pid) {
       let project = get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)).data;
       return project.lifecycle in ['published', 'completed']
@@ -666,7 +673,7 @@ service cloud.firestore {
             // #22: the collab principal may get its ONE pinned task while
             // the project is live and the task stays collaborator-visible.
             || (isCollabPrincipal(wid, pid, tid)
-              && portalProjectLive(wid, pid)
+              && projectLive(wid, pid)
               && collabCanSeeTask(resource.data));
           allow list: if isFirmMember(wid)
             && canSeeRestrictedList(wid, resource.data);
@@ -699,10 +706,13 @@ service cloud.firestore {
               && canSeeRestricted(wid, restrictionsOf(
                 get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
               )))
-              // #22 (D-c): collaborators read back ONLY their own entries —
-              // list queries must constrain authorId to the colid.
+              // #22 (D-c): collaborators read back ONLY their own
+              // collaborator-authored entries — list queries must constrain
+              // authorType and authorId to the colid (the authorType check
+              // guards against any authorId collision with a firm uid).
               || (isCollabPrincipal(wid, pid, tid)
-                && portalProjectLive(wid, pid)
+                && projectLive(wid, pid)
+                && resource.data.authorType == 'collaborator'
                 && resource.data.authorId == request.auth.token.collab.colid);
             allow create: if isFirmMember(wid)
               && canSeeRestricted(wid, restrictionsOf(
@@ -750,7 +760,7 @@ service cloud.firestore {
               && resource.data.visibleToCollaboratorIds
                 .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
-              && portalProjectLive(wid, pid));
+              && projectLive(wid, pid));
           allow list: if (isFirmMember(wid)
               && canSeeRestrictedList(wid, resource.data))
             // Provable portal list: queries must constrain visibleToClient
@@ -766,7 +776,7 @@ service cloud.firestore {
               && resource.data.visibleToCollaboratorIds
                 .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
-              && portalProjectLive(wid, pid));
+              && projectLive(wid, pid));
           allow create: if (hasRole(wid, ['owner', 'admin', 'pm'])
               && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
               && validDocumentCreate(wid, pid, did))
@@ -777,7 +787,7 @@ service cloud.firestore {
               && validPortalDocumentCreate(wid, pid, did))
             // #22 (D-f): collaborator uploads — same posture, task-scoped.
             || (isCollabProject(wid, pid)
-              && portalProjectLive(wid, pid)
+              && projectLive(wid, pid)
               && validCollabDocumentCreate(wid, pid, did));
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
             && canSeeRestricted(wid, restrictionsOf(resource.data))

@@ -268,8 +268,18 @@ describe('collab update read-back (D-c: own entries only)', () => {
     await assertFails(getDoc(doc(dbAsCollab(), `${TASK_PATH}/updates/cupd-firm`)));
   });
 
-  it('lists only when the query pins authorId to the colid', async () => {
+  it('lists only when the query pins authorType + authorId to the colid', async () => {
     await assertSucceeds(
+      getDocs(
+        query(
+          collection(dbAsCollab(), `${TASK_PATH}/updates`),
+          where('authorType', '==', 'collaborator'),
+          where('authorId', '==', COL_ID),
+        ),
+      ),
+    );
+    // authorId alone is no longer provable — the rule also pins authorType.
+    await assertFails(
       getDocs(
         query(collection(dbAsCollab(), `${TASK_PATH}/updates`), where('authorId', '==', COL_ID)),
       ),
