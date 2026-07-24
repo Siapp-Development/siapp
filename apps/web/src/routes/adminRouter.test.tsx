@@ -1,14 +1,30 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { onIdTokenChanged } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
+import {
+  TotpMultiFactorGenerator,
+  getMultiFactorResolver,
+  multiFactor,
+  onIdTokenChanged,
+  signInWithPopup,
+  type User,
+} from 'firebase/auth';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { adminRoutes } from '@/routes/adminRouter.tsx';
 
 vi.mock('@/lib/firebase.ts', () => ({ auth: {}, db: {}, functions: {} }));
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: class GoogleAuthProvider {},
+  TotpMultiFactorGenerator: class TotpMultiFactorGenerator {
+    static FACTOR_ID = 'totp';
+    static generateSecret = vi.fn();
+    static assertionForSignIn = vi.fn();
+    static assertionForEnrollment = vi.fn();
+  },
+  getMultiFactorResolver: vi.fn(),
+  multiFactor: vi.fn(),
   onIdTokenChanged: vi.fn(),
   signInWithPopup: vi.fn(),
   signOut: vi.fn(),
@@ -28,12 +44,30 @@ vi.mock('firebase/firestore', () => ({
   Timestamp: { fromDate: vi.fn() },
 }));
 
-// Signed-out state: token listener fires null.
-vi.mocked(onIdTokenChanged).mockImplementation((_auth, observer) => {
-  if (typeof observer === 'function') {
-    observer(null);
-  }
-  return () => {};
+/** Make onIdTokenChanged fire once with the given user (or null). */
+function stubAuthUser(user: unknown): void {
+  vi.mocked(onIdTokenChanged).mockImplementation((_auth, observer) => {
+    if (typeof observer === 'function') {
+      observer(user as User | null);
+    }
+    return () => {};
+  });
+}
+
+function fakeUser(claims: Record<string, unknown>): unknown {
+  return {
+    email: 'admin@siapp.test',
+    getIdTokenResult: () => Promise.resolve({ claims }),
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  sessionStorage.clear();
+  // .env.local sets VITE_USE_EMULATORS=true, which disables the MFA gate —
+  // these tests exercise production behavior.
+  vi.stubEnv('VITE_USE_EMULATORS', 'false');
+  stubAuthUser(null);
 });
 
 function renderAt(path: string) {
@@ -63,5 +97,90 @@ describe('adminRouter', () => {
     await userEvent.tab();
 
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveFocus();
+  });
+
+  it('shows the access-denied screen at /login for a non-admin user (#63 regression)', async () => {
+    stubAuthUser(fakeUser({}));
+
+    renderAt('/login');
+
+    expect(await screen.findByText(/does not have siapp admin access/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign in with google/i })).not.toBeInTheDocument();
+  });
+
+  it('walks an unenrolled admin into TOTP enrolment (#63)', async () => {
+    stubAuthUser(fakeUser({ isAdmin: true, firebase: {} }));
+    vi.mocked(multiFactor).mockReturnValue({
+      enrolledFactors: [],
+      getSession: vi.fn(() => Promise.resolve({})),
+    } as never);
+    vi.mocked(TotpMultiFactorGenerator.generateSecret).mockResolvedValue({
+      generateQrCodeUrl: () => 'otpauth://totp/Siapp%20Admin:admin@siapp.test?secret=ABC',
+      secretKey: 'ABCDEF123456',
+    } as never);
+
+    renderAt('/login');
+
+    expect(
+      await screen.findByRole('heading', { name: /set up two-factor authentication/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(/6-digit code/i)).toBeInTheDocument();
+    expect(screen.getByText('ABCDEF123456')).toBeInTheDocument();
+  });
+
+  it('asks an enrolled admin without a second-factor session to re-sign-in', async () => {
+    stubAuthUser(fakeUser({ isAdmin: true, firebase: {} }));
+    vi.mocked(multiFactor).mockReturnValue({ enrolledFactors: [{}] } as never);
+
+    renderAt('/');
+
+    expect(
+      await screen.findByRole('heading', { name: /multi-factor authentication required/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/sign out and sign in again/i)).toBeInTheDocument();
+  });
+
+  it('shows the TOTP code form when sign-in raises a multi-factor challenge (#63)', async () => {
+    const resolveSignIn = vi.fn(() => Promise.resolve({}));
+    vi.mocked(signInWithPopup).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: 'totp', uid: 'factor-1' }],
+      resolveSignIn,
+    } as never);
+    vi.mocked(TotpMultiFactorGenerator.assertionForSignIn).mockReturnValue(
+      'totp-assertion' as never,
+    );
+
+    renderAt('/login');
+    await userEvent.click(await screen.findByRole('button', { name: /sign in with google/i }));
+
+    const codeInput = await screen.findByLabelText(/authenticator code/i);
+    await userEvent.type(codeInput, '123456');
+    await userEvent.click(screen.getByRole('button', { name: /^verify$/i }));
+
+    expect(TotpMultiFactorGenerator.assertionForSignIn).toHaveBeenCalledWith('factor-1', '123456');
+    expect(resolveSignIn).toHaveBeenCalledWith('totp-assertion');
+  });
+
+  it('rejects a malformed authenticator code without calling the resolver', async () => {
+    const resolveSignIn = vi.fn(() => Promise.resolve({}));
+    vi.mocked(signInWithPopup).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: 'totp', uid: 'factor-1' }],
+      resolveSignIn,
+    } as never);
+
+    renderAt('/login');
+    await userEvent.click(await screen.findByRole('button', { name: /sign in with google/i }));
+
+    await userEvent.type(await screen.findByLabelText(/authenticator code/i), '12ab');
+    await userEvent.click(screen.getByRole('button', { name: /^verify$/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/6-digit code/i);
+    expect(resolveSignIn).not.toHaveBeenCalled();
   });
 });
