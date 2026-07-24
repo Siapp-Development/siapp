@@ -7,6 +7,8 @@ import { CollaboratorsListPage } from './collaborators/CollaboratorsListPage.tsx
 import { DashboardPage } from './dashboard/DashboardPage.tsx';
 import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
 import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
+import { NotificationSettingsPage } from './settings/NotificationSettingsPage.tsx';
+import { SettingsLayout } from './settings/SettingsLayout.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
 
@@ -156,16 +158,31 @@ export function FirmShell() {
             }
           />
           <Route
-            path="settings/team"
-            element={
-              <TeamSettingsPage
-                workspaceId={workspace.id}
-                workspaceName={workspace.name}
-                role={role}
-                uid={state.user.uid}
-              />
-            }
-          />
+            path="settings"
+            element={<SettingsLayout workspaceSlug={workspace.slug} />}
+          >
+            <Route
+              path="team"
+              element={
+                <TeamSettingsPage
+                  workspaceId={workspace.id}
+                  workspaceName={workspace.name}
+                  role={role}
+                  uid={state.user.uid}
+                />
+              }
+            />
+            <Route
+              path="notifications"
+              element={
+                <NotificationSettingsPage
+                  workspaceId={workspace.id}
+                  workspaceName={workspace.name}
+                  role={role}
+                />
+              }
+            />
+          </Route>
         </Routes>
       </main>
     </div>

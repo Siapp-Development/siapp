@@ -85,8 +85,24 @@ export type TNotificationTrigger =
   | 'task_assigned'
   | 'task_status_change'
   | 'task_due_soon'
+  | 'task_blocked'
   | 'need_help'
   | 'inbound_auto_reply';
+
+// Message queue recipient kind (#18, D7): widens the client/collaborator
+// phone-ref pair with firm members ('internal' recipients).
+export type TMessageRecipientType = 'client' | 'collaborator' | 'member';
+
+// Why an enqueued message will never dispatch (#18, D8). Lifecycle reasons
+// are the D-027 "preview record" for non-published projects.
+export type TSuppressedReason =
+  | 'lifecycle:draft'
+  | 'lifecycle:completed'
+  | 'lifecycle:archived'
+  | 'lifecycle:deleted'
+  | 'opt_out'
+  | 'no_recipient'
+  | 'no_phone';
 
 // Admin audit-log action kinds (#10 admin panel)
 export type TAdminAction =

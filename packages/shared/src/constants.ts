@@ -2,6 +2,8 @@
  * Cross-package constants shared between the web app and Cloud Functions.
  */
 
+import type { IQuietHoursSettings, ITaskNotifyConfig } from './firestoreTypes.ts';
+
 /**
  * Approximate cost of one WhatsApp utility conversation in Malaysia
  * (pm_ux/plans/21-cost-estimation.md §2.8, June 2026). Used for the
@@ -47,3 +49,31 @@ export const PREVIEWABLE_MIME_TYPES = [
  * configurable threshold (Settings → Team) is a deferred follow-up.
  */
 export const COLLABORATOR_ACTIVE_WINDOW_DAYS = 60;
+
+/**
+ * Workspace quiet-hours defaults (#18, D1/D6) — an absent
+ * `workspaces/{wid}.notifications` map means exactly this. Mirrored in
+ * backend/functions/src/lib/quietHours.ts (source-only package boundary).
+ */
+export const QUIET_HOURS_DEFAULT = {
+  enabled: true,
+  start: '21:00',
+  end: '08:00',
+  timezone: 'Asia/Kuala_Lumpur',
+} as const satisfies IQuietHoursSettings;
+
+/** Due-soon sweep window (#18, D5): tasks due within the next 24 h. */
+export const DUE_SOON_WINDOW_HOURS = 24;
+
+/**
+ * Effective per-task notify config when the task's `notify` map is absent
+ * (#18, D2) — preserves pre-#18 behaviour (client gets updates) with zero
+ * backfill. Mirrored in backend/functions/src/lib/notifyConfig.ts.
+ */
+export const TASK_NOTIFY_DEFAULTS = {
+  statusChange: true,
+  dueSoon: true,
+  blocked: true,
+  toClient: true,
+  toInternal: false,
+} as const satisfies ITaskNotifyConfig;

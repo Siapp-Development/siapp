@@ -32,6 +32,16 @@ vi.mock('./projects/ProjectsListPage.tsx', () => ({
   ),
 }));
 vi.mock('./projects/ProjectDetailPage.tsx', () => ({ ProjectDetailPage: () => null }));
+vi.mock('./settings/TeamSettingsPage.tsx', () => ({
+  TeamSettingsPage: ({ workspaceName }: { workspaceName: string }) => (
+    <h1>Team — {workspaceName}</h1>
+  ),
+}));
+vi.mock('./settings/NotificationSettingsPage.tsx', () => ({
+  NotificationSettingsPage: ({ workspaceName }: { workspaceName: string }) => (
+    <h1>Notifications — {workspaceName}</h1>
+  ),
+}));
 
 const signedIn: TAuthState = {
   status: 'signedIn',
@@ -96,6 +106,23 @@ describe('FirmShell', () => {
       screen.getByRole('heading', { level: 1, name: /workspace not available/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText('Acme Builders')).not.toBeInTheDocument();
+  });
+
+  it('shows the settings sub-nav linking both settings pages (#18)', () => {
+    renderShell('/acme/settings/notifications');
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Notifications — Acme Builders' }),
+    ).toBeInTheDocument();
+    const subNav = screen.getByRole('navigation', { name: 'Settings' });
+    expect(within(subNav).getByRole('link', { name: 'Team' })).toHaveAttribute(
+      'href',
+      '/acme/settings/team',
+    );
+    expect(within(subNav).getByRole('link', { name: 'Notifications' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('signs out from the sidebar button', async () => {

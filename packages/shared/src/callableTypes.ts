@@ -103,6 +103,30 @@ export interface IGetRestrictedTaskHeadersResponse {
   headers: IRestrictedTaskHeader[];
 }
 
+/**
+ * updateNotificationSettings (#18, D1): owner/admin write the workspace
+ * quiet-hours window. The workspace doc stays client-write-denied; timezone
+ * is fixed server-side (D6) so the wire shape carries only the editables.
+ */
+export interface IUpdateNotificationSettingsRequest {
+  workspaceId: string;
+  quietHours: {
+    enabled: boolean;
+    /** 'HH:mm' 24-hour wall clock in Malaysia time. */
+    start: string;
+    end: string;
+  };
+}
+
+export interface IUpdateNotificationSettingsResponse {
+  quietHours: {
+    enabled: boolean;
+    start: string;
+    end: string;
+    timezone: 'Asia/Kuala_Lumpur';
+  };
+}
+
 /** Stable error codes for the project lifecycle callable. */
 export type TProjectErrorCode =
   | 'project/not-found'

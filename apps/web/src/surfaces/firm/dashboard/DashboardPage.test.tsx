@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 
 import type { IProjectRow, TProjectsState } from '../projects/useProjects.ts';
 import type { IDashboardTaskRow, TDashboardTasksState } from './useDashboardTasks.ts';
@@ -67,6 +68,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
+    notify: { ...TASK_NOTIFY_DEFAULTS },
     dependsOn: [],
     order: 0,
     createdBy: UID,

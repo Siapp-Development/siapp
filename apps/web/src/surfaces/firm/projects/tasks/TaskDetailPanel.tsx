@@ -267,6 +267,7 @@ export function TaskDetailPanel({
   const [visibleToClient, setVisibleToClient] = useState(task.visibleToClient);
   const [restrictedTo, setRestrictedTo] = useState<string[]>(task.restrictedToDepartments);
   const [sendWhatsapp, setSendWhatsapp] = useState(task.sendWhatsapp);
+  const [notify, setNotify] = useState(task.notify);
   const [dependsOn, setDependsOn] = useState<string[]>(task.dependsOn);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -302,6 +303,10 @@ export function TaskDetailPanel({
     );
   }
 
+  function toggleNotify(key: keyof typeof notify): void {
+    setNotify((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   async function handleSave(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const trimmedTitle = title.trim();
@@ -328,6 +333,7 @@ export function TaskDetailPanel({
           visibleToClient,
           restrictedToDepartments: restrictedTo,
           sendWhatsapp,
+          notify,
           dependsOn,
         },
         task.status === 'done',
@@ -648,6 +654,60 @@ export function TaskDetailPanel({
                     />
                     Send WhatsApp updates for this task
                   </label>
+                  {/* Disabled (not hidden) when the master toggle is off — the
+                      config is kept so re-enabling restores it (#18 D2). */}
+                  <fieldset
+                    disabled={!sendWhatsapp}
+                    className={cn('ml-6 flex flex-col gap-2', !sendWhatsapp && 'opacity-50')}
+                  >
+                    <legend className="sr-only">WhatsApp notification options</legend>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">Send when</p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.statusChange}
+                          onChange={() => toggleNotify('statusChange')}
+                        />
+                        Status changes
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.dueSoon}
+                          onChange={() => toggleNotify('dueSoon')}
+                        />
+                        Due date is approaching
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.blocked}
+                          onChange={() => toggleNotify('blocked')}
+                        />
+                        Task becomes blocked
+                      </label>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm text-muted-foreground">Send to</p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.toClient}
+                          onChange={() => toggleNotify('toClient')}
+                        />
+                        Client
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={notify.toInternal}
+                          onChange={() => toggleNotify('toInternal')}
+                        />
+                        Internal team (assignees)
+                      </label>
+                    </div>
+                  </fieldset>
                   {selectableDepartments.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <p className="text-sm text-muted-foreground">
