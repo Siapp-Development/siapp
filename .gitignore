@@ -14,6 +14,9 @@ logs/
 # functions deploy-time params (public values, no secrets) — CI deploys are
 # non-interactive and can't prompt for them (#57)
 !backend/functions/.env.siapp-prod
+# keep the web app's baseline env committed — Firebase web config values are
+# public client identifiers, not secrets (see apps/web/.env header comment)
+!apps/web/.env
 
 # pnpm (replace npm lock file)
 package-lock.json
