@@ -142,8 +142,10 @@ function templateVariables(input: IPlanTaskNotificationsInput): Record<string, s
   }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
+    // Format in MYT — quiet-hours/dedupe semantics are Malaysia time (D6),
+    // and a UTC date would show the wrong calendar day near midnight.
     variables['dueDate'] =
-      typeof dueDate?.toDate === 'function' ? dueDate.toDate().toISOString().slice(0, 10) : '';
+      typeof dueDate?.toDate === 'function' ? mytDateString(dueDate.toDate()) : '';
   }
   return variables;
 }

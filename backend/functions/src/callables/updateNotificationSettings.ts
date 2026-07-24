@@ -12,7 +12,7 @@ import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/
 
 import { MYT_TIMEZONE, isValidTimeString, type IQuietHours } from '../lib/quietHours.js';
 
-function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): string {
+function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): void {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError('unauthenticated', 'Sign in to continue.');
@@ -24,7 +24,6 @@ function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): s
   if (role !== 'owner' && role !== 'admin') {
     throw new HttpsError('permission-denied', 'Only the workspace owner or an admin can do this.');
   }
-  return uid;
 }
 
 /**
