@@ -24,10 +24,22 @@ import {
   type TProjectLifecycle,
 } from '../lib/projectLifecycle.js';
 import { countWaRecipients } from '../lib/optOut.js';
+import { writeProjectActivity } from '../lib/activityLog.js';
+import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import type { TProjectActivityAction } from '../lib/activityDiff.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
 // NodeNext build cannot consume) — pm_ux/plans/21-cost-estimation.md §2.8.
 const WA_UTILITY_COST_MYR = 0.1;
+
+/** #23 D2: requested lifecycle action → project activity action. */
+const LIFECYCLE_ACTIVITY_ACTION: Record<string, TProjectActivityAction> = {
+  publish: 'project_published',
+  complete: 'project_completed',
+  archive: 'project_archived',
+  delete: 'project_deleted',
+  reopen: 'project_reopened',
+};
 
 function projectError(code: TProjectErrorCode, message: string): HttpsError {
   return new HttpsError('failed-precondition', message, { code });
@@ -122,7 +134,7 @@ export const setProjectLifecycle = onCall(async (request) => {
   const db = getFirestore();
   const projectRef = db.doc(`workspaces/${workspaceId}/projects/${projectId}`);
 
-  const { lifecycle, clientId } = await db.runTransaction(async (txn) => {
+  const { lifecycle, clientId, from } = await db.runTransaction(async (txn) => {
     const snap = await txn.get(projectRef);
     const current = snap.get('lifecycle') as unknown;
     if (
@@ -147,6 +159,7 @@ export const setProjectLifecycle = onCall(async (request) => {
       return {
         lifecycle: current as TProjectLifecycle,
         clientId: (snap.get('clientId') as string | undefined) ?? '',
+        from: null,
       };
     }
 
@@ -159,8 +172,37 @@ export const setProjectLifecycle = onCall(async (request) => {
     return {
       lifecycle: result.to,
       clientId: (snap.get('clientId') as string | undefined) ?? '',
+      from: current as TProjectLifecycle,
     };
   });
+
+  // #23 (D3/D5): the callable knows actor + before/after — write the
+  // lifecycle activity entry + audit entry inline after the commit.
+  if (from !== null) {
+    const uid = request.auth?.uid ?? '';
+    const actorName =
+      (typeof request.auth?.token['name'] === 'string' && request.auth.token['name']) ||
+      (typeof request.auth?.token['email'] === 'string' && request.auth.token['email']) ||
+      'Unknown member';
+    await writeProjectActivity(workspaceId, projectId, {
+      action: LIFECYCLE_ACTIVITY_ACTION[action] ?? 'project_published',
+      actorType: 'user',
+      actorId: uid,
+      actorNameDenorm: actorName,
+      restrictedToDepartments: [],
+      payload: { from, to: lifecycle },
+    });
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: uid,
+      action: 'project.lifecycle_change',
+      targetType: 'project',
+      targetId: projectId,
+      before: { lifecycle: from },
+      after: { lifecycle },
+      ...callableRequestMeta(request),
+    });
+  }
 
   if (action === 'publish') {
     const publishPreview = await computePublishPreview(workspaceId, projectId, clientId);

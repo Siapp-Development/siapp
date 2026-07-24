@@ -17,6 +17,7 @@ import { Link, useParams } from 'react-router';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
 import { useClients } from '../clients/useClients.ts';
+import { ActivitySection } from './activity/ActivitySection.tsx';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
@@ -228,7 +229,7 @@ export function ProjectDetailPage({
   const state = useProject(workspaceId, projectId);
   const clients = useClients(workspaceId);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<'tasks' | 'documents' | 'details'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'documents' | 'activity' | 'details'>('tasks');
 
   if (state.status === 'loading') {
     return <p className="text-sm">Loading project…</p>;
@@ -274,6 +275,7 @@ export function ProjectDetailPage({
           [
             { id: 'tasks', label: 'Tasks' },
             { id: 'documents', label: 'Documents' },
+            { id: 'activity', label: 'Activity' },
             { id: 'details', label: 'Details' },
           ] as const
         ).map((entry) => (
@@ -316,6 +318,15 @@ export function ProjectDetailPage({
           uid={uid}
           userName={userName}
           canEdit={canEdit}
+        />
+      )}
+
+      {tab === 'activity' && (
+        <ActivitySection
+          workspaceId={workspaceId}
+          projectId={project.id}
+          role={role}
+          departments={departments}
         />
       )}
 

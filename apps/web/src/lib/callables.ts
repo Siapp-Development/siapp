@@ -9,6 +9,8 @@ import type {
   IAcceptInviteResponse,
   ICreateInviteRequest,
   ICreateInviteResponse,
+  IDeleteTaskRequest,
+  IDeleteTaskResponse,
   IGetRestrictedTaskHeadersRequest,
   IGetRestrictedTaskHeadersResponse,
   IResendInviteRequest,
@@ -89,6 +91,12 @@ export async function getRestrictedTaskHeaders(
     functions,
     'getRestrictedTaskHeaders',
   );
+  return (await call(data)).data;
+}
+
+/** Attributed task hard-delete (#23 Q5) — rules deny client task deletes. */
+export async function deleteTask(data: IDeleteTaskRequest): Promise<IDeleteTaskResponse> {
+  const call = httpsCallable<IDeleteTaskRequest, IDeleteTaskResponse>(functions, 'deleteTask');
   return (await call(data)).data;
 }
 
