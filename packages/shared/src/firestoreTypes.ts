@@ -82,6 +82,23 @@ export interface IPortalClaims {
   };
 }
 
+/**
+ * Custom claims minted by `redeemCollabLink` (#22, E1): a collaborator
+ * principal is pinned to ONE task in ONE project in ONE workspace. Like
+ * portal claims it carries NO `workspaces` claim, so every firm rule
+ * automatically denies it; the collab rules string-compare `wid`/`pid`/`tid`
+ * against the match path.
+ */
+export interface ICollabClaims {
+  collab: {
+    wid: string;
+    pid: string;
+    tid: string;
+    colid: string;
+    linkId: string;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Top-level collections
 // ---------------------------------------------------------------------------
@@ -281,6 +298,11 @@ export interface IMagicLinkDoc {
   revokedAt?: Date;
   revokedBy?: string;
   createdBy: string;
+  /**
+   * #22: present on task-scoped collaborator links only — redemption needs
+   * the project path and `scopeId` carries the task id. Server-written.
+   */
+  projectId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +416,11 @@ export interface ITaskDoc {
   visibleToCollaboratorIds: string[];
   /** Empty/missing = unrestricted; see 20-access-control-departments.md. */
   restrictedToDepartments: string[];
+  /**
+   * Why the task is blocked (#22, D-d) — set by submitCollabUpdate
+   * (need-help) or firm edits; cleared when status leaves 'blocked'.
+   */
+  blockedReason?: string;
   /** Per-task WhatsApp toggle (D-031: copied on Duplicate). */
   sendWhatsapp: boolean;
   /** Trigger/recipient config (#18, D2). Absent = TASK_NOTIFY_DEFAULTS. */

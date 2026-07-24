@@ -14,6 +14,12 @@ rules_version = '2';
 // project files and upload to client-uploads/ (≤10MB, client mime allowlist).
 // Client-visibility of individual files is enforced at the Firestore metadata
 // layer (documents/{did} rules) — same unguessable-uuid tradeoff as reads.
+//
+// #22: collaborator principals (custom-token claims collab.{wid,pid,tid,colid})
+// may upload to collab-uploads/ (≤25MB, collab mime allowlist, D-f) and read
+// project files; the portal client may also read collab-uploads/ because
+// collaborator uploads inherit the task's visibleToClient (D-029) — per-file
+// visibility is enforced at the Firestore metadata layer.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -41,6 +47,15 @@ service firebase.storage {
         && request.auth.token.portal != null
         && request.auth.token.portal.wid == wid
         && request.auth.token.portal.pid == pid;
+    }
+
+    // Collaborator principal (#22) — same shape as firestore.rules.
+    // Lifecycle + visibility re-checks live in the Firestore metadata rules.
+    function isCollabPrincipal(wid, pid) {
+      return isSignedIn()
+        && request.auth.token.collab != null
+        && request.auth.token.collab.wid == wid
+        && request.auth.token.collab.pid == pid;
     }
 
     // Mirrors ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (parity enforced
@@ -79,7 +94,11 @@ service firebase.storage {
     // Firm uploads live directly under the project prefix (single segment —
     // client-uploads/ is deliberately not matched here).
     match /workspaces/{wid}/projects/{pid}/{fileName} {
-      allow read: if isFirmMember(wid) || isPortalClient(wid, pid);
+      allow read: if isFirmMember(wid)
+        || isPortalClient(wid, pid)
+        // #22: firm files shared with a collaborator (visibleToCollaboratorIds
+        // gates the metadata; unguessable-uuid tradeoff as above).
+        || isCollabPrincipal(wid, pid);
       allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
         && request.resource.size <= 25 * 1024 * 1024
         && isAllowedContentType();
@@ -93,6 +112,22 @@ service firebase.storage {
       allow read: if isFirmMember(wid) || isPortalClient(wid, pid);
       allow create: if isPortalClient(wid, pid)
         && request.resource.size <= 10 * 1024 * 1024
+        && isClientAllowedContentType();
+      allow update, delete: if false;
+    }
+
+    // Collaborator uploads (#22, D-f): collab principals write bytes
+    // directly; Firestore metadata (validCollabDocumentCreate) pins the
+    // identity fields. Firm members and the portal client read (D-029:
+    // collaborator uploads inherit the task's client visibility).
+    match /workspaces/{wid}/projects/{pid}/collab-uploads/{fileName} {
+      allow read: if isFirmMember(wid)
+        || isPortalClient(wid, pid)
+        || isCollabPrincipal(wid, pid);
+      allow create: if isCollabPrincipal(wid, pid)
+        && request.resource.size <= 25 * 1024 * 1024
+        // COLLAB_ALLOWED_DOCUMENT_MIME_TYPES is identical to the client
+        // list, so the same helper serves both (parity via rules test).
         && isClientAllowedContentType();
       allow update, delete: if false;
     }

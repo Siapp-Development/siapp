@@ -13,6 +13,8 @@ import type {
   IDeleteTaskResponse,
   IGetRestrictedTaskHeadersRequest,
   IGetRestrictedTaskHeadersResponse,
+  IIssueCollabLinkRequest,
+  IIssueCollabLinkResponse,
   IIssuePortalLinkRequest,
   IIssuePortalLinkResponse,
   IResendInviteRequest,
@@ -21,6 +23,8 @@ import type {
   ISetMemberDepartmentsResponse,
   ISetProjectLifecycleRequest,
   ISetProjectLifecycleResponse,
+  ISubmitCollabUpdateRequest,
+  ISubmitCollabUpdateResponse,
   IUpdateNotificationSettingsRequest,
   IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
@@ -115,6 +119,29 @@ export async function issuePortalLink(
     'issuePortalLink',
   );
   return (await call(data)).data;
+}
+
+/**
+ * Mints (or resets) a collaborator task link (#22, E1). One active link per
+ * (task, collaborator) — every call rotates, so earlier links stop working.
+ */
+export async function issueCollabLink(
+  data: IIssueCollabLinkRequest,
+): Promise<IIssueCollabLinkResponse> {
+  const call = httpsCallable<IIssueCollabLinkRequest, IIssueCollabLinkResponse>(
+    functions,
+    'issueCollabLink',
+  );
+  return (await call(data)).data;
+}
+
+/** Collaborator status/need-help/note submission from the /t page (#22, D-b). */
+export async function submitCollabUpdate(data: ISubmitCollabUpdateRequest): Promise<void> {
+  const call = httpsCallable<ISubmitCollabUpdateRequest, ISubmitCollabUpdateResponse>(
+    functions,
+    'submitCollabUpdate',
+  );
+  await call(data);
 }
 
 /** Workspace quiet-hours edits (#18) — owner/admin only, validated server-side. */

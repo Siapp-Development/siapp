@@ -7,13 +7,14 @@
  */
 
 import { Alert, Button, Card, CardContent, CardHeader, Input, Label, cn } from '@siapp/ui';
-import type { TMemberRole, TTaskAssignee, TTaskStatus } from '@siapp/shared';
+import type { TMemberRole, TProjectLifecycle, TTaskAssignee, TTaskStatus } from '@siapp/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
 import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import { TaskAttachments } from '../documents/DocumentsSection.tsx';
+import { CollabLinkButton } from './CollabLinkButton.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import {
@@ -232,6 +233,8 @@ export interface ITaskDetailPanelProps {
   departments: readonly IDepartmentRow[];
   role: TMemberRole;
   memberDepartments: readonly string[];
+  /** Project lifecycle — collab task links need published/completed (#22). */
+  lifecycle: TProjectLifecycle;
   canEdit: boolean;
   uid: string;
   userName: string;
@@ -250,6 +253,7 @@ export function TaskDetailPanel({
   departments,
   role,
   memberDepartments,
+  lifecycle,
   canEdit,
   uid,
   userName,
@@ -433,6 +437,12 @@ export function TaskDetailPanel({
         </Button>
       </CardHeader>
       <CardContent>
+        {/* #22 (D-d): surface the collaborator's help request to the firm. */}
+        {task.status === 'blocked' && task.blockedReason !== '' && (
+          <Alert variant="destructive" className="mb-4">
+            Blocked: {task.blockedReason}
+          </Alert>
+        )}
         {tab === 'activity' ? (
           <ActivityFeed
             workspaceId={workspaceId}
@@ -444,6 +454,26 @@ export function TaskDetailPanel({
           />
         ) : (
           <div className="flex flex-col gap-6">
+            {/* #22 (D-e): one rotating task link per collaborator assignee. */}
+            {task.assignees.some((entry) => entry.type === 'collaborator') && (
+              <section aria-label="Collaborator task links" className="flex flex-col gap-2">
+                <h4 className="text-sm font-medium">Collaborator task links</h4>
+                {task.assignees
+                  .filter((entry) => entry.type === 'collaborator')
+                  .map((entry) => (
+                    <CollabLinkButton
+                      key={entry.id}
+                      workspaceId={workspaceId}
+                      projectId={projectId}
+                      taskId={task.id}
+                      collaboratorId={entry.id}
+                      collaboratorName={entry.name}
+                      lifecycle={lifecycle}
+                      role={role}
+                    />
+                  ))}
+              </section>
+            )}
             {!canEdit ? (
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <div>

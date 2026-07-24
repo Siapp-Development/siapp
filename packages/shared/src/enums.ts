@@ -114,6 +114,8 @@ export type TAdminAction =
 
 // Project activity timeline event kinds (#23, D2). Server-written only.
 // #21 adds 'client_document_uploaded' (portal client uploads, D-034).
+// #22 adds the collaborator_* mirrors (Q2): notes and need-help submitted
+// from /t surface into the project Activity tab.
 export type TProjectActivityAction =
   | 'task_created'
   | 'task_status_changed'
@@ -130,7 +132,9 @@ export type TProjectActivityAction =
   | 'project_deleted'
   | 'project_reopened'
   | 'client_link_changed'
-  | 'client_document_uploaded';
+  | 'client_document_uploaded'
+  | 'collaborator_note_added'
+  | 'collaborator_need_help';
 
 // Workspace audit-log action kinds (#23, D5). Dot-namespaced; written only
 // by Cloud Functions via lib/auditLog.ts.
@@ -152,5 +156,7 @@ export type TAuditAction =
   | 'collaborator.update'
   | 'portal_link.issue'
   | 'portal_link.reset'
+  | 'collab_link.issue'
+  | 'collab_link.reset'
   | 'admin.workspace_adjust'
   | 'admin.impersonate';

@@ -41,6 +41,7 @@ import { recountSeats } from './triggers/recountSeats.js';
 import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
+import { removedCollaboratorIds, revokeCollabLinksForTask } from './lib/collabLinks.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
 import { enqueueTaskEvent } from './lib/enqueueNotifications.js';
 import { triggersFor } from './lib/notifyConfig.js';
@@ -86,7 +87,11 @@ export { updateNotificationSettings } from './callables/updateNotificationSettin
 
 export { issuePortalLink } from './callables/issuePortalLink.js';
 export { redeemPortalLink } from './callables/redeemPortalLink.js';
+// ── Collaborator task-page callables (#22) ────────────────────────────
 
+export { issueCollabLink } from './callables/issueCollabLink.js';
+export { redeemCollabLink } from './callables/redeemCollabLink.js';
+export { submitCollabUpdate } from './callables/submitCollabUpdate.js';
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 
 /** Provisions a new workspace, first owner member, and starter project. */
@@ -124,6 +129,21 @@ export const onTaskWrite = onDocumentWritten(
     if (stampIds.length > 0) {
       await stampCollaboratorLastTask(event.params.workspaceId, stampIds);
     }
+    // #22 (step 7): unassigning a collaborator soft-revokes their task links
+    // — re-redemption stops immediately; live sessions are bounded by the
+    // rules-side visibility/lifecycle re-checks.
+    const removedIds = removedCollaboratorIds(before, after);
+    if (removedIds.length > 0) {
+      try {
+        await revokeCollabLinksForTask(event.params.workspaceId, event.params.taskId, removedIds);
+      } catch (error) {
+        logger.error('onTaskWrite: collab link revocation failed', {
+          workspaceId: event.params.workspaceId,
+          taskId: event.params.taskId,
+          error,
+        });
+      }
+    }
     const notifyTrigger = triggersFor(before, after);
     let lifecycleSuppressed = false;
     if (notifyTrigger !== null && after !== undefined) {
@@ -155,7 +175,7 @@ export const onTaskWrite = onDocumentWritten(
 
     // #23 activity capture — non-fatal, same posture as the enqueue block.
     try {
-      const resolveActorName = createActorNameResolver();
+      const resolveActorName = createActorNameResolver(event.params.workspaceId);
       if (after === undefined && before !== undefined) {
         // Fallback for deletes that bypassed the deleteTask callable: same
         // deterministic id, so create() no-ops when already attributed (Q5).
@@ -187,7 +207,7 @@ export const onTaskWrite = onDocumentWritten(
               action: derived.action,
               actorType: derived.actorType,
               actorId: derived.actorUid ?? '',
-              actorNameDenorm: await resolveActorName(derived.actorUid),
+              actorNameDenorm: await resolveActorName(derived.actorUid, derived.actorType),
               ...(derived.taskId !== undefined ? { taskId: derived.taskId } : {}),
               ...(derived.taskTitleDenorm !== undefined
                 ? { taskTitleDenorm: derived.taskTitleDenorm }
@@ -270,7 +290,7 @@ export const onProjectDocumentWrite = onDocumentWritten(
         event.data?.before?.data(),
         event.data?.after?.data(),
       );
-      const resolveActorName = createActorNameResolver();
+      const resolveActorName = createActorNameResolver(event.params.workspaceId);
       for (const [index, derived] of events.entries()) {
         await writeProjectActivity(
           event.params.workspaceId,
@@ -285,7 +305,8 @@ export const onProjectDocumentWrite = onDocumentWritten(
                 : derived.actorType === 'client'
                   ? 'Client'
                   : derived.actorType === 'collaborator'
-                    ? 'Collaborator'
+                    ? // #22: collaborator uploads resolve the real name.
+                      await resolveActorName(derived.actorUid, 'collaborator')
                     : 'A team member',
             ...(derived.docId !== undefined ? { docId: derived.docId } : {}),
             ...(derived.docNameDenorm !== undefined

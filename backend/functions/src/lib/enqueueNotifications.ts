@@ -140,6 +140,11 @@ function templateVariables(input: IPlanTaskNotificationsInput): Record<string, s
     const status = input.taskData['status'];
     variables['newStatus'] = typeof status === 'string' ? status : '';
   }
+  if (input.trigger === 'task_blocked') {
+    // #22 (D-d): the need-help reason lands in the task_blocked_v1 template.
+    const reason = input.taskData['blockedReason'];
+    variables['blockedReason'] = typeof reason === 'string' ? reason : '';
+  }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
     variables['dueDate'] =
