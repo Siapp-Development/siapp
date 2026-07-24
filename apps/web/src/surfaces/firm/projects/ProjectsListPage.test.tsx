@@ -217,6 +217,9 @@ describe('ProjectsListPage', () => {
           language: 'en',
           notes: '',
           notificationsOptOut: true,
+          waConsentGranted: null,
+          waConsentRecordedAt: null,
+          pdpaErased: false,
         },
       ],
     };

@@ -12,23 +12,28 @@ describe('isOptedOut', () => {
   });
 });
 
-describe('countWaRecipients (publish preview, D-035)', () => {
-  it('counts the linked client and every collaborator when nobody opted out', () => {
+describe('countWaRecipients (publish preview, D-035 + #26 D2)', () => {
+  const consented = { waConsent: { granted: true } };
+
+  it('counts the linked client and every consented collaborator', () => {
     expect(
       countWaRecipients({
         clientLinked: true,
-        clientData: { name: 'Ahmad' },
-        collaboratorDocs: [{ name: 'Lim' }, { name: 'Tan' }],
+        clientData: { name: 'Ahmad', ...consented },
+        collaboratorDocs: [
+          { name: 'Lim', ...consented },
+          { name: 'Tan', ...consented },
+        ],
       }),
     ).toBe(3);
   });
 
-  it('excludes an opted-out client', () => {
+  it('excludes an opted-out client even when consented', () => {
     expect(
       countWaRecipients({
         clientLinked: true,
-        clientData: { notificationsOptOut: true },
-        collaboratorDocs: [{ name: 'Lim' }],
+        clientData: { notificationsOptOut: true, ...consented },
+        collaboratorDocs: [{ name: 'Lim', ...consented }],
       }),
     ).toBe(1);
   });
@@ -37,10 +42,24 @@ describe('countWaRecipients (publish preview, D-035)', () => {
     expect(
       countWaRecipients({
         clientLinked: true,
-        clientData: {},
-        collaboratorDocs: [{ notificationsOptOut: true }, {}, { notificationsOptOut: true }],
+        clientData: { ...consented },
+        collaboratorDocs: [
+          { notificationsOptOut: true, ...consented },
+          { ...consented },
+          { notificationsOptOut: true, ...consented },
+        ],
       }),
     ).toBe(2);
+  });
+
+  it('excludes recipients without a waConsent grant (#26 D2: absent = no consent)', () => {
+    expect(
+      countWaRecipients({
+        clientLinked: true,
+        clientData: { name: 'Ahmad' },
+        collaboratorDocs: [{ name: 'Lim' }, { waConsent: { granted: false } }, { ...consented }],
+      }),
+    ).toBe(1);
   });
 
   it('counts nothing when no client is linked and all collaborators opted out', () => {
@@ -48,18 +67,18 @@ describe('countWaRecipients (publish preview, D-035)', () => {
       countWaRecipients({
         clientLinked: false,
         clientData: undefined,
-        collaboratorDocs: [{ notificationsOptOut: true }],
+        collaboratorDocs: [{ notificationsOptOut: true, ...consented }],
       }),
     ).toBe(0);
   });
 
-  it('still counts recipients whose docs are missing (dangling refs)', () => {
+  it('no longer counts recipients whose docs are missing (#26: no doc, no consent)', () => {
     expect(
       countWaRecipients({
         clientLinked: true,
         clientData: undefined,
         collaboratorDocs: [undefined],
       }),
-    ).toBe(2);
+    ).toBe(0);
   });
 });

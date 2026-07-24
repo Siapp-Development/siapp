@@ -158,7 +158,8 @@ describe('apexRouter', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Install signage' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/studio north/i)).toBeInTheDocument();
+    // Firm name appears in the header and again in the PDPA footer notice (#26 D5).
+    expect(screen.getAllByText(/studio north/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 });

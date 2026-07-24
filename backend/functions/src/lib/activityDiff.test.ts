@@ -369,4 +369,59 @@ describe('derivePersonAudit', () => {
     expect(derivePersonAudit('client', 'c1', client, { ...client, notes: 'changed' })).toEqual([]);
     expect(derivePersonAudit('client', 'c1', client, undefined)).toEqual([]);
   });
+
+  it('derives consent_updated for a consent-only diff (#26 D1)', () => {
+    const consent = { granted: true, method: 'firm_attested', recordedBy: 'u1' };
+    const events = derivePersonAudit('client', 'c1', client, { ...client, waConsent: consent });
+    expect(events).toEqual([
+      {
+        action: 'client.consent_updated',
+        targetType: 'client',
+        targetId: 'c1',
+        after: consent,
+      },
+    ]);
+  });
+
+  it('carries before + after consent records on a consent flip', () => {
+    const granted = { granted: true, method: 'firm_attested', recordedBy: 'u1' };
+    const refused = { granted: false, method: 'firm_attested', recordedBy: 'u2' };
+    const events = derivePersonAudit(
+      'collaborator',
+      'col1',
+      { ...client, waConsent: granted },
+      { ...client, waConsent: refused },
+    );
+    expect(events).toEqual([
+      {
+        action: 'collaborator.consent_updated',
+        targetType: 'collaborator',
+        targetId: 'col1',
+        before: granted,
+        after: refused,
+      },
+    ]);
+  });
+
+  it('emits a single generic update for a mixed PII + consent diff', () => {
+    const events = derivePersonAudit('client', 'c1', client, {
+      ...client,
+      phone: '+60199999999',
+      waConsent: { granted: true },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].action).toBe('client.update');
+  });
+
+  it('produces no entry when consent is unchanged', () => {
+    const consent = { granted: true, method: 'firm_attested' };
+    expect(
+      derivePersonAudit(
+        'client',
+        'c1',
+        { ...client, waConsent: consent },
+        { ...client, waConsent: { ...consent } },
+      ),
+    ).toEqual([]);
+  });
 });

@@ -20,4 +20,13 @@ describe('PortalFooter', () => {
     expect(screen.getByText('Studio North')).toBeInTheDocument();
     expect(screen.queryByText(/powered by/i)).not.toBeInTheDocument();
   });
+
+  it('always carries the bilingual PDPA notice (#26 D5)', () => {
+    render(<PortalFooter tier="standard" firmName="Studio North" />);
+
+    expect(
+      screen.getByText(/contact Studio North to access, correct or delete/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Hubungi Studio North untuk akses/i)).toBeInTheDocument();
+  });
 });
