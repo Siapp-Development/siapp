@@ -12,6 +12,7 @@ import type { TMemberRole } from '@siapp/shared';
 import {
   Timestamp,
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -454,5 +455,21 @@ describe('task list queries', () => {
   it('denies restricted-task reads for members outside the department', async () => {
     await assertFails(getDoc(doc(dbAs('viewer'), RESTRICTED_TASK_PATH)));
     await assertSucceeds(getDoc(doc(dbAs('viewer', WKS_A, [DEP_FINANCE]), RESTRICTED_TASK_PATH)));
+  });
+
+  // #17 D1 regression: the dashboard fans out per-project queries precisely
+  // because there is no collection-group match for tasks. If this ever starts
+  // passing, tenancy/need-to-know for cross-project reads must be redesigned
+  // deliberately — do not just add a rules match.
+  it('denies collectionGroup(tasks) queries even for an owner', async () => {
+    await assertFails(getDocs(collectionGroup(dbAs('owner'), 'tasks')));
+    await assertFails(
+      getDocs(
+        query(
+          collectionGroup(dbAs('pm'), 'tasks'),
+          where('restrictedToDepartments', '==', []),
+        ),
+      ),
+    );
   });
 });

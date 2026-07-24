@@ -55,6 +55,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     totalTasks: 0,
     doneTasks: 0,
     overdueTasks: 0,
+    blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
     ...overrides,
@@ -135,7 +136,7 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /back to projects/i })).toHaveAttribute(
       'href',
-      '/acme',
+      '/acme/projects',
     );
   });
 
