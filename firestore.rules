@@ -101,11 +101,12 @@ service cloud.firestore {
 
     // #24 (D2): billing read-only gate — one get() per firm/portal/collab
     // WRITE; reads stay untouched (D3), so the hot path pays nothing.
-    // Missing billingStatus or a missing workspace doc = active (legacy
-    // docs, no backfill — asserted in billingReadOnly.test.ts).
+    // The workspace doc must exist (a deleted workspace or stale claims
+    // never reopen writes); a missing billingStatus FIELD defaults to
+    // active (legacy docs, no backfill — asserted in billingReadOnly.test.ts).
     function workspaceActive(wid) {
-      return !exists(/databases/$(database)/documents/workspaces/$(wid))
-        || get(/databases/$(database)/documents/workspaces/$(wid))
+      return exists(/databases/$(database)/documents/workspaces/$(wid))
+        && get(/databases/$(database)/documents/workspaces/$(wid))
           .data.get('billingStatus', 'active') != 'read_only';
     }
 

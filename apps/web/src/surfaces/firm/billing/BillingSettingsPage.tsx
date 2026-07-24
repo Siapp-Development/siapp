@@ -76,12 +76,17 @@ function PlanCard({ billing }: { billing: IWorkspaceBilling }) {
 }
 
 function UsageCard({ billing }: { billing: IWorkspaceBilling }) {
+  // Trial allowance is a one-time pool, not a monthly period — the copy
+  // (title, aria-label, forecast) must not say "this month" on trial.
+  const isTrial = billing.plan === 'trial';
   const pct = Math.min(100, Math.round(billing.waUsedFraction * 100));
   const overForecast = billing.waForecast > billing.waIncluded;
   return (
     <Card>
       <CardHeader>
-        <h2 className="font-medium">WhatsApp usage this month</h2>
+        <h2 className="font-medium">
+          {isTrial ? 'WhatsApp usage (trial allowance)' : 'WhatsApp usage this month'}
+        </h2>
       </CardHeader>
       <CardContent>
         <p className="text-sm">
@@ -93,7 +98,11 @@ function UsageCard({ billing }: { billing: IWorkspaceBilling }) {
           aria-valuenow={billing.waUsed}
           aria-valuemin={0}
           aria-valuemax={billing.waIncluded}
-          aria-label="WhatsApp conversations used this month"
+          aria-label={
+            isTrial
+              ? 'WhatsApp conversations used from the trial allowance'
+              : 'WhatsApp conversations used this month'
+          }
           className="mt-2 h-2 w-full max-w-md overflow-hidden rounded-full bg-muted"
         >
           <div
@@ -107,12 +116,14 @@ function UsageCard({ billing }: { billing: IWorkspaceBilling }) {
             style={{ width: `${pct}%` }}
           />
         </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Projected by month end: <span className="font-medium">{billing.waForecast}</span>{' '}
-          conversations
-          {overForecast &&
-            ' — on pace to exceed the included allowance. Extra conversations are billed at cost on your next invoice.'}
-        </p>
+        {!isTrial && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Projected by month end: <span className="font-medium">{billing.waForecast}</span>{' '}
+            conversations
+            {overForecast &&
+              ' — on pace to exceed the included allowance. Extra conversations are billed at cost on your next invoice.'}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

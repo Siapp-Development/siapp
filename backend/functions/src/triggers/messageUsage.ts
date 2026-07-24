@@ -17,7 +17,7 @@
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
-import { USAGE_ALERT_AT, crossedThreshold, periodKey, rollAllowance } from '../lib/billing.js';
+import { USAGE_ALERT_AT, crossedThreshold, includedForPlan, periodKey, rollAllowance } from '../lib/billing.js';
 import { holdUntilFor, resolveQuietHours } from '../lib/quietHours.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
@@ -68,9 +68,10 @@ export async function recordMessageUsage(
     }
     const plan = wsData['plan'] as 'trial' | 'standard' | 'business';
     const allowance = (wsData['whatsappAllowance'] ?? {}) as Record<string, unknown>;
-    const included = typeof allowance['includedPerPeriod'] === 'number'
-      ? allowance['includedPerPeriod']
-      : 0;
+    // Threshold derived from plan + seats — the stored includedPerPeriod
+    // can be stale (provisioning seeded 50 * seatLimit regardless of plan).
+    const seatLimit = typeof wsData['seatLimit'] === 'number' ? wsData['seatLimit'] : 1;
+    const included = includedForPlan(plan, seatLimit);
     const rolled = rollAllowance(
       plan,
       {
