@@ -35,6 +35,7 @@
       "collectionGroup": "updates",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "authorType", "order": "ASCENDING" },
         { "fieldPath": "authorId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]

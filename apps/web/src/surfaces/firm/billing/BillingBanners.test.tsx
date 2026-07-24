@@ -65,7 +65,7 @@ describe('BillingBanners', () => {
     renderBanners();
 
     const banner = screen.getByRole('status');
-    expect(banner).toHaveTextContent(/70% of this month's whatsapp allowance/i);
+    expect(banner).toHaveTextContent(/70% of your whatsapp allowance/i);
     expect(banner).toHaveTextContent('175 of 250');
     expect(screen.getByRole('link', { name: /view usage/i })).toHaveAttribute(
       'href',

@@ -111,7 +111,11 @@ export async function uploadPortalDocument(options: {
 }): Promise<void> {
   const { workspaceId, projectId, clientId, file, onProgress } = options;
   const docId = crypto.randomUUID();
-  const storagePath = `workspaces/${workspaceId}/projects/${projectId}/client-uploads/${docId}-${file.name}`;
+  // Sanitize like the firm upload flow (useDocuments.ts): raw names can
+  // contain '/' or exceed rule limits, which would fail the metadata write
+  // AFTER the bytes upload and orphan the object.
+  const safeName = file.name.replace(/[^\w.-]+/g, '_').slice(0, 120);
+  const storagePath = `workspaces/${workspaceId}/projects/${projectId}/client-uploads/${docId}-${safeName}`;
 
   const task = uploadBytesResumable(ref(storage, storagePath), file, {
     contentType: file.type,
@@ -128,9 +132,11 @@ export async function uploadPortalDocument(options: {
   });
 
   // Metadata after bytes — the pinned-field rules validate every value.
+  // Display name keeps the original (unsanitized) name but is capped to the
+  // Firestore rule limit so the write cannot fail post-upload.
   await setDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/documents/${docId}`), {
     id: docId,
-    name: file.name,
+    name: file.name.slice(0, 255),
     mimeType: file.type,
     sizeBytes: file.size,
     storagePath,

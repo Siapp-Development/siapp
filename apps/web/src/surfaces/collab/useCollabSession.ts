@@ -34,31 +34,42 @@ export type TCollabSessionState =
 
 const CACHE_KEY = 'siapp.collabSession';
 
-function readCachedSession(): ICollabSession | null {
+interface ICachedCollabSession {
+  /** The magic-link token that was redeemed — the cache is only reused for
+   * the same token, so opening a different /t/{token} always re-redeems. */
+  token: string;
+  session: ICollabSession;
+}
+
+function readCachedSession(): ICachedCollabSession | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (raw === null) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<ICollabSession>;
-    return typeof parsed.taskId === 'string' &&
-      typeof parsed.workspaceId === 'string' &&
-      typeof parsed.projectId === 'string' &&
-      typeof parsed.collaboratorId === 'string' &&
-      typeof parsed.branding === 'object' &&
-      parsed.branding !== null &&
-      typeof parsed.task === 'object' &&
-      parsed.task !== null
-      ? (parsed as ICollabSession)
+    const parsed = JSON.parse(raw) as Partial<ICachedCollabSession>;
+    const session = parsed.session as Partial<ICollabSession> | undefined;
+    return typeof parsed.token === 'string' &&
+      typeof session === 'object' &&
+      session !== null &&
+      typeof session.taskId === 'string' &&
+      typeof session.workspaceId === 'string' &&
+      typeof session.projectId === 'string' &&
+      typeof session.collaboratorId === 'string' &&
+      typeof session.branding === 'object' &&
+      session.branding !== null &&
+      typeof session.task === 'object' &&
+      session.task !== null
+      ? (parsed as ICachedCollabSession)
       : null;
   } catch {
     return null;
   }
 }
 
-function writeCachedSession(session: ICollabSession): void {
+function writeCachedSession(token: string, session: ICollabSession): void {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(session));
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ token, session }));
   } catch {
     // Private mode / storage quota — session just re-redeems on reload.
   }
@@ -95,20 +106,22 @@ export function useCollabSession(token: string | undefined): {
       }
       setState({ status: 'loading' });
 
-      // Reuse a live session (page refresh) — skip the redeem when the
-      // current user's collab claims match the cached redeem response.
+      // Reuse a live session (page refresh) — only when the URL token is
+      // the SAME token that produced the cached session AND the current
+      // user's collab claims still match. A different /t/{token} (e.g. a
+      // rotated link) always re-redeems.
       const user = auth.currentUser;
       if (user !== null) {
         const cached = readCachedSession();
-        if (cached !== null) {
+        if (cached !== null && cached.token === token) {
           const claims = (await user.getIdTokenResult()).claims as {
             collab?: { tid?: unknown };
           };
           if (cancelled) {
             return;
           }
-          if (claims.collab?.tid === cached.taskId) {
-            setState({ status: 'ready', session: cached });
+          if (claims.collab?.tid === cached.session.taskId) {
+            setState({ status: 'ready', session: cached.session });
             return;
           }
         }
@@ -136,7 +149,7 @@ export function useCollabSession(token: string | undefined): {
           branding: response.branding,
           task: response.task,
         };
-        writeCachedSession(session);
+        writeCachedSession(token, session);
         if (!cancelled) {
           setState({ status: 'ready', session });
         }
