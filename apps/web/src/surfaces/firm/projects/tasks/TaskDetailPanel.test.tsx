@@ -129,6 +129,7 @@ describe('TaskDetailPanel details', () => {
       't1',
       expect.objectContaining({ title: 'Pour foundation', status: 'in_progress' }),
       false,
+      'u1',
     );
     expect(tasksData.addTaskUpdate).toHaveBeenCalledWith(
       'wksA',
@@ -170,6 +171,7 @@ describe('TaskDetailPanel details', () => {
         assignees: [{ type: 'user', id: 'u2', name: 'Sam Lee' }],
       }),
       false,
+      'u1',
     );
     expect(tasksData.addTaskUpdate).toHaveBeenCalledWith(
       'wksA',
@@ -239,6 +241,7 @@ describe('TaskDetailPanel details', () => {
         ],
       }),
       false,
+      'u1',
     );
   });
 
@@ -276,6 +279,7 @@ describe('TaskDetailPanel details', () => {
         },
       }),
       false,
+      'u1',
     );
   });
 
