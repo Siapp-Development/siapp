@@ -338,15 +338,10 @@ export const deletePersonalData = onCall(async (request): Promise<IDeletePersona
   };
 
   try {
-    const anonymized =
-      args.subjectType === 'client'
-        ? buildAnonymizedClientFields(FieldValue.delete())
-        : buildAnonymizedCollaboratorFields(FieldValue.delete());
-    await subjectRef.update({
-      ...anonymized,
-      pdpaErased: { requestedBy: uid, at: FieldValue.serverTimestamp() },
-    });
-
+    // Downstream scrubs run first: they need the pre-erasure identity
+    // captured above, and if any of them fail the subject doc keeps its
+    // name/phone so a re-run can still match message `variables`. The
+    // subject doc is anonymized last, as the commit point of the erasure.
     counts.magicLinks = await revokeMagicLinks(db, args, uid);
 
     if (args.subjectType === 'client') {
@@ -356,6 +351,18 @@ export const deletePersonalData = onCall(async (request): Promise<IDeletePersona
     }
 
     counts.messages = await redactMessages(db, args, subject);
+
+    const anonymized =
+      args.subjectType === 'client'
+        ? buildAnonymizedClientFields(FieldValue.delete())
+        : buildAnonymizedCollaboratorFields(FieldValue.delete());
+    await subjectRef.update({
+      ...anonymized,
+      // Keep the original requestedBy/at as erasure evidence on re-runs.
+      ...(alreadyErased
+        ? {}
+        : { pdpaErased: { requestedBy: uid, at: FieldValue.serverTimestamp() } }),
+    });
   } catch (error) {
     // LOUD failure (unlike audit writes): a partial erasure must surface.
     throw new HttpsError(

@@ -55,7 +55,7 @@ export function BillingBanners({ workspaceId, workspaceSlug }: IBillingBannersPr
         className="mb-6 flex items-start justify-between gap-4 rounded-md border border-border bg-muted px-4 py-3 text-sm"
       >
         <p>
-          You've used {pct}% of this month's WhatsApp allowance ({billing.waUsed} of{' '}
+          You've used {pct}% of your WhatsApp allowance ({billing.waUsed} of{' '}
           {billing.waIncluded}).{' '}
           <Link to={billingHref} className="font-medium underline">
             View usage

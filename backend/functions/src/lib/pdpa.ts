@@ -1,8 +1,12 @@
 /**
  * PDPA helpers (#26). Pure — unit-test without emulators.
  *
- * - `hasWaConsent` is the D2 consent gate: absent/malformed waConsent means
- *   no consent (no grandfathering). One grant covers WA + SMS (D8). Firm
+ * - `hasWaConsent` is the D2 consent gate: consent requires an explicit
+ *   `waConsent.granted === true` record — an absent field, a non-object
+ *   value, or `granted !== true` all fail closed (no grandfathering). The
+ *   surrounding record shape (method/recordedBy/…) is enforced at write
+ *   time by Firestore rules, not re-validated here. One grant covers WA +
+ *   SMS (D8). Firm
  *   members are exempt (contract basis) — callers only gate client and
  *   collaborator recipients. #19/#20's dispatcher inherits this gate because
  *   unconsented records are enqueued `suppressed: true` and never dispatch.
