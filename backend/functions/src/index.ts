@@ -361,11 +361,15 @@ export const onWorkspaceMemberWrite = onDocumentWritten(
       event.data?.before?.data(),
       event.data?.after?.data(),
     )) {
-      await writeAuditLog(event.params.workspaceId, {
-        actorType: 'system',
-        actorId: '',
-        ...audit,
-      });
+      await writeAuditLog(
+        event.params.workspaceId,
+        {
+          actorType: 'system',
+          actorId: '',
+          ...audit,
+        },
+        `${event.id}-${audit.action}`,
+      );
     }
   },
 );
@@ -401,11 +405,15 @@ export const onClientWrite = onDocumentWritten(
     });
     for (const audit of derivePersonAudit('client', event.params.clientId, before, after)) {
       const createdBy = audit.action === 'client.create' ? after?.['createdBy'] : undefined;
-      await writeAuditLog(event.params.workspaceId, {
-        actorType: typeof createdBy === 'string' && createdBy !== '' ? 'user' : 'system',
-        actorId: typeof createdBy === 'string' ? createdBy : '',
-        ...audit,
-      });
+      await writeAuditLog(
+        event.params.workspaceId,
+        {
+          actorType: typeof createdBy === 'string' && createdBy !== '' ? 'user' : 'system',
+          actorId: typeof createdBy === 'string' ? createdBy : '',
+          ...audit,
+        },
+        `${event.id}-${audit.action}`,
+      );
     }
   },
 );
@@ -435,11 +443,15 @@ export const onCollaboratorWrite = onDocumentWritten(
       after,
     )) {
       const invitedBy = audit.action === 'collaborator.create' ? after?.['invitedBy'] : undefined;
-      await writeAuditLog(event.params.workspaceId, {
-        actorType: typeof invitedBy === 'string' && invitedBy !== '' ? 'user' : 'system',
-        actorId: typeof invitedBy === 'string' ? invitedBy : '',
-        ...audit,
-      });
+      await writeAuditLog(
+        event.params.workspaceId,
+        {
+          actorType: typeof invitedBy === 'string' && invitedBy !== '' ? 'user' : 'system',
+          actorId: typeof invitedBy === 'string' ? invitedBy : '',
+          ...audit,
+        },
+        `${event.id}-${audit.action}`,
+      );
     }
   },
 );

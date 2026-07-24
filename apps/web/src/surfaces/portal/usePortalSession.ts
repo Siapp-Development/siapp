@@ -91,18 +91,20 @@ export function usePortalSession(token: string | undefined): {
       setState({ status: 'loading' });
 
       // Reuse a live session (page refresh / tab nav) — skip the redeem when
-      // the current user's portal claims match the cached redeem response.
+      // the current user's portal claims match the cached redeem response on
+      // BOTH workspace and project (project ids alone could collide across
+      // workspaces).
       const user = auth.currentUser;
       if (user !== null) {
         const cached = readCachedSession();
         if (cached !== null) {
           const claims = (await user.getIdTokenResult()).claims as {
-            portal?: { pid?: unknown };
+            portal?: { wid?: unknown; pid?: unknown };
           };
           if (cancelled) {
             return;
           }
-          if (claims.portal?.pid === cached.projectId) {
+          if (claims.portal?.wid === cached.workspaceId && claims.portal?.pid === cached.projectId) {
             setState({ status: 'ready', session: cached });
             return;
           }
