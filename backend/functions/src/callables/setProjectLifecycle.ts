@@ -26,6 +26,7 @@ import {
 import { countWaRecipients } from '../lib/optOut.js';
 import { writeProjectActivity } from '../lib/activityLog.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 import { lifecycleVisibleToClient, type TProjectActivityAction } from '../lib/activityDiff.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
@@ -130,6 +131,7 @@ export const setProjectLifecycle = onCall(async (request) => {
   }
 
   const role = requireMemberRole(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const db = getFirestore();
   const projectRef = db.doc(`workspaces/${workspaceId}/projects/${projectId}`);

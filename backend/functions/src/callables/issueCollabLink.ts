@@ -24,6 +24,7 @@ import {
   hashSecret,
 } from '../lib/portalTokens.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 
 /** Apex origin carried in collab URLs (D-036: /t lives on siapp.app). */
 const collabOrigin = defineString('PORTAL_ORIGIN', { default: 'https://siapp.app' });
@@ -153,6 +154,7 @@ export const issueCollabLink = onCall(async (request) => {
   }
 
   const issuer = requireIssuer(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const db = getFirestore();
   const [projectSnap, taskSnap] = await Promise.all([

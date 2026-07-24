@@ -8,11 +8,15 @@
 
 export type TWorkspacePlan = 'trial' | 'standard' | 'business';
 
+/** Mirrors `TBillingStatus` from @siapp/shared (#24). Absent = 'active'. */
+export type TBillingStatus = 'active' | 'read_only';
+
 export type TAdminAction =
   | 'workspace.provision'
   | 'workspace.plan_change'
   | 'workspace.seat_adjust'
   | 'workspace.renewal_adjust'
+  | 'workspace.status_change'
   | 'user.impersonate';
 
 /** `/adminLog/{alid}` — mirrors `IAdminLogDoc` from @siapp/shared. */
