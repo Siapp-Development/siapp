@@ -7,7 +7,7 @@
 
 import { Button, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
 import { LifecycleBadge } from '../projects/LifecycleBadge.tsx';
@@ -72,12 +72,19 @@ export function DashboardPage({
   const projectRows = projects.status === 'ready' ? projects.rows : [];
   const tasks = useDashboardTasks(workspaceId, role, departments, projectRows);
   const [bucket, setBucket] = useState<TBucketId>('myOpen');
+  // Rolling window (D6): re-bucket once a minute so tasks cross the
+  // overdue / due-this-week boundaries without needing an unrelated re-render.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const canCreate = role === 'owner' || role === 'admin' || role === 'pm';
   const buckets = bucketTasks(
     tasks.status === 'ready' ? tasks.rows : [],
     uid,
-    new Date(),
+    now,
   );
   const attention = projectRows
     .filter((p) => p.lifecycle === 'draft' || p.lifecycle === 'published')
