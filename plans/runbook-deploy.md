@@ -93,6 +93,27 @@ Merge any PR (or run the workflow manually) and watch **Actions → Deploy**.
 First functions deploy takes several minutes (container builds); subsequent
 deploys are incremental.
 
+### 5. Admin access (Google SSO + TOTP MFA, #10/#63)
+
+Admin sign-in on admin.siapp.app requires the `isAdmin` claim **and** a
+TOTP second factor. One-time prerequisites:
+
+```bash
+# Set the isAdmin claim (merges with existing claims)
+cd backend/functions && npx tsx src/admin/scripts/setAdminClaim.ts <email>
+
+# Enable TOTP MFA on the Identity Platform config (already applied to siapp-prod)
+TOKEN=$(gcloud auth print-access-token)
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: siapp-prod" \
+  -H "Content-Type: application/json" \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/siapp-prod/config?updateMask=mfa" \
+  -d '{"mfa":{"state":"ENABLED","providerConfigs":[{"state":"ENABLED","totpProviderConfig":{"adjacentIntervals":5}}]}}'
+```
+
+First sign-in walks the admin through authenticator-app enrolment, then asks
+them to sign in again with the 6-digit code. See
+[impl-63-admin-mfa.md](impl-63-admin-mfa.md).
+
 ## Failure playbook
 
 - **CI green but Deploy failed** — fix the cause, then re-run via
