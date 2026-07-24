@@ -23,13 +23,16 @@ import type {
   TMagicLinkScopeType,
   TMemberRole,
   TMessageChannel,
+  TMessageRecipientType,
   TMessageStatus,
+  TNotificationTrigger,
   TPhaseStatus,
   TPhoneRefType,
   TProjectLifecycle,
   TProjectStatus,
   TProjectVertical,
   TScanStatus,
+  TSuppressedReason,
   TTaskStatus,
   TTaskUpdateAction,
   TTaskUpdateAuthorType,
@@ -125,6 +128,23 @@ export interface IWorkspaceWhatsappAllowance {
   used: number;
 }
 
+/**
+ * Workspace quiet-hours window (#18, D1/D6). `start`/`end` are 'HH:mm' wall
+ * clock in `timezone`; `start > end` means the window wraps midnight.
+ * Timezone is a literal at MVP (Malaysia-only, fixed UTC+8).
+ */
+export interface IQuietHoursSettings {
+  enabled: boolean;
+  start: string;
+  end: string;
+  timezone: 'Asia/Kuala_Lumpur';
+}
+
+/** `workspaces/{wid}.notifications` — server-written via updateNotificationSettings (#18). */
+export interface INotificationSettings {
+  quietHours: IQuietHoursSettings;
+}
+
 /** `/workspaces/{wid}` */
 export interface IWorkspaceDoc {
   id: string;
@@ -138,6 +158,8 @@ export interface IWorkspaceDoc {
   branding: IWorkspaceBranding;
   whatsappAllowance: IWorkspaceWhatsappAllowance;
   defaultLocale: TLocale;
+  /** Absent = QUIET_HOURS_DEFAULT (#18, D1). */
+  notifications?: INotificationSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -316,6 +338,18 @@ export interface ITaskCollaboratorAssignee {
 
 export type TTaskAssignee = ITaskUserAssignee | ITaskCollaboratorAssignee;
 
+/**
+ * Per-task notification triggers + recipients (#18, D2). `sendWhatsapp: false`
+ * short-circuits everything regardless of this map (D8).
+ */
+export interface ITaskNotifyConfig {
+  statusChange: boolean;
+  dueSoon: boolean;
+  blocked: boolean;
+  toClient: boolean;
+  toInternal: boolean;
+}
+
 /** `/workspaces/{wid}/projects/{pid}/tasks/{tid}` */
 export interface ITaskDoc {
   id: string;
@@ -334,6 +368,8 @@ export interface ITaskDoc {
   restrictedToDepartments: string[];
   /** Per-task WhatsApp toggle (D-031: copied on Duplicate). */
   sendWhatsapp: boolean;
+  /** Trigger/recipient config (#18, D2). Absent = TASK_NOTIFY_DEFAULTS. */
+  notify?: ITaskNotifyConfig;
   /** Task ids this task depends on (D-031 dependency links). */
   dependsOn: string[];
   order: number;
@@ -404,16 +440,30 @@ export interface IMessageRelatedTo {
   id: string;
 }
 
-/** `/workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log. */
+/**
+ * `/workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log doubling as
+ * the queue/outbox (#18, D3). Server-written only. The #19 dispatcher
+ * consumes `status == 'queued' && suppressed != true &&
+ * (holdUntil absent || holdUntil <= now)` (D9 contract).
+ */
 export interface IMessageDoc {
   id: string;
   channel: TMessageChannel;
   recipientPhone: string;
-  recipientType: TPhoneRefType;
+  recipientType: TMessageRecipientType;
   recipientId: string;
   templateName: string;
   variables: Record<string, string>;
   status: TMessageStatus;
+  /** Event that produced this record (#18). */
+  trigger: TNotificationTrigger;
+  /** True = audit-only record that must never dispatch (#18, D8). */
+  suppressed?: boolean;
+  suppressedReason?: TSuppressedReason;
+  /** Quiet-hours hold — dispatchable only at/after this instant (#18, D6). */
+  holdUntil?: Date;
+  /** Mirrors the deterministic doc id for due-soon dedupe (#18, D5). */
+  dedupeKey?: string;
   twilioSid?: string;
   conversationId?: string;
   errorCode?: string;

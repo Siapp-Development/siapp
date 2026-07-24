@@ -17,6 +17,8 @@ import type {
   ISetMemberDepartmentsResponse,
   ISetProjectLifecycleRequest,
   ISetProjectLifecycleResponse,
+  IUpdateNotificationSettingsRequest,
+  IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
 } from '@siapp/shared';
 
@@ -87,6 +89,17 @@ export async function getRestrictedTaskHeaders(
     functions,
     'getRestrictedTaskHeaders',
   );
+  return (await call(data)).data;
+}
+
+/** Workspace quiet-hours edits (#18) — owner/admin only, validated server-side. */
+export async function updateNotificationSettings(
+  data: IUpdateNotificationSettingsRequest,
+): Promise<IUpdateNotificationSettingsResponse> {
+  const call = httpsCallable<
+    IUpdateNotificationSettingsRequest,
+    IUpdateNotificationSettingsResponse
+  >(functions, 'updateNotificationSettings');
   return (await call(data)).data;
 }
 

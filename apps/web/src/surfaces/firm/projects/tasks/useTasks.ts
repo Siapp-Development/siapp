@@ -12,12 +12,14 @@
 
 import type {
   IRestrictedTaskHeader,
+  ITaskNotifyConfig,
   TMemberRole,
   TPhaseStatus,
   TTaskAssignee,
   TTaskStatus,
   TTaskUpdateAction,
 } from '@siapp/shared';
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 import {
   Timestamp,
   collection,
@@ -58,6 +60,7 @@ export interface ITaskRow {
   visibleToCollaboratorIds: string[];
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  notify: ITaskNotifyConfig;
   dependsOn: string[];
   order: number;
   createdBy: string;
@@ -125,6 +128,23 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+/** Effective notify config: stored map with defaults for absent keys (#18 D2). */
+function mapNotify(value: unknown): ITaskNotifyConfig {
+  const raw = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  return {
+    statusChange:
+      typeof raw['statusChange'] === 'boolean'
+        ? raw['statusChange']
+        : TASK_NOTIFY_DEFAULTS.statusChange,
+    dueSoon: typeof raw['dueSoon'] === 'boolean' ? raw['dueSoon'] : TASK_NOTIFY_DEFAULTS.dueSoon,
+    blocked: typeof raw['blocked'] === 'boolean' ? raw['blocked'] : TASK_NOTIFY_DEFAULTS.blocked,
+    toClient:
+      typeof raw['toClient'] === 'boolean' ? raw['toClient'] : TASK_NOTIFY_DEFAULTS.toClient,
+    toInternal:
+      typeof raw['toInternal'] === 'boolean' ? raw['toInternal'] : TASK_NOTIFY_DEFAULTS.toInternal,
+  };
+}
+
 /** Maps a raw task doc to a row; exported for the #15 duplicate reader. */
 export function mapTask(id: string, data: DocumentData): ITaskRow {
   return {
@@ -142,6 +162,7 @@ export function mapTask(id: string, data: DocumentData): ITaskRow {
     visibleToCollaboratorIds: asStringArray(data['visibleToCollaboratorIds']),
     restrictedToDepartments: asStringArray(data['restrictedToDepartments']),
     sendWhatsapp: data['sendWhatsapp'] === true,
+    notify: mapNotify(data['notify']),
     dependsOn: asStringArray(data['dependsOn']),
     order: typeof data['order'] === 'number' ? data['order'] : 0,
     createdBy: String(data['createdBy'] ?? ''),
@@ -369,6 +390,8 @@ export interface ITaskFormValues {
   visibleToClient: boolean;
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  /** Absent on quick-add — backend applies TASK_NOTIFY_DEFAULTS (#18). */
+  notify?: ITaskNotifyConfig;
   dependsOn: string[];
 }
 
@@ -394,6 +417,7 @@ export async function createTask(
     visibleToCollaboratorIds: [],
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
+    ...(values.notify !== undefined ? { notify: values.notify } : {}),
     dependsOn: values.dependsOn,
     order,
     createdAt: serverTimestamp(),
@@ -424,6 +448,7 @@ export async function updateTask(
     visibleToClient: values.visibleToClient,
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
+    ...(values.notify !== undefined ? { notify: values.notify } : {}),
     dependsOn: values.dependsOn,
     updatedAt: serverTimestamp(),
   });

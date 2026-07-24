@@ -7,6 +7,9 @@
  *   - setProjectLifecycle (#12): D-027 lifecycle transitions + publish preview.
  *   - getRestrictedTaskHeaders (#13): safe projection of restricted tasks.
  *   - onTaskWrite → recomputeProjectSummary (#12) + collaborator lastTaskAt (#16)
+ *     + WhatsApp notification enqueue (#18)
+ *   - updateNotificationSettings (#18): owner/admin quiet-hours settings.
+ *   - onDueSoonSweep (#18): daily due-soon notification sweep (08:00 MYT).
  *   - onClientWrite / onCollaboratorWrite → syncPhoneIndex (#16)
  *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
  *   - adminAdjustWorkspace (#10): mutate plan / seats / expiry.
@@ -24,14 +27,20 @@
 import './globalOptions.js';
 
 import { initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { logger } from 'firebase-functions';
 
 import { recountSeats } from './triggers/recountSeats.js';
 import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
+import { enqueueTaskEvent } from './lib/enqueueNotifications.js';
+import { triggersFor } from './lib/notifyConfig.js';
+import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
 import { impersonateUser } from './admin/impersonateUser.js';
@@ -51,6 +60,10 @@ export { setProjectLifecycle } from './callables/setProjectLifecycle.js';
 
 export { getRestrictedTaskHeaders } from './callables/getRestrictedTaskHeaders.js';
 
+// ── Notification settings callable (#18) ────────────────────────────────────
+
+export { updateNotificationSettings } from './callables/updateNotificationSettings.js';
+
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 
 /** Provisions a new workspace, first owner member, and starter project. */
@@ -69,6 +82,8 @@ export const adminImpersonateUser = onCall(impersonateUser);
  * document is created, updated, or deleted — see `triggers/projectSummary.ts`.
  * #16: additionally stamps `lastTaskAt` on collaborator assignees when the
  * task transitions to done (A7 Active/Idle derivation).
+ * #18: status transitions enqueue WhatsApp notification records (D4) —
+ * see `lib/enqueueNotifications.ts`.
  *
  * Collection path: `workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}`
  */
@@ -76,15 +91,49 @@ export const onTaskWrite = onDocumentWritten(
   'workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}',
   async (event) => {
     await recomputeProjectSummary(event.params.workspaceId, event.params.projectId);
-    const stampIds = collaboratorIdsToStamp(
-      event.data?.before?.data(),
-      event.data?.after?.data(),
-    );
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const stampIds = collaboratorIdsToStamp(before, after);
     if (stampIds.length > 0) {
       await stampCollaboratorLastTask(event.params.workspaceId, stampIds);
     }
+    const notifyTrigger = triggersFor(before, after);
+    if (notifyTrigger !== null && after !== undefined) {
+      try {
+        const projectSnap = await getFirestore()
+          .doc(`workspaces/${event.params.workspaceId}/projects/${event.params.projectId}`)
+          .get();
+        await enqueueTaskEvent({
+          workspaceId: event.params.workspaceId,
+          projectId: event.params.projectId,
+          taskId: event.params.taskId,
+          trigger: notifyTrigger === 'blocked' ? 'task_blocked' : 'task_status_change',
+          taskData: after,
+          projectData: projectSnap.data(),
+        });
+      } catch (error) {
+        // Notification enqueue must never break summary/claim maintenance.
+        logger.error('onTaskWrite: notification enqueue failed', {
+          workspaceId: event.params.workspaceId,
+          projectId: event.params.projectId,
+          taskId: event.params.taskId,
+          error,
+        });
+      }
+    }
   },
 );
+
+// ── Scheduled functions (#18) ───────────────────────────────────────────────
+
+/**
+ * Daily due-soon sweep at 00:00 UTC = 08:00 MYT (D5) — the moment quiet
+ * hours end, so due-soon messages never need holding.
+ */
+export const onDueSoonSweep = onSchedule('0 0 * * *', async () => {
+  const written = await sweepDueSoon(new Date());
+  logger.info('onDueSoonSweep: sweep complete', { written });
+});
 
 /**
  * Syncs Firebase Auth custom claims whenever a member document changes
