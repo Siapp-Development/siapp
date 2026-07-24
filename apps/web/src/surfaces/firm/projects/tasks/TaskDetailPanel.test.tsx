@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 
 import type { IMemberRow } from '../../settings/useTeamData.ts';
 import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
@@ -65,6 +66,7 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
+    notify: { ...TASK_NOTIFY_DEFAULTS },
     dependsOn: [],
     order: 1,
     createdBy: 'u1',
@@ -235,6 +237,43 @@ describe('TaskDetailPanel details', () => {
         assignees: [
           { type: 'collaborator', id: 'col1', name: 'Lim Electrical', phone: '+60198765432' },
         ],
+      }),
+      false,
+    );
+  });
+
+  it('disables the notify options while the WhatsApp master toggle is off (#18)', () => {
+    renderPanel();
+
+    // Fixture has sendWhatsapp: false — options render but are disabled.
+    expect(screen.getByLabelText('Status changes')).toBeDisabled();
+    expect(screen.getByLabelText('Client')).toBeDisabled();
+    // Defaults still show through (kept, not cleared).
+    expect(screen.getByLabelText('Status changes')).toBeChecked();
+    expect(screen.getByLabelText('Internal team (assignees)')).not.toBeChecked();
+  });
+
+  it('enables the notify options under the master toggle and saves the edited map (#18)', async () => {
+    renderPanel({ task: taskRow({ sendWhatsapp: true }) });
+
+    expect(screen.getByLabelText('Due date is approaching')).toBeEnabled();
+    await userEvent.click(screen.getByLabelText('Due date is approaching'));
+    await userEvent.click(screen.getByLabelText('Internal team (assignees)'));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(tasksData.updateTask).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      't1',
+      expect.objectContaining({
+        sendWhatsapp: true,
+        notify: {
+          statusChange: true,
+          dueSoon: false,
+          blocked: true,
+          toClient: true,
+          toInternal: true,
+        },
       }),
       false,
     );

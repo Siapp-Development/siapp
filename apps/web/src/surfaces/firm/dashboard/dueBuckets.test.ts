@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
+
 import type { IDashboardTaskRow } from './useDashboardTasks.ts';
 import { WEEK_MS, bucketTasks } from './dueBuckets.ts';
 
@@ -22,6 +24,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
+    notify: { ...TASK_NOTIFY_DEFAULTS },
     dependsOn: [],
     order: 0,
     createdBy: UID,
