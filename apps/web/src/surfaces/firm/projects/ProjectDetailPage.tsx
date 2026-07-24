@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
+import { useClients } from '../clients/useClients.ts';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
@@ -225,6 +226,7 @@ export function ProjectDetailPage({
 }: IProjectDetailPageProps) {
   const { projectId = '' } = useParams<'projectId'>();
   const state = useProject(workspaceId, projectId);
+  const clients = useClients(workspaceId);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<'tasks' | 'documents' | 'details'>('tasks');
 
@@ -329,6 +331,7 @@ export function ProjectDetailPage({
               {editing ? (
                 <ProjectForm
                   project={project}
+                  clients={clients.status === 'ready' ? clients.rows : []}
                   submitLabel="Save changes"
                   onCancel={() => setEditing(false)}
                   onSubmit={async (values) => {

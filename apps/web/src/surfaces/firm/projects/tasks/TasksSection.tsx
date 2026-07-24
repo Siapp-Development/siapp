@@ -10,6 +10,7 @@ import type { TMemberRole } from '@siapp/shared';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
+import { useCollaborators } from '../../collaborators/useCollaborators.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import {
@@ -190,6 +191,7 @@ export function TasksSection({
   const phasesState = usePhases(workspaceId, projectId);
   const membersState = useMembers(workspaceId);
   const departmentsState = useDepartments(workspaceId);
+  const collaboratorsState = useCollaborators(workspaceId);
 
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -209,6 +211,7 @@ export function TasksSection({
     [departmentsState],
   );
   const members = membersState.status === 'ready' ? membersState.rows : [];
+  const collaborators = collaboratorsState.status === 'ready' ? collaboratorsState.rows : [];
 
   if (tasksState.status === 'loading' || phasesState.status === 'loading') {
     return <p className="text-sm">Loading tasks…</p>;
@@ -411,6 +414,7 @@ export function TasksSection({
             allTasks={visibleTasks}
             phases={phases}
             members={members}
+            collaborators={collaborators}
             departments={departmentRows}
             role={role}
             memberDepartments={departments}
