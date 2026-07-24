@@ -11,6 +11,8 @@ import type {
   ICreateInviteResponse,
   IDeleteTaskRequest,
   IDeleteTaskResponse,
+  IExportProjectRequest,
+  IExportProjectResponse,
   IGetRestrictedTaskHeadersRequest,
   IGetRestrictedTaskHeadersResponse,
   IIssueCollabLinkRequest,
@@ -152,6 +154,20 @@ export async function updateNotificationSettings(
     IUpdateNotificationSettingsRequest,
     IUpdateNotificationSettingsResponse
   >(functions, 'updateNotificationSettings');
+  return (await call(data)).data;
+}
+
+/**
+ * Per-project data export (#25) — owner/admin only. Returns the full
+ * versioned JSON snapshot; CSVs are derived client-side from this payload.
+ */
+export async function exportProject(
+  data: IExportProjectRequest,
+): Promise<IExportProjectResponse> {
+  const call = httpsCallable<IExportProjectRequest, IExportProjectResponse>(
+    functions,
+    'exportProject',
+  );
   return (await call(data)).data;
 }
 

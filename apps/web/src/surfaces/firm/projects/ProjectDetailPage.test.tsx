@@ -42,6 +42,12 @@ vi.mock('./activity/ActivitySection.tsx', () => ({
   ),
 }));
 
+vi.mock('./export/ExportSection.tsx', () => ({
+  ExportSection: (props: { role: string }) => (
+    <div data-testid="export-section" data-role={props.role} />
+  ),
+}));
+
 import { ProjectDetailPage } from './ProjectDetailPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -155,6 +161,22 @@ describe('ProjectDetailPage', () => {
       'href',
       '/acme/projects',
     );
+  });
+
+  it('shows the ExportSection in Details for owner and admin only (#25)', async () => {
+    const ownerRender = renderPage('owner');
+    await openDetailsTab();
+    expect(screen.getByTestId('export-section')).toHaveAttribute('data-role', 'owner');
+    ownerRender.unmount();
+
+    const adminRender = renderPage('admin');
+    await openDetailsTab();
+    expect(screen.getByTestId('export-section')).toHaveAttribute('data-role', 'admin');
+    adminRender.unmount();
+
+    renderPage('pm');
+    await openDetailsTab();
+    expect(screen.queryByTestId('export-section')).not.toBeInTheDocument();
   });
 
   it('hides editing from viewers and on completed projects', async () => {

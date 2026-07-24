@@ -39,6 +39,7 @@ export type TAuditAction =
   | 'member.added'
   | 'member.removed'
   | 'project.lifecycle_change'
+  | 'project.export'
   | 'task.delete'
   | 'settings.notifications_change'
   | 'client.create'
