@@ -22,7 +22,8 @@ export type TProjectActivityAction =
   | 'project_archived'
   | 'project_deleted'
   | 'project_reopened'
-  | 'client_link_changed';
+  | 'client_link_changed'
+  | 'client_document_uploaded';
 
 export type TActorType = 'user' | 'collaborator' | 'client' | 'system' | 'admin';
 
@@ -42,6 +43,8 @@ export type TAuditAction =
   | 'client.update'
   | 'collaborator.create'
   | 'collaborator.update'
+  | 'portal_link.issue'
+  | 'portal_link.reset'
   | 'admin.workspace_adjust'
   | 'admin.impersonate';
 
@@ -58,6 +61,8 @@ export interface IDerivedActivityEvent {
   docId?: string;
   docNameDenorm?: string;
   restrictedToDepartments: string[];
+  /** #21 (D4): true only for the client-safe subset — see visibleToClientFor. */
+  visibleToClient: boolean;
   payload: { from?: unknown; to?: unknown };
 }
 
@@ -110,6 +115,15 @@ function timestampIso(value: unknown): string | null {
 }
 
 /**
+ * #21 (D4): portal visibility of a lifecycle activity entry written inline
+ * by the setProjectLifecycle callable — publish/complete are client-facing;
+ * archive/delete/reopen stay internal.
+ */
+export function lifecycleVisibleToClient(action: TProjectActivityAction): boolean {
+  return action === 'project_published' || action === 'project_completed';
+}
+
+/**
  * Activity events for a task write (#23 D2): create, status / assignee /
  * due-date diffs. `task_deleted` is deliberately NOT derived here — the
  * deleteTask callable writes it attributed (Q5); the trigger writes a
@@ -124,10 +138,14 @@ export function deriveTaskActivity(
   if (after === undefined) {
     return [];
   }
+  const restrictions = restrictionsOf(after);
+  // #21 (D4): task events surface to the portal only when the source task is
+  // client-visible AND unrestricted; assignment diffs stay internal always.
+  const taskVisibleToClient = after['visibleToClient'] === true && restrictions.length === 0;
   const base = {
     taskId,
     taskTitleDenorm: str(after, 'title'),
-    restrictedToDepartments: restrictionsOf(after),
+    restrictedToDepartments: restrictions,
   };
 
   if (before === undefined) {
@@ -138,6 +156,7 @@ export function deriveTaskActivity(
         action: 'task_created',
         actorUid: createdBy !== '' ? createdBy : null,
         actorType: createdBy !== '' ? 'user' : 'system',
+        visibleToClient: taskVisibleToClient,
         payload: {},
       },
     ];
@@ -157,6 +176,7 @@ export function deriveTaskActivity(
       ...base,
       ...actor,
       action: 'task_status_changed',
+      visibleToClient: taskVisibleToClient,
       payload: { from: fromStatus, to: toStatus },
     });
   }
@@ -168,10 +188,22 @@ export function deriveTaskActivity(
   const added = afterAssignees.filter((a) => !beforeKeys.has(a.key)).map((a) => a.name);
   const removed = beforeAssignees.filter((a) => !afterKeys.has(a.key)).map((a) => a.name);
   if (added.length > 0) {
-    events.push({ ...base, ...actor, action: 'task_assigned', payload: { to: added } });
+    events.push({
+      ...base,
+      ...actor,
+      action: 'task_assigned',
+      visibleToClient: false,
+      payload: { to: added },
+    });
   }
   if (removed.length > 0) {
-    events.push({ ...base, ...actor, action: 'task_unassigned', payload: { from: removed } });
+    events.push({
+      ...base,
+      ...actor,
+      action: 'task_unassigned',
+      visibleToClient: false,
+      payload: { from: removed },
+    });
   }
 
   const fromDue = timestampIso(before['dueDate']);
@@ -181,6 +213,7 @@ export function deriveTaskActivity(
       ...base,
       ...actor,
       action: 'task_due_date_changed',
+      visibleToClient: taskVisibleToClient,
       payload: { from: fromDue, to: toDue },
     });
   }
@@ -194,8 +227,10 @@ function uploaderActorType(value: unknown): TActorType {
 
 /**
  * Activity events for a project-document write (#23 D2): metadata create →
- * `doc_added`; `deletedAt` null→set soft-delete diff → `doc_deleted`.
- * uploaderType 'client' entries attribute actorType 'client' (D-034).
+ * `doc_added` — or `client_document_uploaded` when `uploaderType == 'client'`
+ * (#21, D-034; always portal-visible); `deletedAt` null→set soft-delete diff
+ * → `doc_deleted` (never portal-visible). Firm `doc_added` entries surface
+ * to the portal only when the doc itself is client-visible (D4).
  */
 export function deriveDocumentActivity(
   docId: string,
@@ -214,12 +249,25 @@ export function deriveDocumentActivity(
   if (before === undefined) {
     const uploadedBy = str(after, 'uploadedBy');
     const actorType = uploaderActorType(after['uploaderType']);
+    if (actorType === 'client') {
+      return [
+        {
+          ...base,
+          action: 'client_document_uploaded',
+          actorUid: null,
+          actorType: uploadedBy !== '' ? 'client' : 'system',
+          visibleToClient: true,
+          payload: {},
+        },
+      ];
+    }
     return [
       {
         ...base,
         action: 'doc_added',
         actorUid: actorType === 'user' && uploadedBy !== '' ? uploadedBy : null,
         actorType: uploadedBy !== '' ? actorType : 'system',
+        visibleToClient: after['visibleToClient'] === true,
         payload: {},
       },
     ];
@@ -236,6 +284,7 @@ export function deriveDocumentActivity(
         action: 'doc_deleted',
         actorUid: actorType === 'user' && deletedBy !== '' ? deletedBy : null,
         actorType: deletedBy !== '' ? actorType : 'system',
+        visibleToClient: false,
         payload: {},
       },
     ];
@@ -262,6 +311,7 @@ export function deriveProjectActivity(before: TDocData, after: TDocData): IDeriv
         actorUid: createdBy !== '' ? createdBy : null,
         actorType: createdBy !== '' ? 'user' : 'system',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: {},
       },
     ];
@@ -275,6 +325,7 @@ export function deriveProjectActivity(before: TDocData, after: TDocData): IDeriv
         actorUid: null,
         actorType: 'system',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: {
           from: str(before, 'clientNameDenorm') || null,
           to: str(after, 'clientNameDenorm') || null,

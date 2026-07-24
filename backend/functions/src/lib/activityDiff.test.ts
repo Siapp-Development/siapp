@@ -10,6 +10,7 @@ import {
   derivePersonAudit,
   deriveProjectActivity,
   deriveTaskActivity,
+  lifecycleVisibleToClient,
 } from './activityDiff.js';
 
 function fakeTimestamp(iso: string): { toDate: () => Date } {
@@ -35,6 +36,7 @@ describe('deriveTaskActivity', () => {
         taskId: 't1',
         taskTitleDenorm: 'Piling works',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: {},
       },
     ]);
@@ -59,9 +61,34 @@ describe('deriveTaskActivity', () => {
         taskId: 't1',
         taskTitleDenorm: 'Piling works',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: { from: 'todo', to: 'in_progress' },
       },
     ]);
+  });
+
+  it('marks task events visibleToClient only when the task is client-visible and unrestricted (#21 D4)', () => {
+    const visible = { ...TASK_BASE, visibleToClient: true };
+    expect(deriveTaskActivity('t1', undefined, visible)[0].visibleToClient).toBe(true);
+    const statusEvents = deriveTaskActivity('t1', visible, {
+      ...visible,
+      status: 'done',
+      updatedBy: 'u1',
+    });
+    expect(statusEvents[0]).toMatchObject({
+      action: 'task_status_changed',
+      visibleToClient: true,
+    });
+    // Restricted → never portal-visible even when the task is client-visible.
+    const restricted = { ...visible, restrictedToDepartments: ['structural'] };
+    expect(deriveTaskActivity('t1', undefined, restricted)[0].visibleToClient).toBe(false);
+    // Assignment diffs stay internal always.
+    const assignEvents = deriveTaskActivity('t1', visible, {
+      ...visible,
+      assignees: [{ type: 'user', id: 'u2', name: 'Sam' }],
+      updatedBy: 'u1',
+    });
+    expect(assignEvents[0]).toMatchObject({ action: 'task_assigned', visibleToClient: false });
   });
 
   it('derives assignment and unassignment diffs by assignee key', () => {
@@ -130,18 +157,35 @@ describe('deriveDocumentActivity', () => {
         docId: 'd1',
         docNameDenorm: 'floorplan.pdf',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: {},
       },
     ]);
   });
 
-  it('attributes client uploads with actorType client and no uid (D-034)', () => {
+  it('marks doc_added visibleToClient when the document is client-visible (#21 D4)', () => {
+    const events = deriveDocumentActivity('d1', undefined, { ...DOC_BASE, visibleToClient: true });
+    expect(events[0]).toMatchObject({ action: 'doc_added', visibleToClient: true });
+  });
+
+  it('derives client_document_uploaded for client uploads — always portal-visible (#21)', () => {
     const events = deriveDocumentActivity('d1', undefined, {
       ...DOC_BASE,
       uploaderType: 'client',
       uploadedBy: 'client-1',
     });
-    expect(events[0]).toMatchObject({ actorType: 'client', actorUid: null });
+    expect(events).toEqual([
+      {
+        action: 'client_document_uploaded',
+        actorUid: null,
+        actorType: 'client',
+        docId: 'd1',
+        docNameDenorm: 'floorplan.pdf',
+        restrictedToDepartments: [],
+        visibleToClient: true,
+        payload: {},
+      },
+    ]);
   });
 
   it('derives doc_deleted on the #14 soft-delete diff only', () => {
@@ -152,7 +196,12 @@ describe('deriveDocumentActivity', () => {
     };
     const events = deriveDocumentActivity('d1', { ...DOC_BASE }, deleted);
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ action: 'doc_deleted', actorUid: 'u2', actorType: 'user' });
+    expect(events[0]).toMatchObject({
+      action: 'doc_deleted',
+      actorUid: 'u2',
+      actorType: 'user',
+      visibleToClient: false,
+    });
     // Already-deleted → no new event.
     expect(deriveDocumentActivity('d1', deleted, deleted)).toEqual([]);
   });
@@ -181,6 +230,7 @@ describe('deriveProjectActivity', () => {
         actorUid: 'u-owner',
         actorType: 'user',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: {},
       },
     ]);
@@ -195,6 +245,7 @@ describe('deriveProjectActivity', () => {
         actorUid: null,
         actorType: 'system',
         restrictedToDepartments: [],
+        visibleToClient: false,
         payload: { from: null, to: 'Ahmad Corp' },
       },
     ]);
@@ -207,6 +258,16 @@ describe('deriveProjectActivity', () => {
       deriveProjectActivity({ ...PROJECT_BASE }, { ...PROJECT_BASE, lifecycle: 'published' }),
     ).toEqual([]);
     expect(deriveProjectActivity({ ...PROJECT_BASE }, undefined)).toEqual([]);
+  });
+});
+
+describe('lifecycleVisibleToClient', () => {
+  it('marks only publish/complete as client-facing (#21 D4)', () => {
+    expect(lifecycleVisibleToClient('project_published')).toBe(true);
+    expect(lifecycleVisibleToClient('project_completed')).toBe(true);
+    expect(lifecycleVisibleToClient('project_archived')).toBe(false);
+    expect(lifecycleVisibleToClient('project_deleted')).toBe(false);
+    expect(lifecycleVisibleToClient('project_reopened')).toBe(false);
   });
 });
 

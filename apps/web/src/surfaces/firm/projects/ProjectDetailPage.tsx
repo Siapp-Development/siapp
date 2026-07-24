@@ -20,6 +20,8 @@ import { useClients } from '../clients/useClients.ts';
 import { ActivitySection } from './activity/ActivitySection.tsx';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
+import { MilestonesEditor } from './milestones/MilestonesEditor.tsx';
+import { PortalLinkCard } from './PortalLinkCard.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
 import { TasksSection } from './tasks/TasksSection.tsx';
@@ -405,6 +407,16 @@ export function ProjectDetailPage({
               )}
             </CardContent>
           </Card>
+
+          <PortalLinkCard
+            workspaceId={workspaceId}
+            projectId={project.id}
+            lifecycle={project.lifecycle}
+            clientId={project.clientId}
+            role={role}
+          />
+
+          <MilestonesEditor workspaceId={workspaceId} projectId={project.id} canEdit={canEdit} />
 
           <LifecycleActions workspaceId={workspaceId} project={project} role={role} />
         </>

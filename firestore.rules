@@ -31,6 +31,12 @@ rules_version = '2';
 //   deletes are now DENIED client-side — they go through the deleteTask
 //   callable so task_deleted entries are attributed (Q5)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
+// - #21 adds: portal principals (custom-token claims `portal.{wid,pid,cid}`,
+//   minted by redeemPortalLink; supersedes data-model principle 4 for the
+//   client portal per D1) get project/phases/milestones reads, client-safe
+//   documents + activity reads, and a pinned client-upload create — all
+//   re-gated on lifecycle published/completed (D-027; makes Q1 soft revoke
+//   safe); milestones gain firm owner/admin/pm CRUD (Q2)
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -80,6 +86,24 @@ service cloud.firestore {
     // setAdminClaim.ts bootstrap script; never by user-initiated flows.
     function isSiappAdmin() {
       return isSignedIn() && request.auth.token.isAdmin == true;
+    }
+
+    // Portal principal (#21, D1): custom token minted by redeemPortalLink
+    // with claims pinning ONE client to ONE project in ONE workspace.
+    function isPortalClient(wid, pid) {
+      return isSignedIn()
+        && request.auth.token.portal != null
+        && request.auth.token.portal.wid == wid
+        && request.auth.token.portal.pid == pid;
+    }
+
+    // Portal reads re-check the D-027 lifecycle gate on every request (one
+    // get(); subcollections only — the project doc checks resource.data
+    // directly). Unpublish/archive/delete instantly closes the portal, which
+    // is what makes soft link-revocation (Q1) safe.
+    function portalProjectLive(wid, pid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid))
+        .data.lifecycle in ['published', 'completed'];
     }
 
     // Field validation for own users/{uid} writes. Whitelisted keys only —
@@ -218,6 +242,46 @@ service cloud.firestore {
         && d.deletedAt == null;
     }
 
+    // Field validation for portal client uploads (#21, D7). Mirrors
+    // CLIENT_ALLOWED_DOCUMENT_MIME_TYPES / MAX_CLIENT_DOCUMENT_SIZE_BYTES in
+    // @siapp/shared. Every identity field is pinned to the portal claims and
+    // the doc is forced client-visible, unrestricted, and scan-pending.
+    function validPortalDocumentCreate(wid, pid, did) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'mimeType', 'sizeBytes', 'storagePath',
+          'scope', 'scopeId', 'uploadedBy', 'uploaderType', 'uploadedAt',
+          'visibleToClient', 'visibleToCollaboratorIds',
+          'restrictedToDepartments', 'scanStatus', 'deletedAt'
+        ])
+        && d.id == did
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 255
+        && d.mimeType in [
+          'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
+          'image/gif',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword'
+        ]
+        && d.sizeBytes is int
+        && d.sizeBytes > 0
+        && d.sizeBytes <= 10 * 1024 * 1024
+        && d.storagePath.matches('workspaces/' + wid + '/projects/' + pid + '/client-uploads/[^/]+')
+        && d.scope == 'project'
+        && d.scopeId == pid
+        && d.uploadedBy == request.auth.token.portal.cid
+        && d.uploaderType == 'client'
+        && d.uploadedAt is timestamp
+        && d.visibleToClient == true
+        && d.visibleToCollaboratorIds is list
+        && d.visibleToCollaboratorIds.size() == 0
+        && d.restrictedToDepartments is list
+        && d.restrictedToDepartments.size() == 0
+        && d.scanStatus == 'pending'
+        && d.deletedAt == null;
+    }
+
     // Field validation shared by phase create/update (#13).
     function validPhaseFields(phid) {
       let d = request.resource.data;
@@ -230,6 +294,24 @@ service cloud.firestore {
         && d.status in ['todo', 'in_progress', 'done']
         && (!('startDate' in d) || d.startDate is timestamp)
         && (!('endDate' in d) || d.endDate is timestamp);
+    }
+
+    // Field validation shared by milestone create/update (#21, Q2). Shape
+    // mirrors IMilestoneDoc; completedAt present = done.
+    function validMilestoneFields(mid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'targetDate', 'completedAt', 'order', 'description'
+        ])
+        && d.id == mid
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 120
+        && d.targetDate is timestamp
+        && (!('completedAt' in d) || d.completedAt is timestamp)
+        && d.order is number
+        && (!('description' in d)
+          || (d.description is string && d.description.size() <= 2000));
     }
 
     // Field validation shared by task create/update (#13). Assignees may be
@@ -412,7 +494,13 @@ service cloud.firestore {
       // are client-immutable — transitions go through the setProjectLifecycle
       // callable (D-027) and summary through the onTaskWrite trigger.
       match /projects/{pid} {
-        allow read: if isFirmMember(wid);
+        // #21: portal principals may get their one project while it is
+        // published/completed (resource.data — no extra get()); list stays
+        // firm-only so the portal can never enumerate projects.
+        allow get: if isFirmMember(wid)
+          || (isPortalClient(wid, pid)
+            && resource.data.lifecycle in ['published', 'completed']);
+        allow list: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
@@ -469,8 +557,10 @@ service cloud.firestore {
         allow delete: if false;
 
         // Phases (#13): owner/admin/pm manage the project's phase structure.
+        // #21: the portal reads them for the timeline strip.
         match /phases/{phid} {
-          allow read: if isFirmMember(wid);
+          allow read: if isFirmMember(wid)
+            || (isPortalClient(wid, pid) && portalProjectLive(wid, pid));
           allow create, update: if hasRole(wid, ['owner', 'admin', 'pm'])
             && validPhaseFields(phid);
           allow delete: if hasRole(wid, ['owner', 'admin', 'pm']);
@@ -548,13 +638,29 @@ service cloud.firestore {
         // Storage object is immutable and stays for retention). Hard delete
         // denied. retentionUntil/scanStatus transitions are server-side.
         match /documents/{did} {
-          allow get: if isFirmMember(wid)
-            && canSeeRestricted(wid, restrictionsOf(resource.data));
-          allow list: if isFirmMember(wid)
-            && canSeeRestrictedList(wid, resource.data);
-          allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
-            && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
-            && validDocumentCreate(wid, pid, did);
+          allow get: if (isFirmMember(wid)
+              && canSeeRestricted(wid, restrictionsOf(resource.data)))
+            // #21: portal sees only live, client-visible, non-deleted docs.
+            || (isPortalClient(wid, pid)
+              && resource.data.visibleToClient == true
+              && resource.data.deletedAt == null
+              && portalProjectLive(wid, pid));
+          allow list: if (isFirmMember(wid)
+              && canSeeRestrictedList(wid, resource.data))
+            // Provable portal list: queries must constrain visibleToClient
+            // and deletedAt (both referenced without .get() defaults).
+            || (isPortalClient(wid, pid)
+              && resource.data.visibleToClient == true
+              && resource.data.deletedAt == null
+              && portalProjectLive(wid, pid));
+          allow create: if (hasRole(wid, ['owner', 'admin', 'pm'])
+              && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
+              && validDocumentCreate(wid, pid, did))
+            // #21 (D7): client uploads write metadata directly under the
+            // pinned-field validator; the trigger derives the activity entry.
+            || (isPortalClient(wid, pid)
+              && portalProjectLive(wid, pid)
+              && validPortalDocumentCreate(wid, pid, did));
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
             && canSeeRestricted(wid, restrictionsOf(resource.data))
             && resource.data.deletedAt == null
@@ -566,9 +672,14 @@ service cloud.firestore {
           allow delete: if false;
         }
 
+        // Milestones (#21, Q2): firm owner/admin/pm manage them from the
+        // project Details tab; the portal reads them for "next milestone".
         match /milestones/{mid} {
-          allow read: if isFirmMember(wid);
-          allow write: if false;
+          allow read: if isFirmMember(wid)
+            || (isPortalClient(wid, pid) && portalProjectLive(wid, pid));
+          allow create, update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && validMilestoneFields(mid);
+          allow delete: if hasRole(wid, ['owner', 'admin', 'pm']);
         }
 
         // Project activity timeline (#23, D1/D6): server-written only
@@ -576,10 +687,18 @@ service cloud.firestore {
         // denormalized restrictedToDepartments copy, so reads gate without
         // a get() and list queries stay provable.
         match /activity/{aid} {
-          allow get: if isFirmMember(wid)
-            && canSeeRestricted(wid, restrictionsOf(resource.data));
-          allow list: if isFirmMember(wid)
-            && canSeeRestrictedList(wid, resource.data);
+          allow get: if (isFirmMember(wid)
+              && canSeeRestricted(wid, restrictionsOf(resource.data)))
+            // #21 (D4): portal sees only client-safe entries.
+            || (isPortalClient(wid, pid)
+              && resource.data.visibleToClient == true
+              && portalProjectLive(wid, pid));
+          allow list: if (isFirmMember(wid)
+              && canSeeRestrictedList(wid, resource.data))
+            // Provable portal list: queries must constrain visibleToClient.
+            || (isPortalClient(wid, pid)
+              && resource.data.visibleToClient == true
+              && portalProjectLive(wid, pid));
           allow write: if false;
         }
       }
