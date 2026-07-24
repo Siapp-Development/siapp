@@ -1,5 +1,6 @@
 import { Outlet, createBrowserRouter, type RouteObject } from 'react-router';
 
+import { RouteErrorFallback } from '@/components/RouteErrorFallback.tsx';
 import { AuthProvider } from '@/surfaces/firm/auth/AuthProvider.tsx';
 import { ForgotPasswordPage } from '@/surfaces/firm/auth/ForgotPasswordPage.tsx';
 import { LoginPage } from '@/surfaces/firm/auth/LoginPage.tsx';
@@ -21,6 +22,7 @@ function DashboardRoot() {
 export const dashboardRoutes: RouteObject[] = [
   {
     Component: DashboardRoot,
+    errorElement: <RouteErrorFallback surface="dashboard" />,
     children: [
       { path: '/login', Component: LoginPage },
       { path: '/forgot-password', Component: ForgotPasswordPage },

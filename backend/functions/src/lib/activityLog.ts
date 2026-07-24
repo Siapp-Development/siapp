@@ -16,6 +16,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import type { TActorType, TProjectActivityAction } from './activityDiff.js';
+import { errorPayload } from './errors.js';
 
 export interface IActivityEntry {
   action: TProjectActivityAction;
@@ -63,7 +64,7 @@ export async function writeProjectActivity(
         workspaceId,
         projectId,
         action: entry.action,
-        error,
+        err: errorPayload(error),
       });
     }
     return false;

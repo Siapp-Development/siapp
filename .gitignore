@@ -11,6 +11,9 @@ logs/
 
 # keep the example env committed
 !.env.example
+# keep the web app's baseline env committed — Firebase web config values are
+# public client identifiers, not secrets (see apps/web/.env header comment)
+!apps/web/.env
 
 # pnpm (replace npm lock file)
 package-lock.json

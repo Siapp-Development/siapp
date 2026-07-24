@@ -13,6 +13,7 @@ import { logger } from 'firebase-functions';
 import type { CallableRequest } from 'firebase-functions/v2/https';
 
 import type { TActorType, TAuditAction } from './activityDiff.js';
+import { errorPayload } from './errors.js';
 
 export interface IAuditEntry {
   actorType: TActorType;
@@ -39,7 +40,7 @@ export async function writeAuditLog(workspaceId: string, entry: IAuditEntry): Pr
     logger.error('writeAuditLog: write failed', {
       workspaceId,
       action: entry.action,
-      error,
+      err: errorPayload(error),
     });
   }
 }

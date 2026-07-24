@@ -61,6 +61,7 @@ import {
   taskDeletedActivityId,
   writeProjectActivity,
 } from './lib/activityLog.js';
+import { errorPayload } from './lib/errors.js';
 import { writeAuditLog } from './lib/auditLog.js';
 import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
 import { sweepTrialExpiry } from './scheduled/trialExpirySweep.js';
@@ -153,7 +154,7 @@ export const onTaskWrite = onDocumentWritten(
         logger.error('onTaskWrite: collab link revocation failed', {
           workspaceId: event.params.workspaceId,
           taskId: event.params.taskId,
-          error,
+          err: errorPayload(error),
         });
       }
     }
@@ -181,7 +182,7 @@ export const onTaskWrite = onDocumentWritten(
           workspaceId: event.params.workspaceId,
           projectId: event.params.projectId,
           taskId: event.params.taskId,
-          error,
+          err: errorPayload(error),
         });
       }
     }
@@ -241,7 +242,7 @@ export const onTaskWrite = onDocumentWritten(
         workspaceId: event.params.workspaceId,
         projectId: event.params.projectId,
         taskId: event.params.taskId,
-        error,
+        err: errorPayload(error),
       });
     }
   },
@@ -281,7 +282,7 @@ export const onProjectWrite = onDocumentWritten(
       logger.error('onProjectWrite: activity capture failed', {
         workspaceId: event.params.workspaceId,
         projectId: event.params.projectId,
-        error,
+        err: errorPayload(error),
       });
     }
   },
@@ -337,7 +338,7 @@ export const onProjectDocumentWrite = onDocumentWritten(
         workspaceId: event.params.workspaceId,
         projectId: event.params.projectId,
         documentId: event.params.documentId,
-        error,
+        err: errorPayload(error),
       });
     }
   },
@@ -384,7 +385,7 @@ export const onMessageCreated = onDocumentCreated(
       logger.error('onMessageCreated: usage counting failed', {
         workspaceId: event.params.workspaceId,
         messageId: event.params.messageId,
-        error,
+        err: errorPayload(error),
       });
     }
   },

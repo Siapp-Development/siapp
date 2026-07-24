@@ -14,6 +14,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import { writeAuditLog } from '../lib/auditLog.js';
+import { errorPayload } from '../lib/errors.js';
 
 /**
  * True for a trial workspace whose expiry has passed and that is not
@@ -59,7 +60,10 @@ export async function sweepTrialExpiry(now: Date): Promise<number> {
       expired += 1;
     } catch (error) {
       // One bad workspace must not abort the whole sweep.
-      logger.error('trialExpirySweep: expiry failed', { workspaceId: snap.id, error });
+      logger.error('trialExpirySweep: expiry failed', {
+        workspaceId: snap.id,
+        err: errorPayload(error),
+      });
     }
   }
   return expired;
