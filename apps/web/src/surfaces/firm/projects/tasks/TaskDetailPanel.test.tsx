@@ -198,6 +198,9 @@ describe('TaskDetailPanel details', () => {
         status: 'active',
         notificationsOptOut: false,
         lastTaskAt: null,
+        waConsentGranted: true,
+        waConsentRecordedAt: null,
+        pdpaErased: false,
       },
       {
         id: 'col2',
@@ -210,6 +213,9 @@ describe('TaskDetailPanel details', () => {
         status: 'active',
         notificationsOptOut: true,
         lastTaskAt: null,
+        waConsentGranted: true,
+        waConsentRecordedAt: null,
+        pdpaErased: false,
       },
       {
         id: 'col3',
@@ -222,6 +228,9 @@ describe('TaskDetailPanel details', () => {
         status: 'archived',
         notificationsOptOut: false,
         lastTaskAt: null,
+        waConsentGranted: null,
+        waConsentRecordedAt: null,
+        pdpaErased: false,
       },
     ];
     renderPanel({ collaborators });

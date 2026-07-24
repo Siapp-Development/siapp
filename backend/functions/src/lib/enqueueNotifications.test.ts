@@ -28,7 +28,8 @@ function input(overrides: Partial<IPlanTaskNotificationsInput> = {}): IPlanTaskN
       lifecycle: 'published',
       clientId: 'client1',
     },
-    clientData: { name: 'Ahmad', phone: '+60123456789' },
+    // waConsent granted so the #26 D2 gate lets the happy paths through.
+    clientData: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: true } },
     memberProfiles: new Map(),
     quietHours: { ...QUIET_HOURS_DEFAULT },
     firmName: 'Acme Builders',
@@ -83,11 +84,40 @@ describe('planTaskNotifications — D8 decision table', () => {
   });
 
   it('suppresses with opt_out for an opted-out client', () => {
+    // No waConsent either — opt_out takes precedence over no_consent (#26).
     const planned = planTaskNotifications(
       input({ clientData: { phone: '+60123456789', notificationsOptOut: true } }),
     );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({ suppressed: true, suppressedReason: 'opt_out' });
+  });
+
+  it('suppresses with no_consent for a client without a waConsent grant (#26 D2)', () => {
+    const planned = planTaskNotifications(
+      input({ clientData: { name: 'Ahmad', phone: '+60123456789' } }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({
+      suppressed: true,
+      suppressedReason: 'no_consent',
+      recipientType: 'client',
+    });
+  });
+
+  it('treats a granted:false refusal record as no_consent (#26 D2)', () => {
+    const planned = planTaskNotifications(
+      input({
+        clientData: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: false } },
+      }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({ suppressed: true, suppressedReason: 'no_consent' });
+  });
+
+  it('reports no_consent (not no_phone) for a resolvable but unconsented client', () => {
+    const planned = planTaskNotifications(input({ clientData: { name: 'Ahmad' } }));
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({ suppressed: true, suppressedReason: 'no_consent' });
   });
 
   it('suppresses with no_recipient when no client is linked', () => {
@@ -124,6 +154,23 @@ describe('planTaskNotifications — D8 decision table', () => {
       recipientType: 'member',
       recipientId: 'u1',
     });
+  });
+
+  it('exempts firm members from the consent gate (#26 D2 contract basis)', () => {
+    const taskData = {
+      title: 'T',
+      status: 'in_progress',
+      sendWhatsapp: true,
+      assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+      notify: { statusChange: true, dueSoon: true, blocked: true, toClient: false, toInternal: true },
+    };
+    // Member profile has a phone but no waConsent — still queued.
+    const planned = planTaskNotifications(
+      input({ taskData, memberProfiles: new Map([['u1', { phone: '+60122222222' }]]) }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({ status: 'queued', recipientType: 'member' });
+    expect(planned[0].data).not.toHaveProperty('suppressed');
   });
 
   it('queues with holdUntil = next 08:00 MYT inside quiet hours', () => {

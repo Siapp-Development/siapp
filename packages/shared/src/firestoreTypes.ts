@@ -17,6 +17,7 @@ import type {
   TBillingStatus,
   TCollaboratorStatus,
   TCollaboratorType,
+  TConsentMethod,
   TDocumentScope,
   TInviteRole,
   TInviteStatus,
@@ -251,6 +252,36 @@ export interface IInviteDoc {
   revokedBy?: string;
 }
 
+/**
+ * WhatsApp/SMS notification consent record (#26, D1/D8) on client and
+ * collaborator docs. One consent covers both phone channels. Written by the
+ * firm CRUD forms (rules-validated); a `granted: false` record is a dated
+ * refusal — itself compliance evidence — so the field is never deleted by
+ * the firm. Absent field = no consent (D2: no grandfathering).
+ */
+export interface IWaConsent {
+  granted: boolean;
+  method: TConsentMethod;
+  /** uid of the firm member attesting the consent. */
+  recordedBy: string;
+  recordedAt: Date;
+  /** Language the consent was given in (Meta opt-in log requirement). */
+  language: TLocale;
+  /** Version id of the attestation copy, e.g. 'consent_v1'. */
+  textVersion: string;
+}
+
+/**
+ * PDPA erasure marker (#26, D3) — server-only (deletePersonalData callable).
+ * Presence means the doc was anonymized in place and is frozen: rules deny
+ * every further firm update.
+ */
+export interface IPdpaErased {
+  /** uid of the owner/admin who ran the deletion. */
+  requestedBy: string;
+  at: Date;
+}
+
 /** `/workspaces/{wid}/clients/{cid}` */
 export interface IClientDoc {
   id: string;
@@ -261,6 +292,10 @@ export interface IClientDoc {
   language: TLocale;
   notes?: string;
   notificationsOptOut?: boolean;
+  /** WA/SMS consent record (#26). Absent = no consent (D2). */
+  waConsent?: IWaConsent;
+  /** Server-only erasure marker (#26, D3). */
+  pdpaErased?: IPdpaErased;
   createdAt: Date;
   createdBy: string;
 }
@@ -276,6 +311,10 @@ export interface ICollaboratorDoc {
   type: TCollaboratorType;
   status: TCollaboratorStatus;
   notificationsOptOut?: boolean;
+  /** WA/SMS consent record (#26). Absent = no consent (D2). */
+  waConsent?: IWaConsent;
+  /** Server-only erasure marker (#26, D3). */
+  pdpaErased?: IPdpaErased;
   createdAt: Date;
   invitedBy: string;
   lastTaskAt?: Date;

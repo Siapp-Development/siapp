@@ -22,6 +22,9 @@
  *     + member/client/collaborator triggers → workspace auditLog.
  *   - deleteTask (#23, Q5): attributed task hard-delete.
  *   - exportProject (#25): owner/admin per-project JSON export (audit-logged).
+ *   - deletePersonalData (#26): owner/admin PDPA erasure — anonymize +
+ *     freeze a client/collaborator, revoke links, scrub denorms, redact
+ *     message-queue PII (audit-logged request + fulfilled pair).
  *
  * Each export is discovered by the Functions runtime.
  * Deploy: `pnpm --filter @siapp/functions deploy`
@@ -94,6 +97,9 @@ export { redeemPortalLink } from './callables/redeemPortalLink.js';
 // ── Data export callable (#25) ──────────────────────────────────────────────
 
 export { exportProject } from './callables/exportProject.js';
+// ── PDPA deletion callable (#26) ────────────────────────────────────────
+
+export { deletePersonalData } from './callables/deletePersonalData.js';
 // ── Collaborator task-page callables (#22) ────────────────────────────
 
 export { issueCollabLink } from './callables/issueCollabLink.js';

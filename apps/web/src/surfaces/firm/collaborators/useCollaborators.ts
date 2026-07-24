@@ -3,6 +3,8 @@
  * (#16). CRUD is client-side (rules-validated for owner/admin/pm); removal
  * is archival via `status` — no hard delete (task assignees + phoneIndex
  * refs would orphan). notificationsOptOut and lastTaskAt are server-only.
+ * #26: waConsent capture (D1) rides along create/update; pdpaErased is
+ * server-only (deletePersonalData) and read here to freeze the row's UI.
  */
 
 import type { TCollaboratorStatus, TCollaboratorType } from '@siapp/shared';
@@ -21,6 +23,7 @@ import { useEffect, useState } from 'react';
 
 import { db } from '@/lib/firebase.ts';
 
+import { buildWaConsentRecord, consentWriteNeeded } from '../pdpa/consent.ts';
 import type { TCollectionState } from '../settings/useTeamData.ts';
 
 export interface ICollaboratorRow {
@@ -34,9 +37,16 @@ export interface ICollaboratorRow {
   status: TCollaboratorStatus;
   notificationsOptOut: boolean;
   lastTaskAt: Date | null;
+  /** Stored waConsent state; null = no record (#26 D2: absent = no consent). */
+  waConsentGranted: boolean | null;
+  waConsentRecordedAt: Date | null;
+  /** Erased + frozen by deletePersonalData (#26 D3): row is read-only. */
+  pdpaErased: boolean;
 }
 
 function mapCollaborator(id: string, data: DocumentData): ICollaboratorRow {
+  const consent = data['waConsent'] as Record<string, unknown> | undefined;
+  const hasConsentRecord = typeof consent === 'object' && consent !== null;
   return {
     id,
     name: String(data['name'] ?? ''),
@@ -48,6 +58,12 @@ function mapCollaborator(id: string, data: DocumentData): ICollaboratorRow {
     status: data['status'] === 'archived' ? 'archived' : 'active',
     notificationsOptOut: data['notificationsOptOut'] === true,
     lastTaskAt: data['lastTaskAt'] instanceof Timestamp ? data['lastTaskAt'].toDate() : null,
+    waConsentGranted: hasConsentRecord ? consent['granted'] === true : null,
+    waConsentRecordedAt:
+      hasConsentRecord && consent['recordedAt'] instanceof Timestamp
+        ? consent['recordedAt'].toDate()
+        : null,
+    pdpaErased: typeof data['pdpaErased'] === 'object' && data['pdpaErased'] !== null,
   };
 }
 
@@ -78,6 +94,8 @@ export interface ICollaboratorFormValues {
   company: string;
   trade: string;
   type: TCollaboratorType;
+  /** #26 D1: state of the firm-attested consent checkbox. */
+  waConsentGranted: boolean;
 }
 
 /** Creates an active collaborator; shape must satisfy the #16 create rule. */
@@ -96,17 +114,25 @@ export async function createCollaborator(
     ...(values.trade !== '' ? { trade: values.trade } : {}),
     type: values.type,
     status: 'active',
+    // #26 D2: unchecked on create writes nothing — absent = no consent.
+    // Collaborator docs carry no language preference; records default 'en'.
+    ...(values.waConsentGranted ? { waConsent: buildWaConsentRecord(true, uid, 'en') } : {}),
     createdAt: serverTimestamp(),
     invitedBy: uid,
   });
   return ref.id;
 }
 
-/** Edits the firm-editable fields; identity + server-only fields untouched. */
+/**
+ * Edits the firm-editable fields; identity + server-only fields untouched.
+ * A consent flip writes a fresh dated record (#26 D1) — never a delete.
+ */
 export async function updateCollaborator(
   workspaceId: string,
   collaboratorId: string,
   values: ICollaboratorFormValues,
+  uid: string,
+  storedConsentGranted: boolean | null,
 ): Promise<void> {
   await updateDoc(doc(db, `workspaces/${workspaceId}/collaborators/${collaboratorId}`), {
     name: values.name,
@@ -115,6 +141,9 @@ export async function updateCollaborator(
     company: values.company !== '' ? values.company : deleteField(),
     trade: values.trade !== '' ? values.trade : deleteField(),
     type: values.type,
+    ...(consentWriteNeeded(values.waConsentGranted, storedConsentGranted)
+      ? { waConsent: buildWaConsentRecord(values.waConsentGranted, uid, 'en') }
+      : {}),
   });
 }
 

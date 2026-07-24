@@ -44,12 +44,16 @@ export type TAuditAction =
   | 'settings.notifications_change'
   | 'client.create'
   | 'client.update'
+  | 'client.consent_updated'
   | 'collaborator.create'
   | 'collaborator.update'
+  | 'collaborator.consent_updated'
   | 'portal_link.issue'
   | 'portal_link.reset'
   | 'collab_link.issue'
   | 'collab_link.reset'
+  | 'pdpa.delete_request'
+  | 'pdpa.delete_fulfilled'
   | 'admin.workspace_adjust'
   | 'admin.impersonate'
   | 'billing.trial_expired';
@@ -419,10 +423,22 @@ function piiSnapshot(data: TDocData): Record<string, unknown> {
   return snapshot;
 }
 
+function consentOf(data: TDocData): Record<string, unknown> | undefined {
+  const value = data?.['waConsent'];
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 /**
  * Audit entries for client/collaborator writes (#23 D5): PII create/update
  * trail for the PDPA data-subject-rights flow. Deletes are impossible under
  * rules; unchanged-PII updates produce no entry.
+ *
+ * #26 (D1): a consent-only diff emits `{kind}.consent_updated` carrying the
+ * full waConsent records — the Meta opt-in evidence log. A mixed diff (PII
+ * changed too) stays a single generic `{kind}.update` whose snapshots
+ * already tell the story.
  */
 export function derivePersonAudit(
   kind: 'client' | 'collaborator',
@@ -446,6 +462,19 @@ export function derivePersonAudit(
   const beforePii = piiSnapshot(before);
   const afterPii = piiSnapshot(after);
   if (JSON.stringify(beforePii) === JSON.stringify(afterPii)) {
+    const beforeConsent = consentOf(before);
+    const afterConsent = consentOf(after);
+    if (JSON.stringify(beforeConsent) !== JSON.stringify(afterConsent)) {
+      return [
+        {
+          action: `${kind}.consent_updated`,
+          targetType: kind,
+          targetId: refId,
+          ...(beforeConsent !== undefined ? { before: beforeConsent } : {}),
+          ...(afterConsent !== undefined ? { after: afterConsent } : {}),
+        },
+      ];
+    }
     return [];
   }
   return [

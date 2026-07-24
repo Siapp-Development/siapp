@@ -24,6 +24,10 @@
  * D6: soft-deleted documents are included with a `deleted` flag so the
  *     export faithfully reconstructs history (D-029 audit posture).
  *
+ * #26: subjects erased via deletePersonalData appear in exports AS
+ * ANONYMIZED — denorms were scrubbed in place ('Deleted client' etc.), so
+ * the snapshot is already anonymous and needs no extra filtering.
+ *
  * Payload types mirror IExportProjectResponse in
  * packages/shared/src/callableTypes.ts — functions cannot import
  * @siapp/shared (source-only package).
@@ -33,6 +37,11 @@ import { getFirestore, type QueryDocumentSnapshot } from 'firebase-admin/firesto
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { requireOwnerAdminClaims, type IAuthLike } from '../lib/callableAuth.js';
+
+// Re-exported for existing test/caller imports; lives in lib/callableAuth
+// since #26 so deletePersonalData shares the same gate.
+export { requireOwnerAdminClaims, type IAuthLike };
 
 /** Bump when the payload shape changes. */
 export const EXPORT_VERSION = 1 as const;
@@ -76,32 +85,6 @@ export interface IExportProjectPayload {
 }
 
 // ── Pure helpers (exported for unit tests) ──────────────────────────────────
-
-/** Minimal claims-bearing view of `request.auth`, so tests stay pure. */
-export interface IAuthLike {
-  uid?: string;
-  token: Record<string, unknown>;
-}
-
-/**
- * Asserts the caller is an owner or admin of {workspaceId} per custom
- * claims and returns the uid. Stricter than the pm-inclusive editor checks
- * elsewhere — the issue's acceptance criteria say owner/admin only.
- */
-export function requireOwnerAdminClaims(auth: IAuthLike | undefined, workspaceId: string): string {
-  if (!auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Sign in to continue.');
-  }
-  const workspaces = auth.token['workspaces'] as Record<string, { role?: unknown }> | undefined;
-  const role = workspaces?.[workspaceId]?.role;
-  if (role !== 'owner' && role !== 'admin') {
-    throw new HttpsError(
-      'permission-denied',
-      'Only the workspace owner or an admin can export project data.',
-    );
-  }
-  return auth.uid;
-}
 
 function isTimestampLike(value: unknown): value is { toDate: () => Date } {
   return (

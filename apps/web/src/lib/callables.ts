@@ -9,6 +9,8 @@ import type {
   IAcceptInviteResponse,
   ICreateInviteRequest,
   ICreateInviteResponse,
+  IDeletePersonalDataRequest,
+  IDeletePersonalDataResponse,
   IDeleteTaskRequest,
   IDeleteTaskResponse,
   IExportProjectRequest,
@@ -167,6 +169,21 @@ export async function exportProject(
   const call = httpsCallable<IExportProjectRequest, IExportProjectResponse>(
     functions,
     'exportProject',
+  );
+  return (await call(data)).data;
+}
+
+/**
+ * PDPA erasure (#26) — owner/admin only. Anonymizes + freezes the client or
+ * collaborator, revokes their links, scrubs denorms and redacts queue PII.
+ * Idempotent: safe to re-run after a partial failure.
+ */
+export async function deletePersonalData(
+  data: IDeletePersonalDataRequest,
+): Promise<IDeletePersonalDataResponse> {
+  const call = httpsCallable<IDeletePersonalDataRequest, IDeletePersonalDataResponse>(
+    functions,
+    'deletePersonalData',
   );
   return (await call(data)).data;
 }

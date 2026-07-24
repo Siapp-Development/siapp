@@ -358,3 +358,40 @@ export interface IExportProjectResponse {
   activity: TExportRecord[];
   documents: IExportDocumentRecord[];
 }
+
+/** PDPA erasure subject kind (#26). */
+export type TPdpaSubjectType = 'client' | 'collaborator';
+
+/**
+ * deletePersonalData (#26, D3/D4): owner/admin-only PDPA erasure. Anonymizes
+ * the client/collaborator doc in place (sets the server-only `pdpaErased`
+ * freeze marker), revokes their magic links, scrubs name denorms and redacts
+ * message-queue PII (D6). Idempotent — re-running on an erased subject
+ * re-scrubs and succeeds. Writes `pdpa.delete_request` +
+ * `pdpa.delete_fulfilled` audit entries.
+ */
+export interface IDeletePersonalDataRequest {
+  workspaceId: string;
+  subjectType: TPdpaSubjectType;
+  subjectId: string;
+}
+
+/** Per-collection scrub counts surfaced in the confirmation dialog. */
+export interface IPdpaScrubCounts {
+  /** Projects whose clientNameDenorm was anonymized (client subjects). */
+  projects: number;
+  /** Tasks whose assignee entries were anonymized (collaborator subjects). */
+  tasks: number;
+  /** Task updates whose authorNameDenorm was anonymized (collaborators). */
+  taskUpdates: number;
+  /** Activity entries whose actorNameDenorm was anonymized. */
+  activity: number;
+  /** Message-queue docs redacted (recipientPhone + PII variables, D6). */
+  messages: number;
+  /** Magic links revoked. */
+  magicLinks: number;
+}
+
+export interface IDeletePersonalDataResponse {
+  scrubbed: IPdpaScrubCounts;
+}

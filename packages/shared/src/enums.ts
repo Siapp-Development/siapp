@@ -99,15 +99,24 @@ export type TNotificationTrigger =
 // phone-ref pair with firm members ('internal' recipients).
 export type TMessageRecipientType = 'client' | 'collaborator' | 'member';
 
+// How a WhatsApp/SMS notification consent record was captured (#26, D1).
+// 'firm_attested' is the only value at MVP; 'portal_confirmed' is the
+// designed upgrade path once portal-side consent lands.
+export type TConsentMethod = 'firm_attested';
+
 // Why an enqueued message will never dispatch (#18, D8). Lifecycle reasons
 // are the D-027 "preview record" for non-published projects.
 // #24 adds 'billing': the workspace is read-only (trial expired / lapsed).
+// #26 adds 'no_consent': the client/collaborator recipient has no recorded
+// waConsent grant (PDPA; absent field = no consent, D2). Members are exempt
+// (contract basis).
 export type TSuppressedReason =
   | 'lifecycle:draft'
   | 'lifecycle:completed'
   | 'lifecycle:archived'
   | 'lifecycle:deleted'
   | 'opt_out'
+  | 'no_consent'
   | 'no_recipient'
   | 'no_phone'
   | 'billing';
@@ -147,6 +156,9 @@ export type TProjectActivityAction =
 
 // Workspace audit-log action kinds (#23, D5). Dot-namespaced; written only
 // by Cloud Functions via lib/auditLog.ts.
+// #26 adds the PDPA trail: consent-only client/collaborator diffs emit
+// *.consent_updated, and the deletePersonalData callable writes the
+// pdpa.delete_request → pdpa.delete_fulfilled pair.
 export type TAuditAction =
   | 'invite.create'
   | 'invite.accept'
@@ -162,12 +174,16 @@ export type TAuditAction =
   | 'settings.notifications_change'
   | 'client.create'
   | 'client.update'
+  | 'client.consent_updated'
   | 'collaborator.create'
   | 'collaborator.update'
+  | 'collaborator.consent_updated'
   | 'portal_link.issue'
   | 'portal_link.reset'
   | 'collab_link.issue'
   | 'collab_link.reset'
+  | 'pdpa.delete_request'
+  | 'pdpa.delete_fulfilled'
   | 'admin.workspace_adjust'
   | 'admin.impersonate'
   | 'billing.trial_expired';

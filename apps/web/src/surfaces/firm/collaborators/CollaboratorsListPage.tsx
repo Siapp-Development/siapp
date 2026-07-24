@@ -4,6 +4,9 @@
  * lastTaskAt (60-day window, decision 6), and a read-only "Notifications
  * off" badge (D-035). Archival replaces deletion (decision 3); archived
  * rows hide behind a toggle. Managing is owner/admin/pm-only.
+ * #26: consent badges, and the owner/admin-only "Delete personal data"
+ * (PDPA) action — erased rows are frozen (rules deny edits) and render
+ * anonymized.
  */
 
 import { Button, Card, CardContent, CardHeader } from '@siapp/ui';
@@ -11,6 +14,8 @@ import { COLLABORATOR_ACTIVE_WINDOW_DAYS, type TMemberRole } from '@siapp/shared
 import { useState } from 'react';
 
 import { NotificationsOffBadge, PhoneActions } from '../clients/PhoneActions.tsx';
+import { DeletePersonalDataDialog } from '../pdpa/DeletePersonalDataDialog.tsx';
+import { NoConsentBadge, PdpaErasedBadge } from '../pdpa/PdpaBadges.tsx';
 import { CollaboratorForm } from './CollaboratorForm.tsx';
 import {
   createCollaborator,
@@ -46,6 +51,7 @@ function ActivityChip({ lastTaskAt }: { lastTaskAt: Date | null }) {
 
 export interface ICollaboratorsListPageProps {
   workspaceId: string;
+  workspaceName: string;
   role: TMemberRole;
   uid: string;
 }
@@ -53,15 +59,19 @@ export interface ICollaboratorsListPageProps {
 interface ICollaboratorRowItemProps {
   collaborator: ICollaboratorRow;
   canManage: boolean;
+  canDeleteData: boolean;
   onEdit: (collaborator: ICollaboratorRow) => void;
   onSetStatus: (collaborator: ICollaboratorRow, status: 'active' | 'archived') => void;
+  onDeleteData: (collaborator: ICollaboratorRow) => void;
 }
 
 function CollaboratorRowItem({
   collaborator,
   canManage,
+  canDeleteData,
   onEdit,
   onSetStatus,
+  onDeleteData,
 }: ICollaboratorRowItemProps) {
   const archived = collaborator.status === 'archived';
   return (
@@ -80,46 +90,70 @@ function CollaboratorRowItem({
             <ActivityChip lastTaskAt={collaborator.lastTaskAt} />
           )}
           {collaborator.notificationsOptOut && <NotificationsOffBadge />}
+          {collaborator.pdpaErased && <PdpaErasedBadge />}
+          {!collaborator.pdpaErased && collaborator.waConsentGranted !== true && <NoConsentBadge />}
         </span>
-        {canManage && (
-          <span className="flex gap-2">
+        <span className="flex flex-wrap gap-2">
+          {canManage && !collaborator.pdpaErased && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onEdit(collaborator)}
+              >
+                Edit {collaborator.name}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onSetStatus(collaborator, archived ? 'active' : 'archived')}
+              >
+                {archived ? `Unarchive ${collaborator.name}` : `Archive ${collaborator.name}`}
+              </Button>
+            </>
+          )}
+          {canDeleteData && !collaborator.pdpaErased && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => onEdit(collaborator)}
+              onClick={() => onDeleteData(collaborator)}
             >
-              Edit {collaborator.name}
+              Delete personal data ({collaborator.name})
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onSetStatus(collaborator, archived ? 'active' : 'archived')}
-            >
-              {archived ? `Unarchive ${collaborator.name}` : `Archive ${collaborator.name}`}
-            </Button>
-          </span>
-        )}
+          )}
+        </span>
       </div>
-      <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <span>{collaborator.phone}</span>
-        <PhoneActions phone={collaborator.phone} name={collaborator.name} />
-        {collaborator.company !== '' && <span>· {collaborator.company}</span>}
-        {collaborator.email !== '' && <span>· {collaborator.email}</span>}
-      </p>
+      {!collaborator.pdpaErased && (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>{collaborator.phone}</span>
+          <PhoneActions phone={collaborator.phone} name={collaborator.name} />
+          {collaborator.company !== '' && <span>· {collaborator.company}</span>}
+          {collaborator.email !== '' && <span>· {collaborator.email}</span>}
+        </p>
+      )}
     </li>
   );
 }
 
-export function CollaboratorsListPage({ workspaceId, role, uid }: ICollaboratorsListPageProps) {
+export function CollaboratorsListPage({
+  workspaceId,
+  workspaceName,
+  role,
+  uid,
+}: ICollaboratorsListPageProps) {
   const collaborators = useCollaborators(workspaceId);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [actionError, setActionError] = useState(false);
+  const [deletingDataFor, setDeletingDataFor] = useState<ICollaboratorRow | null>(null);
 
   const canManage = role === 'owner' || role === 'admin' || role === 'pm';
+  // #26 D4: PDPA deletion is stricter than manage — owner/admin only.
+  const canDeleteData = role === 'owner' || role === 'admin';
   const rows = collaborators.status === 'ready' ? collaborators.rows : [];
   const visible = rows.filter((row) => showArchived || row.status === 'active');
   const archivedCount = rows.filter((row) => row.status === 'archived').length;
@@ -167,6 +201,7 @@ export function CollaboratorsListPage({ workspaceId, role, uid }: ICollaborators
           <CardContent>
             <CollaboratorForm
               submitLabel="Add collaborator"
+              firmName={workspaceName}
               onCancel={() => setCreating(false)}
               onSubmit={async (values) => {
                 await createCollaborator(workspaceId, values, uid);
@@ -192,10 +227,17 @@ export function CollaboratorsListPage({ workspaceId, role, uid }: ICollaborators
             <CollaboratorForm
               key={editing.id}
               collaborator={editing}
+              firmName={workspaceName}
               submitLabel="Save changes"
               onCancel={() => setEditingId(null)}
               onSubmit={async (values) => {
-                await updateCollaborator(workspaceId, editing.id, values);
+                await updateCollaborator(
+                  workspaceId,
+                  editing.id,
+                  values,
+                  uid,
+                  editing.waConsentGranted,
+                );
                 setEditingId(null);
               }}
             />
@@ -217,11 +259,13 @@ export function CollaboratorsListPage({ workspaceId, role, uid }: ICollaborators
               key={row.id}
               collaborator={row}
               canManage={canManage}
+              canDeleteData={canDeleteData}
               onEdit={(collaborator) => {
                 setCreating(false);
                 setEditingId(collaborator.id);
               }}
               onSetStatus={(collaborator, status) => void handleSetStatus(collaborator, status)}
+              onDeleteData={(collaborator) => setDeletingDataFor(collaborator)}
             />
           ))}
         </ul>
@@ -236,6 +280,16 @@ export function CollaboratorsListPage({ workspaceId, role, uid }: ICollaborators
         >
           {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
         </Button>
+      )}
+
+      {deletingDataFor !== null && (
+        <DeletePersonalDataDialog
+          workspaceId={workspaceId}
+          subjectType="collaborator"
+          subjectId={deletingDataFor.id}
+          subjectName={deletingDataFor.name}
+          onClose={() => setDeletingDataFor(null)}
+        />
       )}
     </div>
   );

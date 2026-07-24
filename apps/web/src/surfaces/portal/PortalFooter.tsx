@@ -1,13 +1,16 @@
 import type { TWorkspacePlan } from '@siapp/shared';
 
+import { PrivacyNotice } from '@/components/PrivacyNotice.tsx';
+
 /**
  * Portal footer (#21, D6 tier rules): trial/standard show "Powered by Siapp";
  * business shows the firm name only (white-label). Unknown tiers fall back to
- * the powered-by badge.
+ * the powered-by badge. Always carries the bilingual PDPA notice (#26 D5).
  */
 export function PortalFooter({ tier, firmName }: { tier: TWorkspacePlan; firmName: string }) {
   return (
-    <footer className="mt-auto border-t border-border px-6 py-4 text-center text-xs text-muted-foreground">
+    <footer className="mt-auto flex flex-col gap-2 border-t border-border px-6 py-4 text-center text-xs text-muted-foreground">
+      <PrivacyNotice firmName={firmName} />
       {tier === 'business' ? (
         <p>{firmName}</p>
       ) : (
