@@ -70,6 +70,7 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     dependsOn: [],
     order: 1,
     createdBy: 'u1',
+    blockedReason: '',
     ...overrides,
   };
 }
@@ -96,6 +97,7 @@ function renderPanel(overrides: Partial<Parameters<typeof TaskDetailPanel>[0]> =
       departments={departments}
       role="pm"
       memberDepartments={['dep-ops']}
+      lifecycle="published"
       canEdit
       uid="u1"
       userName="Alice Tan"

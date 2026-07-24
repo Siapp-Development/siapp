@@ -5,11 +5,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  COLLAB_LINK_TTL_MS,
   PORTAL_LINK_TTL_MS,
   SHORT_CODE_LENGTH,
+  buildCollabUrl,
   buildPortalUrl,
+  collabUid,
   generatePortalToken,
   hashSecret,
+  parseCollabUid,
   parsePortalToken,
   portalUid,
   verifySecret,
@@ -91,5 +95,37 @@ describe('portalUid / buildPortalUrl / TTL', () => {
   it('mirrors the shared 90-day TTL', () => {
     expect(PORTAL_LINK_TTL_MS).toBe(90 * 24 * 60 * 60 * 1000);
     expect(SHORT_CODE_LENGTH).toBe(12);
+  });
+});
+
+describe('collabUid / parseCollabUid / buildCollabUrl / TTL (#22)', () => {
+  it('is deterministic per (wid, tid, colid) and round-trips', () => {
+    expect(collabUid('w1', 't1', 'col1')).toBe('collab_w1_t1_col1');
+    expect(parseCollabUid(collabUid('w1', 't1', 'col1'))).toEqual({
+      wid: 'w1',
+      tid: 't1',
+      colid: 'col1',
+    });
+  });
+
+  it('rejects non-collab uids and malformed shapes', () => {
+    expect(parseCollabUid('u-firm-member')).toBeNull();
+    expect(parseCollabUid('portal_w1_p1_c1')).toBeNull();
+    expect(parseCollabUid('collab_w1_t1')).toBeNull();
+    expect(parseCollabUid('collab_w1_t1_col1_extra')).toBeNull();
+    expect(parseCollabUid('collab___')).toBeNull();
+  });
+
+  it('builds the apex /t URL and tolerates a trailing slash', () => {
+    expect(buildCollabUrl('https://siapp.app', 'code_secret')).toBe(
+      'https://siapp.app/t/code_secret',
+    );
+    expect(buildCollabUrl('https://siapp.app/', 'code_secret')).toBe(
+      'https://siapp.app/t/code_secret',
+    );
+  });
+
+  it('mirrors the shared 90-day collab TTL', () => {
+    expect(COLLAB_LINK_TTL_MS).toBe(90 * 24 * 60 * 60 * 1000);
   });
 });

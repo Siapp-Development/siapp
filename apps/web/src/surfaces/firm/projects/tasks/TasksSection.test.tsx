@@ -59,6 +59,7 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     dependsOn: [],
     order: 1,
     createdBy: 'u1',
+    blockedReason: '',
     ...overrides,
   };
 }
@@ -87,6 +88,7 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
       uid="u1"
       userName="Alice Tan"
       canEdit
+      lifecycle="published"
       {...overrides}
     />,
   );
