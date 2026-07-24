@@ -66,6 +66,22 @@ export interface IWorkspaceClaims {
   isAdmin?: boolean;
 }
 
+/**
+ * Custom claims minted by `redeemPortalLink` (#21, D1): a portal principal
+ * is project-scoped and single-workspace by construction. It carries NO
+ * `workspaces` claim, so every firm rule automatically denies it; the
+ * portal rules in firestore.rules/storage.rules string-compare `wid`/`pid`
+ * against the match path.
+ */
+export interface IPortalClaims {
+  portal: {
+    wid: string;
+    pid: string;
+    cid: string;
+    linkId: string;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Top-level collections
 // ---------------------------------------------------------------------------
@@ -241,9 +257,18 @@ export interface ICollaboratorDoc {
   lastTaskAt?: Date;
 }
 
-/** `/workspaces/{wid}/magicLinks/{shortCode}` — collaborator + client tokens (server-only). */
+/**
+ * `/workspaces/{wid}/magicLinks/{linkId}` — collaborator + client tokens
+ * (server-only; rules deny all client access, #21 D2). The doc id is a
+ * random linkId, NOT the shortCode: the URL token is `{shortCode}_{secret}`
+ * and only the secret's SHA-256 is at rest (`secretHash`); `shortCode` is
+ * the indexed lookup key.
+ */
 export interface IMagicLinkDoc {
+  id: string;
   shortCode: string;
+  /** SHA-256 hex of the URL secret — raw secrets are never persisted. */
+  secretHash: string;
   audience: TMagicLinkKind;
   scopeType: TMagicLinkScopeType;
   scopeId: string;
@@ -255,6 +280,7 @@ export interface IMagicLinkDoc {
   revoked: boolean;
   revokedAt?: Date;
   revokedBy?: string;
+  createdBy: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +546,12 @@ export interface IProjectActivityDoc {
   payload: IProjectActivityPayload;
   /** D-027 §5 draft-preview marker — suppressed notification would have fired. */
   wouldHaveNotified?: boolean;
+  /**
+   * #21 (D4): denormalized at write time — true only for the client-safe
+   * action subset, so portal list queries are rules-provable. Absent on
+   * pre-#21 entries (never surfaced to clients; no backfill).
+   */
+  visibleToClient?: boolean;
   at: Date;
 }
 

@@ -113,6 +113,7 @@ export type TAdminAction =
   | 'user.impersonate';
 
 // Project activity timeline event kinds (#23, D2). Server-written only.
+// #21 adds 'client_document_uploaded' (portal client uploads, D-034).
 export type TProjectActivityAction =
   | 'task_created'
   | 'task_status_changed'
@@ -128,7 +129,8 @@ export type TProjectActivityAction =
   | 'project_archived'
   | 'project_deleted'
   | 'project_reopened'
-  | 'client_link_changed';
+  | 'client_link_changed'
+  | 'client_document_uploaded';
 
 // Workspace audit-log action kinds (#23, D5). Dot-namespaced; written only
 // by Cloud Functions via lib/auditLog.ts.
@@ -148,5 +150,7 @@ export type TAuditAction =
   | 'client.update'
   | 'collaborator.create'
   | 'collaborator.update'
+  | 'portal_link.issue'
+  | 'portal_link.reset'
   | 'admin.workspace_adjust'
   | 'admin.impersonate';

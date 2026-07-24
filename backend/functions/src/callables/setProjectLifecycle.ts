@@ -26,7 +26,7 @@ import {
 import { countWaRecipients } from '../lib/optOut.js';
 import { writeProjectActivity } from '../lib/activityLog.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
-import type { TProjectActivityAction } from '../lib/activityDiff.js';
+import { lifecycleVisibleToClient, type TProjectActivityAction } from '../lib/activityDiff.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
 // NodeNext build cannot consume) — pm_ux/plans/21-cost-estimation.md §2.8.
@@ -190,6 +190,11 @@ export const setProjectLifecycle = onCall(async (request) => {
       actorId: uid,
       actorNameDenorm: actorName,
       restrictedToDepartments: [],
+      // #21 (D4): publish/complete are client-facing; archive/delete/reopen
+      // stay internal.
+      visibleToClient: lifecycleVisibleToClient(
+        LIFECYCLE_ACTIVITY_ACTION[action] ?? 'project_published',
+      ),
       payload: { from, to: lifecycle },
     });
     await writeAuditLog(workspaceId, {

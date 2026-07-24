@@ -14,6 +14,7 @@ Closes **Q44** (blocker). Locks the structural choice that everything downstream
 2. **Denormalize for read patterns.** Names, counts, and rollups are duplicated onto parent docs so dashboards render in one read. Cloud Functions keep them consistent.
 3. **No joins, no cross-workspace queries** at MVP. If a use case needs them, it's a v2 feature, not a data-model change.
 4. **Magic-link access is server-mediated.** Collaborators and clients never touch Firestore from the client. A Cloud Run endpoint validates the JWT and uses the Admin SDK with `withConverter`-style scope checks.
+   > **Superseded for the client portal (#21, D1):** the portal redeems its link through the `redeemPortalLink` callable, which mints a Firebase **custom token** carrying `portal` claims (`wid`/`pid`/`cid`/`linkId`). After sign-in, the portal reads Firestore/Storage **directly through the client SDK**, gated by portal-claim rules (project get when live, phases/milestones, `visibleToClient` documents + activity, client-uploads). Collaborator (`/t`) access remains as described here.
 5. **Pre-aggregate, don't compute.** Counts (`summary.totalTasks`, `usageCounters`) are maintained on writes — never computed at read time.
 6. **Indexes are part of the model.** Every list view in the UI maps to a composite index defined upfront.
 
@@ -351,13 +352,20 @@ exclusively by Cloud Functions (Admin SDK) — client `write: false`; reads are 
 department-gated via `restrictedToDepartments` (same semantics as tasks, see
 20-access-control-departments.md).
 
+> **Extended by #21 (D4):** each entry also carries a denormalized `visibleToClient: boolean`.
+> The client portal reuses this subcollection as its updates feed via a rules-proven
+> `where('visibleToClient', '==', true)` query served by a `(visibleToClient ASC, at DESC)`
+> composite index. True only for: client-visible unrestricted task events (created/status/due
+> date), client-visible `doc_added`, `client_document_uploaded`, `project_published` and
+> `project_completed`. Assignment events and deletions are never client-visible.
+
 ```typescript
 {
   id: string,
   action:                          // TProjectActivityAction (packages/shared/src/enums.ts)
     | 'task_created' | 'task_status_changed' | 'task_assigned' | 'task_unassigned'
     | 'task_due_date_changed' | 'task_deleted'
-    | 'doc_added' | 'doc_deleted'
+    | 'doc_added' | 'doc_deleted' | 'client_document_uploaded'   // #21: portal upload, actorType 'client'
     | 'project_created' | 'project_published' | 'project_completed'
     | 'project_archived' | 'project_deleted' | 'project_reopened'
     | 'client_link_changed',
@@ -372,6 +380,7 @@ department-gated via `restrictedToDepartments` (same semantics as tasks, see
   payload: { from?: unknown, to?: unknown },
   wouldHaveNotified?: boolean,     // draft-lifecycle marker (D-027 §5): set on task_status_changed
                                    // when notifications were suppressed because lifecycle !== 'published'
+  visibleToClient: boolean,        // #21 D4: portal updates-feed filter (see note above)
   at: Timestamp                    // serverTimestamp
 }
 ```
@@ -429,6 +438,8 @@ department-gated via `restrictedToDepartments` (same semantics as tasks, see
 }
 ```
 
+> **Implemented (#21, Q2):** a minimal milestones editor lives in the firm project Details tab. Owner/admin/pm create/update/delete directly via the client SDK under `validMilestoneFields` rules; the portal overview shows the earliest incomplete milestone as "next milestone".
+
 > **Project templates removed from MVP (D-031).** The `workspaces/{wid}/templates/{tplid}` collection that previously held vertical project blueprints has been removed. New projects in MVP are created via one of two paths:
 >
 > 1. **Siapp-Admin starter project** — the tenant-provisioning script ([Z2]) writes one starter project per new firm from a hardcoded internal seed (`functions/src/provisioning/seeds/{residentialBuild,conveyancing}.ts`). Phases + tasks land directly in `phases/` and `tasks/` subcollections under the new project; no template doc exists.
@@ -446,9 +457,12 @@ department-gated via `restrictedToDepartments` (same semantics as tasks, see
 
 `shortCode` is the URL-safe identifier (e.g. `a8K2pQ`). Looked up first, then validated against the JWT.
 
+> **Implemented shape for client portal links (#21, D2):** the doc id is a random `linkId` (not the shortCode); `shortCode` is an indexed field resolved via a collection-group query. The URL token is `{shortCode}_{secret}` and only `secretHash` (SHA-256 of the secret) is stored — the raw secret is never at rest, so issuing always **rotates** (old links are revoked, a fresh one is minted). TTL is 90 days; one active link per project+client pair.
+
 ```typescript
 {
-  shortCode: string,           // doc id
+  shortCode: string,           // indexed field (portal links: doc id = linkId)
+  secretHash?: string,         // portal links only — SHA-256 of the URL secret
   audience: 'collaborator' | 'client',
   scopeType: 'task' | 'project',
   scopeId: string,             // taskId or projectId

@@ -82,6 +82,11 @@ export { deleteTask } from './callables/deleteTask.js';
 
 export { updateNotificationSettings } from './callables/updateNotificationSettings.js';
 
+// ── Client portal callables (#21) ────────────────────────────────────────
+
+export { issuePortalLink } from './callables/issuePortalLink.js';
+export { redeemPortalLink } from './callables/redeemPortalLink.js';
+
 // ── Admin callables (#10) ───────────────────────────────────────────────────
 
 /** Provisions a new workspace, first owner member, and starter project. */
@@ -167,6 +172,7 @@ export const onTaskWrite = onDocumentWritten(
             restrictedToDepartments: Array.isArray(before['restrictedToDepartments'])
               ? (before['restrictedToDepartments'] as string[])
               : [],
+            visibleToClient: false,
             payload: {},
           },
           taskDeletedActivityId(event.params.taskId),
@@ -187,6 +193,7 @@ export const onTaskWrite = onDocumentWritten(
                 ? { taskTitleDenorm: derived.taskTitleDenorm }
                 : {}),
               restrictedToDepartments: derived.restrictedToDepartments,
+              visibleToClient: derived.visibleToClient,
               payload: derived.payload,
               ...(derived.action === 'task_status_changed' && lifecycleSuppressed
                 ? { wouldHaveNotified: true }
@@ -231,6 +238,7 @@ export const onProjectWrite = onDocumentWritten(
             actorNameDenorm:
               derived.actorUid !== null ? await resolveActorName(derived.actorUid) : 'A team member',
             restrictedToDepartments: derived.restrictedToDepartments,
+            visibleToClient: derived.visibleToClient,
             payload: derived.payload,
           },
           `${event.id}_${index}`,
@@ -249,7 +257,7 @@ export const onProjectWrite = onDocumentWritten(
 /**
  * Document activity capture (#23): `doc_added` on metadata create and
  * `doc_deleted` on the #14 soft-delete diff. uploaderType 'client' entries
- * attribute actorType 'client' (D-034 forward-compat for #21/#22 uploads).
+ * emit `client_document_uploaded` with actorType 'client' (#21, D-034).
  *
  * Collection path: `workspaces/{workspaceId}/projects/{projectId}/documents/{documentId}`
  */
@@ -284,6 +292,7 @@ export const onProjectDocumentWrite = onDocumentWritten(
               ? { docNameDenorm: derived.docNameDenorm }
               : {}),
             restrictedToDepartments: derived.restrictedToDepartments,
+            visibleToClient: derived.visibleToClient,
             payload: derived.payload,
           },
           `${event.id}_${index}`,

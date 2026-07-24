@@ -13,6 +13,8 @@ import type {
   IDeleteTaskResponse,
   IGetRestrictedTaskHeadersRequest,
   IGetRestrictedTaskHeadersResponse,
+  IIssuePortalLinkRequest,
+  IIssuePortalLinkResponse,
   IResendInviteRequest,
   IRevokeInviteRequest,
   ISetMemberDepartmentsRequest,
@@ -97,6 +99,21 @@ export async function getRestrictedTaskHeaders(
 /** Attributed task hard-delete (#23 Q5) — rules deny client task deletes. */
 export async function deleteTask(data: IDeleteTaskRequest): Promise<IDeleteTaskResponse> {
   const call = httpsCallable<IDeleteTaskRequest, IDeleteTaskResponse>(functions, 'deleteTask');
+  return (await call(data)).data;
+}
+
+/**
+ * Mints (or resets) the client portal link for a project (#21, D2). Every
+ * call rotates — only the secret's hash is at rest, so earlier links stop
+ * working as soon as a new one is issued.
+ */
+export async function issuePortalLink(
+  data: IIssuePortalLinkRequest,
+): Promise<IIssuePortalLinkResponse> {
+  const call = httpsCallable<IIssuePortalLinkRequest, IIssuePortalLinkResponse>(
+    functions,
+    'issuePortalLink',
+  );
   return (await call(data)).data;
 }
 

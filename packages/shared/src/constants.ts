@@ -77,3 +77,33 @@ export const TASK_NOTIFY_DEFAULTS = {
   toClient: true,
   toInternal: false,
 } as const satisfies ITaskNotifyConfig;
+
+/**
+ * Max upload size for client portal uploads (#21, D-034) — enforced in
+ * storage.rules and firestore.rules; keep the three in sync.
+ */
+export const MAX_CLIENT_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Content types accepted for client portal uploads (#21, D-034): PDF, images
+ * and Word only — a deliberate subset of ALLOWED_DOCUMENT_MIME_TYPES.
+ * Mirrored verbatim in storage.rules and firestore.rules (parity enforced by
+ * a rules test). No image/svg+xml — SVGs can carry scripts.
+ */
+export const CLIENT_ALLOWED_DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+] as const;
+
+/**
+ * Portal magic-link lifetime (#21, D2): 90 days from issue. Expiry is
+ * enforced at redemption; live sessions are bounded by the lifecycle
+ * re-check in firestore.rules (D-027). Mirrored in
+ * backend/functions/src/lib/portalTokens.ts.
+ */
+export const PORTAL_LINK_TTL_DAYS = 90;

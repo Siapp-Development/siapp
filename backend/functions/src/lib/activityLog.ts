@@ -27,6 +27,8 @@ export interface IActivityEntry {
   docId?: string;
   docNameDenorm?: string;
   restrictedToDepartments: string[];
+  /** #21 (D4): denormalized portal visibility — client-safe actions only. */
+  visibleToClient: boolean;
   payload: { from?: unknown; to?: unknown };
   wouldHaveNotified?: boolean;
 }
