@@ -38,6 +38,23 @@ gcloud projects add-iam-policy-binding siapp-prod --member "serviceAccount:$SA" 
 gcloud projects add-iam-policy-binding siapp-prod --member "serviceAccount:$SA" --role roles/iam.serviceAccountUser
 # Lets the deployer call enabled APIs on the project's behalf
 gcloud projects add-iam-policy-binding siapp-prod --member "serviceAccount:$SA" --role roles/serviceusage.serviceUsageConsumer
+# Functions bind Secret Manager secrets (defineSecret: POSTMARK_SERVER_TOKEN,
+# TWILIO_*) — deploy validates and pins versions, which needs read access.
+# Without this the deploy fails with 403 "secretmanager.secrets.get denied".
+gcloud projects add-iam-policy-binding siapp-prod --member "serviceAccount:$SA" --role roles/secretmanager.viewer
+```
+
+The functions **runtime** service account also needs to read the secret
+*values* at run time. Grant it per secret (repeat when adding a new
+`defineSecret`):
+
+```bash
+PN=$(gcloud projects describe siapp-prod --format='value(projectNumber)')
+for s in POSTMARK_SERVER_TOKEN TWILIO_ACCOUNT_SID TWILIO_API_KEY_SECRET TWILIO_API_KEY_SID; do
+  gcloud secrets add-iam-policy-binding "$s" --project siapp-prod \
+    --member "serviceAccount:${PN}-compute@developer.gserviceaccount.com" \
+    --role roles/secretmanager.secretAccessor
+done
 ```
 
 If a functions deploy fails with an Artifact Registry / Cloud Build permission
@@ -80,6 +97,10 @@ deploys are incremental.
 
 - **CI green but Deploy failed** — fix the cause, then re-run via
   `workflow_dispatch`; no new commit needed.
+- **403 `secretmanager.secrets.get` denied** — the deployer SA is missing
+  `roles/secretmanager.viewer`, or a new `defineSecret` was added whose secret
+  doesn't exist yet (`gcloud secrets create <NAME> --project siapp-prod` then
+  `gcloud secrets versions add`). See §1 for the runtime-SA accessor grant.
 - **Functions prompt about deleting a function** — the workflow passes
   `--force`, so removals are applied automatically. If a function disappears
   unexpectedly, check that it's still exported from
