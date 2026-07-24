@@ -1,5 +1,16 @@
 import type { IWorkspaceClaims } from '@siapp/shared';
-import { GoogleAuthProvider, onIdTokenChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
+import {
+  GoogleAuthProvider,
+  TotpMultiFactorGenerator,
+  getMultiFactorResolver,
+  onIdTokenChanged,
+  signInWithPopup,
+  signOut,
+  type MultiFactorError,
+  type MultiFactorResolver,
+  type User,
+} from 'firebase/auth';
 import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { auth } from '@/lib/firebase.ts';
@@ -10,11 +21,16 @@ export type TAdminAuthState =
   | { status: 'signedOut' }
   | { status: 'notAdmin'; user: User }
   | { status: 'mfaRequired'; user: User }
+  | { status: 'mfaChallenge'; resolver: MultiFactorResolver }
   | { status: 'signedIn'; user: User };
 
 export interface IAdminAuthContextValue {
   state: TAdminAuthState;
   signInWithGoogle: () => Promise<void>;
+  /** Resolve a pending TOTP challenge with a 6-digit authenticator code. */
+  completeMfaSignIn: (code: string) => Promise<void>;
+  /** Abandon a pending TOTP challenge and return to signed-out. */
+  cancelMfaChallenge: () => void;
   signOutUser: () => Promise<void>;
 }
 
@@ -70,8 +86,36 @@ export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
       state,
       signInWithGoogle: async () => {
         const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
+        try {
+          await signInWithPopup(auth, provider);
+          // onIdTokenChanged will update state automatically.
+        } catch (error) {
+          // An MFA-enrolled account must resolve a second-factor challenge
+          // before the sign-in completes (#63).
+          if (error instanceof FirebaseError && error.code === 'auth/multi-factor-auth-required') {
+            const resolver = getMultiFactorResolver(auth, error as MultiFactorError);
+            setState({ status: 'mfaChallenge', resolver });
+            return;
+          }
+          throw error;
+        }
+      },
+      completeMfaSignIn: async (code: string) => {
+        if (state.status !== 'mfaChallenge') {
+          throw new Error('No MFA challenge in progress');
+        }
+        const hint = state.resolver.hints.find(
+          (factor) => factor.factorId === TotpMultiFactorGenerator.FACTOR_ID,
+        );
+        if (hint === undefined) {
+          throw new Error('No authenticator app is enrolled for this account');
+        }
+        const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code);
+        await state.resolver.resolveSignIn(assertion);
         // onIdTokenChanged will update state automatically.
+      },
+      cancelMfaChallenge: () => {
+        setState({ status: 'signedOut' });
       },
       signOutUser: async () => {
         await signOut(auth);
