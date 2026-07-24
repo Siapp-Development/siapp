@@ -26,6 +26,7 @@ import {
 } from '../lib/invites.js';
 import { postmarkServerToken, sendInviteEmail } from '../lib/mail.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 
 /** Dashboard origin used in emailed invite links. */
 const appOrigin = defineString('APP_ORIGIN', { default: 'https://dashboard.siapp.app' });
@@ -72,6 +73,7 @@ function inviteError(code: TInviteErrorCode, message: string): HttpsError {
 export const createInvite = onCall({ secrets: [postmarkServerToken] }, async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   const uid = requireWorkspaceAdmin(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const email = normalizeEmail(requireStringField(request, 'email'));
   if (email === null) {
@@ -231,6 +233,7 @@ export const acceptInvite = onCall(async (request) => {
   const workspaceId = requireStringField(request, 'workspaceId');
   const inviteId = requireStringField(request, 'inviteId');
   const token = requireStringField(request, 'token');
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const callerEmail = normalizeEmail(request.auth?.token.email);
   if (callerEmail === null) {

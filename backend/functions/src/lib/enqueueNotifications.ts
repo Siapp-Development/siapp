@@ -60,6 +60,8 @@ export interface IPlanTaskNotificationsInput {
   memberProfiles: ReadonlyMap<string, Record<string, unknown> | undefined>;
   quietHours: IQuietHours;
   firmName: string;
+  /** #24 D2: read-only workspace — every record suppressed 'billing'. */
+  billingReadOnly?: boolean;
   now: Date;
 }
 
@@ -173,11 +175,13 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
   const dedupeDate = mytDateString(input.now);
 
   return resolveRecipients(input, notify).map((recipient) => {
-    const suppressedReason = !published
-      ? `lifecycle:${typeof lifecycle === 'string' ? lifecycle : 'draft'}`
-      : recipient.optedOut
-        ? 'opt_out'
-        : recipient.unresolvableReason;
+    const suppressedReason = input.billingReadOnly === true
+      ? 'billing'
+      : !published
+        ? `lifecycle:${typeof lifecycle === 'string' ? lifecycle : 'draft'}`
+        : recipient.optedOut
+          ? 'opt_out'
+          : recipient.unresolvableReason;
 
     // D5: deterministic id per task, recipient, and MYT day so re-runs and
     // overlapping sweep windows cannot double-enqueue.
@@ -278,6 +282,7 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
     memberProfiles,
     quietHours: resolveQuietHours(workspaceData),
     firmName,
+    billingReadOnly: workspaceData?.['billingStatus'] === 'read_only',
     now,
   });
 

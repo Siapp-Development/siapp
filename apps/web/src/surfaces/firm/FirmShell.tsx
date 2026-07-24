@@ -2,6 +2,8 @@ import { Button, cn } from '@siapp/ui';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
+import { BillingBanners } from './billing/BillingBanners.tsx';
+import { BillingSettingsPage } from './billing/BillingSettingsPage.tsx';
 import { ClientsListPage } from './clients/ClientsListPage.tsx';
 import { CollaboratorsListPage } from './collaborators/CollaboratorsListPage.tsx';
 import { DashboardPage } from './dashboard/DashboardPage.tsx';
@@ -100,6 +102,8 @@ export function FirmShell() {
         </div>
       </aside>
       <main id="main" className="flex-1 px-8 py-10">
+        {/* #24: read-only / usage banners on every firm page */}
+        <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
         <Routes>
           <Route
             index
@@ -159,7 +163,7 @@ export function FirmShell() {
           />
           <Route
             path="settings"
-            element={<SettingsLayout workspaceSlug={workspace.slug} />}
+            element={<SettingsLayout workspaceSlug={workspace.slug} role={role} />}
           >
             <Route
               path="team"
@@ -176,6 +180,16 @@ export function FirmShell() {
               path="notifications"
               element={
                 <NotificationSettingsPage
+                  workspaceId={workspace.id}
+                  workspaceName={workspace.name}
+                  role={role}
+                />
+              }
+            />
+            <Route
+              path="billing"
+              element={
+                <BillingSettingsPage
                   workspaceId={workspace.id}
                   workspaceName={workspace.name}
                   role={role}

@@ -50,7 +50,8 @@ export type TAuditAction =
   | 'collab_link.issue'
   | 'collab_link.reset'
   | 'admin.workspace_adjust'
-  | 'admin.impersonate';
+  | 'admin.impersonate'
+  | 'billing.trial_expired';
 
 import { parseCollabUid } from './portalTokens.js';
 

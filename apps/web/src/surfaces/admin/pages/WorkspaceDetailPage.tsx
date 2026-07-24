@@ -1,4 +1,4 @@
-import type { IWorkspaceDoc } from '@siapp/shared';
+import { PLAN_PRICES_MYR, includedForPlan, type IWorkspaceDoc } from '@siapp/shared';
 import { Button, Input, Label } from '@siapp/ui';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useEffect, useState, type FormEvent } from 'react';
@@ -48,6 +48,10 @@ export function WorkspaceDetailPage() {
   const [newExpiry, setNewExpiry] = useState('');
   const [expirySaving, setExpirySaving] = useState(false);
   const [expiryMsg, setExpiryMsg] = useState<string | null>(null);
+
+  // Billing status control (#24)
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   // Impersonate form
   const [targetUid, setTargetUid] = useState('');
@@ -128,6 +132,20 @@ export function WorkspaceDetailPage() {
     }
   }
 
+  async function saveBillingStatus(billingStatus: 'active' | 'read_only'): Promise<void> {
+    if (wid === undefined) return;
+    setStatusSaving(true);
+    setStatusMsg(null);
+    try {
+      await adjustWorkspaceFn({ wid, billingStatus });
+      setStatusMsg(billingStatus === 'active' ? 'Workspace activated.' : 'Workspace set read-only.');
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : 'Failed to update billing status.');
+    } finally {
+      setStatusSaving(false);
+    }
+  }
+
   async function handleImpersonate(e: FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     if (wid === undefined) return;
@@ -187,9 +205,33 @@ export function WorkspaceDetailPage() {
               <dd className="font-medium capitalize">{workspace.plan}</dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Billing status</dt>
+              <dd className="font-medium">
+                {workspace.billingStatus === 'read_only' ? (
+                  <span className="text-destructive">Read-only</span>
+                ) : (
+                  'Active'
+                )}
+              </dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Seats</dt>
               <dd className="font-medium">
                 {workspace.seatsUsed} / {workspace.seatLimit}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Implied price</dt>
+              <dd className="font-medium">
+                RM {(PLAN_PRICES_MYR[workspace.plan] * workspace.seatLimit).toLocaleString()}/yr
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">WA allowance</dt>
+              <dd className="font-medium">
+                {workspace.whatsappAllowance?.used ?? 0} /{' '}
+                {workspace.whatsappAllowance?.includedPerPeriod ??
+                  includedForPlan(workspace.plan, workspace.seatLimit)}
               </dd>
             </div>
             <div>
@@ -202,6 +244,33 @@ export function WorkspaceDetailPage() {
             </div>
           </dl>
         </div>
+
+        {/* Billing status (#24): the founder's manual read-only lever */}
+        <section aria-labelledby="status-heading" className="rounded-lg border p-4">
+          <h2 id="status-heading" className="font-medium">Billing status</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Read-only denies every firm/portal/collaborator write (rules-enforced) while keeping
+            data readable. Trials expire automatically; lapsed paid renewals are set manually here.
+          </p>
+          <div className="mt-3 flex gap-3">
+            <Button
+              size="sm"
+              disabled={statusSaving || workspace.billingStatus !== 'read_only'}
+              onClick={() => void saveBillingStatus('active')}
+            >
+              Activate
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={statusSaving || workspace.billingStatus === 'read_only'}
+              onClick={() => void saveBillingStatus('read_only')}
+            >
+              Set read-only
+            </Button>
+          </div>
+          {statusMsg !== null && <p className="mt-2 text-xs" role="status">{statusMsg}</p>}
+        </section>
 
         {/* Plan change */}
         <section aria-labelledby="plan-heading" className="rounded-lg border p-4">

@@ -45,6 +45,9 @@ rules_version = '2';
 //   client-writable-by-firm blockedReason (D-d); collaborator task/note
 //   writes go through the submitCollabUpdate callable (Admin SDK), never
 //   directly through rules
+// - #24 adds: the workspaceActive(wid) billing gate on every firm-member,
+//   portal, and collaborator WRITE rule (D2) — reads stay open on a
+//   read-only workspace (D3). Missing billingStatus = active (no backfill).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -94,6 +97,16 @@ service cloud.firestore {
     // setAdminClaim.ts bootstrap script; never by user-initiated flows.
     function isSiappAdmin() {
       return isSignedIn() && request.auth.token.isAdmin == true;
+    }
+
+    // #24 (D2): billing read-only gate — one get() per firm/portal/collab
+    // WRITE; reads stay untouched (D3), so the hot path pays nothing.
+    // Missing billingStatus or a missing workspace doc = active (legacy
+    // docs, no backfill — asserted in billingReadOnly.test.ts).
+    function workspaceActive(wid) {
+      return !exists(/databases/$(database)/documents/workspaces/$(wid))
+        || get(/databases/$(database)/documents/workspaces/$(wid))
+          .data.get('billingStatus', 'active') != 'read_only';
     }
 
     // Portal principal (#21, D1): custom token minted by redeemPortalLink
@@ -499,16 +512,19 @@ service cloud.firestore {
       match /departments/{depId} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin'])
+          && workspaceActive(wid)
           && validDepartment(depId)
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.memberCount == 0;
         allow update: if hasRole(wid, ['owner', 'admin'])
+          && workspaceActive(wid)
           && validDepartment(depId)
           && !request.resource.data.diff(resource.data)
             .affectedKeys().hasAny(['id', 'createdAt', 'createdBy', 'memberCount']);
         // Deleting a department with members would strand claim/restriction
         // references — empty it first (memberCount is server-maintained).
         allow delete: if hasRole(wid, ['owner', 'admin'])
+          && workspaceActive(wid)
           && resource.data.memberCount == 0;
       }
 
@@ -520,6 +536,7 @@ service cloud.firestore {
       match /clients/{cid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'companyName', 'language',
             'notes', 'createdAt', 'createdBy'
@@ -531,6 +548,7 @@ service cloud.firestore {
         // The merged doc may carry a server-stamped notificationsOptOut, but
         // the diff must never touch it (nor the identity fields).
         allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'companyName', 'language',
             'notes', 'notificationsOptOut', 'createdAt', 'createdBy'
@@ -548,6 +566,7 @@ service cloud.firestore {
       match /collaborators/{colid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
             'status', 'createdAt', 'invitedBy'
@@ -558,6 +577,7 @@ service cloud.firestore {
           && request.resource.data.createdAt is timestamp
           && request.resource.data.invitedBy == request.auth.uid;
         allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'phone', 'email', 'company', 'trade', 'type',
             'status', 'notificationsOptOut', 'lastTaskAt', 'createdAt',
@@ -582,6 +602,7 @@ service cloud.firestore {
             && resource.data.lifecycle in ['published', 'completed']);
         allow list: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
             'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
@@ -617,6 +638,7 @@ service cloud.firestore {
         // Completed projects are read-only client-side (re-open first);
         // archived/deleted are read-only outright (D-027 table).
         allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
           && resource.data.lifecycle in ['draft', 'published']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name', 'code', 'clientId', 'clientNameDenorm', 'status',
@@ -642,8 +664,10 @@ service cloud.firestore {
           allow read: if isFirmMember(wid)
             || (isPortalClient(wid, pid) && portalProjectLive(wid, pid));
           allow create, update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid)
             && validPhaseFields(phid);
-          allow delete: if hasRole(wid, ['owner', 'admin', 'pm']);
+          allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid);
         }
 
         // Department need-to-know (#11): restricted tasks are readable only
@@ -663,6 +687,7 @@ service cloud.firestore {
           allow list: if isFirmMember(wid)
             && canSeeRestrictedList(wid, resource.data);
           allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid)
             && validTaskFields(tid)
             && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
             && request.resource.data.createdBy == request.auth.uid
@@ -670,6 +695,7 @@ service cloud.firestore {
             && (!('updatedBy' in request.resource.data)
               || request.resource.data.updatedBy == request.auth.uid);
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid)
             && validTaskFields(tid)
             && canSeeRestricted(wid, restrictionsOf(resource.data))
             && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
@@ -697,6 +723,7 @@ service cloud.firestore {
                 && portalProjectLive(wid, pid)
                 && resource.data.authorId == request.auth.token.collab.colid);
             allow create: if isFirmMember(wid)
+              && workspaceActive(wid)
               && canSeeRestricted(wid, restrictionsOf(
                 get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid)).data
               ))
@@ -759,19 +786,23 @@ service cloud.firestore {
                 .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
               && portalProjectLive(wid, pid));
-          allow create: if (hasRole(wid, ['owner', 'admin', 'pm'])
+          allow create: if workspaceActive(wid)
+            && ((hasRole(wid, ['owner', 'admin', 'pm'])
               && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
               && validDocumentCreate(wid, pid, did))
             // #21 (D7): client uploads write metadata directly under the
             // pinned-field validator; the trigger derives the activity entry.
+            // #24 (D3): billing gate applies — portal reads stay open,
+            // uploads are blocked on a read-only workspace.
             || (isPortalClient(wid, pid)
               && portalProjectLive(wid, pid)
               && validPortalDocumentCreate(wid, pid, did))
             // #22 (D-f): collaborator uploads — same posture, task-scoped.
             || (isCollabProject(wid, pid)
               && portalProjectLive(wid, pid)
-              && validCollabDocumentCreate(wid, pid, did));
+              && validCollabDocumentCreate(wid, pid, did)));
           allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid)
             && canSeeRestricted(wid, restrictionsOf(resource.data))
             && resource.data.deletedAt == null
             && request.resource.data.diff(resource.data).affectedKeys()
@@ -788,8 +819,10 @@ service cloud.firestore {
           allow read: if isFirmMember(wid)
             || (isPortalClient(wid, pid) && portalProjectLive(wid, pid));
           allow create, update: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid)
             && validMilestoneFields(mid);
-          allow delete: if hasRole(wid, ['owner', 'admin', 'pm']);
+          allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
+            && workspaceActive(wid);
         }
 
         // Project activity timeline (#23, D1/D6): server-written only
