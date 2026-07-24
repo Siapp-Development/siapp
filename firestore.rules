@@ -122,8 +122,8 @@ service cloud.firestore {
         && d.name.size() <= 120
         && d.phone is string
         && d.phone.matches('\\+[1-9][0-9]{6,14}')
-        && (!('email' in d) || d.email is string)
-        && (!('companyName' in d) || d.companyName is string)
+        && (!('email' in d) || (d.email is string && d.email.size() <= 254))
+        && (!('companyName' in d) || (d.companyName is string && d.companyName.size() <= 120))
         && (!('notes' in d) || (d.notes is string && d.notes.size() <= 2000))
         && d.language in ['en', 'ms'];
     }
@@ -137,9 +137,9 @@ service cloud.firestore {
         && d.name.size() <= 120
         && d.phone is string
         && d.phone.matches('\\+[1-9][0-9]{6,14}')
-        && (!('email' in d) || d.email is string)
-        && (!('company' in d) || d.company is string)
-        && (!('trade' in d) || d.trade is string)
+        && (!('email' in d) || (d.email is string && d.email.size() <= 254))
+        && (!('company' in d) || (d.company is string && d.company.size() <= 120))
+        && (!('trade' in d) || (d.trade is string && d.trade.size() <= 120))
         && d.type in ['individual', 'company']
         && d.status in ['active', 'archived'];
     }
@@ -235,7 +235,7 @@ service cloud.firestore {
           'id', 'title', 'description', 'phaseId', 'status',
           'startDate', 'dueDate', 'completedAt', 'assignees',
           'visibleToClient', 'visibleToCollaboratorIds',
-          'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
+          'restrictedToDepartments', 'sendWhatsapp', 'notify', 'dependsOn',
           'order', 'createdAt', 'updatedAt', 'createdBy'
         ])
         && d.id == tid
@@ -255,6 +255,18 @@ service cloud.firestore {
         && d.restrictedToDepartments is list
         && d.restrictedToDepartments.size() <= 10
         && d.sendWhatsapp is bool
+        // #18 (D2): optional trigger/recipient map — exactly these five bool
+        // keys when present; absent means server-side defaults apply.
+        && (!('notify' in d) || (
+          d.notify is map
+          && d.notify.keys().hasAll(['statusChange', 'dueSoon', 'blocked', 'toClient', 'toInternal'])
+          && d.notify.keys().hasOnly(['statusChange', 'dueSoon', 'blocked', 'toClient', 'toInternal'])
+          && d.notify.statusChange is bool
+          && d.notify.dueSoon is bool
+          && d.notify.blocked is bool
+          && d.notify.toClient is bool
+          && d.notify.toInternal is bool
+        ))
         && d.dependsOn is list
         && d.dependsOn.size() <= 50
         && !d.dependsOn.hasAny([tid])
@@ -335,9 +347,11 @@ service cloud.firestore {
 
       // Clients (#16): workspace-visible; owner/admin/pm manage them. No
       // hard delete (project.clientId denorms would orphan) and no archive
-      // field at MVP — clients are edit-only. notificationsOptOut is absent
-      // from both allowlists: only the STOP webhook (Admin SDK) writes it,
-      // and firms can never clear it (D-035).
+      // field at MVP — clients are edit-only. notificationsOptOut is
+      // server-only: absent from the create allowlist and allowed in the
+      // update allowlist only so a server-stamped doc stays editable — the
+      // diff check keeps firms from ever writing or clearing it. Only the
+      // STOP webhook (Admin SDK) writes it (D-035).
       match /clients/{cid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
@@ -365,7 +379,9 @@ service cloud.firestore {
       // Collaborators (#16): workspace-visible; owner/admin/pm manage them.
       // Removal is archival via `status` (task assignees + phoneIndex refs
       // would orphan on delete). notificationsOptOut and lastTaskAt are
-      // server-only — absent from both allowlists.
+      // server-only: absent from the create allowlist and allowed in the
+      // update allowlist only so server-stamped docs stay editable — the
+      // diff check keeps firms from ever writing them.
       match /collaborators/{colid} {
         allow read: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])

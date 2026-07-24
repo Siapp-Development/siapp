@@ -18,7 +18,13 @@ export function PhoneActions({ phone, name }: IPhoneActionsProps) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy(): Promise<void> {
-    await navigator.clipboard.writeText(phone);
+    try {
+      await navigator.clipboard.writeText(phone);
+    } catch {
+      // Clipboard can be unavailable (permissions, insecure context) —
+      // fail quietly rather than breaking the click path.
+      return;
+    }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   }

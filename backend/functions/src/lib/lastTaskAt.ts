@@ -48,9 +48,14 @@ export async function stampCollaboratorLastTask(
   await Promise.all(
     collaboratorIds.map(async (id) => {
       const ref = db.doc(`workspaces/${workspaceId}/collaborators/${id}`);
-      const snap = await ref.get();
-      if (snap.exists) {
+      try {
+        // update() fails on missing docs, so no pre-read is needed — just
+        // suppress not-found (a stale assignee ref is not an error here).
         await ref.update({ lastTaskAt: FieldValue.serverTimestamp() });
+      } catch (err) {
+        if ((err as { code?: number }).code !== 5 /* NOT_FOUND */) {
+          throw err;
+        }
       }
     }),
   );

@@ -226,6 +226,21 @@ describe('client create', () => {
       ),
     );
   });
+
+  it('denies create with an over-long email or companyName', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/clients/client-x`),
+        validClient('client-x', { email: `${'x'.repeat(250)}@a.test` }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/clients/client-x`),
+        validClient('client-x', { companyName: 'x'.repeat(121) }),
+      ),
+    );
+  });
 });
 
 describe('client update', () => {
@@ -363,6 +378,27 @@ describe('collaborator create', () => {
       setDoc(
         doc(dbAs('owner'), `workspaces/${WKS_A}/collaborators/col-x`),
         validCollaborator('col-x', { phone: '0123456789' }),
+      ),
+    );
+  });
+
+  it('denies create with an over-long email, company or trade', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/collaborators/col-x`),
+        validCollaborator('col-x', { email: `${'x'.repeat(250)}@a.test` }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/collaborators/col-x`),
+        validCollaborator('col-x', { company: 'x'.repeat(121) }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/collaborators/col-x`),
+        validCollaborator('col-x', { trade: 'x'.repeat(121) }),
       ),
     );
   });
