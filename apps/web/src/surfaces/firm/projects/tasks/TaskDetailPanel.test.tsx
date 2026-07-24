@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
 import type { IMemberRow } from '../../settings/useTeamData.ts';
+import type { TDocumentsState } from '../documents/useDocuments.ts';
 import type { ITaskRow, TTaskUpdatesState } from './useTasks.ts';
 
 const tasksData = vi.hoisted(() => ({
@@ -17,6 +18,28 @@ vi.mock('./useTasks.ts', () => ({
   updateTask: tasksData.updateTask,
   deleteTask: tasksData.deleteTask,
   addTaskUpdate: tasksData.addTaskUpdate,
+}));
+
+const docsData = vi.hoisted(() => ({
+  state: { status: 'ready', rows: [] } as TDocumentsState,
+  uploadDocument: vi.fn(),
+  softDeleteDocument: vi.fn(),
+  downloadDocument: vi.fn(),
+  getPreviewUrl: vi.fn(),
+  validateDocumentFile: vi.fn<(file: File) => string | null>(() => null),
+}));
+vi.mock('../documents/useDocuments.ts', () => ({
+  useDocuments: () => docsData.state,
+  uploadDocument: docsData.uploadDocument,
+  softDeleteDocument: docsData.softDeleteDocument,
+  downloadDocument: docsData.downloadDocument,
+  getPreviewUrl: docsData.getPreviewUrl,
+  validateDocumentFile: docsData.validateDocumentFile,
+}));
+
+vi.mock('../../settings/useTeamData.ts', () => ({
+  useMembers: () => ({ status: 'ready', rows: [] }),
+  useDepartments: () => ({ status: 'ready', rows: [] }),
 }));
 
 vi.mock('react-markdown', () => ({
@@ -84,6 +107,9 @@ beforeEach(() => {
   tasksData.updatesState = { status: 'ready', rows: [] };
   tasksData.updateTask.mockResolvedValue(undefined);
   tasksData.addTaskUpdate.mockResolvedValue(undefined);
+  docsData.state = { status: 'ready', rows: [] };
+  docsData.validateDocumentFile.mockReturnValue(null);
+  docsData.uploadDocument.mockResolvedValue(undefined);
 });
 
 describe('TaskDetailPanel details', () => {
@@ -265,5 +291,63 @@ describe('TaskDetailPanel activity', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'activity' }));
     expect(screen.getByText(/changed status from todo to in_progress/i)).toBeInTheDocument();
     expect(screen.getByText(/concrete arrives \*\*@Alice Tan\*\*/i)).toBeInTheDocument();
+  });
+});
+
+describe('TaskDetailPanel attachments', () => {
+  it('renders task-scoped attachments with a download action', () => {
+    docsData.state = {
+      status: 'ready',
+      rows: [
+        {
+          id: 'd1',
+          name: 'rebar-specs.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 2048,
+          storagePath: 'workspaces/wksA/projects/p1/uuid-rebar-specs.pdf',
+          scope: 'task',
+          scopeId: 't1',
+          uploadedBy: 'u1',
+          uploaderType: 'firm_member',
+          uploadedAt: new Date('2026-07-20T10:00:00'),
+          visibleToClient: false,
+          restrictedToDepartments: [],
+          scanStatus: 'pending',
+        },
+      ],
+    };
+    renderPanel();
+
+    expect(screen.getByText('rebar-specs.pdf')).toBeInTheDocument();
+    expect(screen.getByText('2 KB')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+
+  it("uploads attachments inheriting the task's visibility and restriction", async () => {
+    renderPanel({
+      task: taskRow({ visibleToClient: true, restrictedToDepartments: ['dep-ops'] }),
+    });
+    const file = new File(['%PDF'], 'rebar-specs.pdf', { type: 'application/pdf' });
+
+    await userEvent.upload(screen.getByTestId('document-file-input'), file);
+
+    expect(docsData.uploadDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'wksA',
+        projectId: 'p1',
+        file,
+        scope: 'task',
+        scopeId: 't1',
+        visibleToClient: true,
+        restrictedToDepartments: ['dep-ops'],
+        uid: 'u1',
+        userName: 'Alice Tan',
+      }),
+    );
+  });
+
+  it('hides the attach button when canEdit is false', () => {
+    renderPanel({ canEdit: false });
+    expect(screen.queryByRole('button', { name: 'Attach file' })).not.toBeInTheDocument();
   });
 });

@@ -331,6 +331,24 @@ describe('task updates (activity stream)', () => {
     );
   });
 
+  it('allows doc_added and doc_deleted attachment actions (#14)', async () => {
+    for (const action of ['doc_added', 'doc_deleted'] as const) {
+      await assertSucceeds(
+        setDoc(
+          doc(dbAs('pm'), `${UPDATES_PATH}/upd-${action}`),
+          validComment(`upd-${action}`, 'user-pm', {
+            action,
+            payload: {
+              text: 'site-plan.pdf',
+              storagePath: 'workspaces/wksA/projects/proj1/uuid-site-plan.pdf',
+              mimeType: 'application/pdf',
+            },
+          }),
+        ),
+      );
+    }
+  });
+
   it('denies author spoofing and non-web sources', async () => {
     const spoofs: Array<Record<string, unknown>> = [
       { authorId: 'someone-else' },

@@ -26,6 +26,12 @@ vi.mock('./tasks/TasksSection.tsx', () => ({
   ),
 }));
 
+vi.mock('./documents/DocumentsSection.tsx', () => ({
+  DocumentsSection: (props: { canEdit: boolean }) => (
+    <div data-testid="documents-section" data-can-edit={props.canEdit} />
+  ),
+}));
+
 import { ProjectDetailPage } from './ProjectDetailPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -106,6 +112,15 @@ describe('ProjectDetailPage', () => {
     expect(screen.queryByTestId('tasks-section')).not.toBeInTheDocument();
     expect(screen.getByText('Ahmad Corp')).toBeInTheDocument();
     expect(screen.getByText(/50% \(5\/10 tasks, 1 overdue\)/)).toBeInTheDocument();
+  });
+
+  it('renders the Documents tab with the section receiving canEdit', async () => {
+    renderPage('pm');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.getByTestId('documents-section')).toBeInTheDocument();
+    expect(screen.getByTestId('documents-section')).toHaveAttribute('data-can-edit', 'true');
+    expect(screen.queryByTestId('tasks-section')).not.toBeInTheDocument();
   });
 
   it('shows a fallback for missing projects', () => {
