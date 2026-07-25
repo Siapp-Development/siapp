@@ -1,9 +1,20 @@
+import { Button } from '@siapp/ui';
 import { Link, Navigate } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
 import type { IClaimedWorkspace } from './auth/AuthProvider.tsx';
 import { resolveWorkspace } from './auth/resolveWorkspace.ts';
 import { useAuth } from './auth/useAuth.ts';
+
+/** Every terminal screen must let the user leave the session (#82). */
+function SignOutButton() {
+  const { signOutUser } = useAuth();
+  return (
+    <Button variant="outline" className="mt-6" onClick={() => void signOutUser()}>
+      Sign out
+    </Button>
+  );
+}
 
 function PendingScreen() {
   return (
@@ -24,6 +35,7 @@ function ErrorScreen() {
         <p role="alert" className="mt-2">
           We couldn't load your workspace. Refresh the page to try again.
         </p>
+        <SignOutButton />
       </main>
     </>
   );
@@ -38,6 +50,7 @@ function NoWorkspaceScreen() {
         <p className="mt-2">
           Your account isn't part of a workspace yet. Contact Siapp to get your firm set up.
         </p>
+        <SignOutButton />
       </main>
     </>
   );
@@ -65,6 +78,7 @@ function WorkspacePicker({ workspaces }: IWorkspacePickerProps) {
             </li>
           ))}
         </ul>
+        <SignOutButton />
       </main>
     </>
   );

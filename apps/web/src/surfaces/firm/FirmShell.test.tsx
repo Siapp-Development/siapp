@@ -115,6 +115,15 @@ describe('FirmShell', () => {
     expect(screen.queryByText('Acme Builders')).not.toBeInTheDocument();
   });
 
+  it('lets the user sign out from the workspace-not-available screen (#82)', async () => {
+    const signOutUser = vi.fn(async () => {});
+    renderShell('/not-my-workspace', signOutUser);
+
+    await userEvent.click(screen.getByRole('button', { name: /sign out/i }));
+
+    expect(signOutUser).toHaveBeenCalledOnce();
+  });
+
   it('shows the settings sub-nav linking both settings pages (#18)', () => {
     renderShell('/acme/settings/notifications');
 
