@@ -1,5 +1,6 @@
 import { Outlet, createBrowserRouter, type RouteObject } from 'react-router';
 
+import { RouteErrorFallback } from '@/components/RouteErrorFallback.tsx';
 import { AdminAuthProvider } from '@/surfaces/admin/auth/AdminAuthProvider.tsx';
 import { AdminLoginPage } from '@/surfaces/admin/auth/AdminLoginPage.tsx';
 import { AdminRequireAuth } from '@/surfaces/admin/auth/AdminRequireAuth.tsx';
@@ -21,6 +22,7 @@ function AdminRoot() {
 export const adminRoutes: RouteObject[] = [
   {
     Component: AdminRoot,
+    errorElement: <RouteErrorFallback surface="admin" />,
     children: [
       { path: '/login', Component: AdminLoginPage },
       {

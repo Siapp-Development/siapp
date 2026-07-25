@@ -11,3 +11,5 @@ allowBuilds:
   protobufjs: true
   # firebase-tools optional native regex engine — JS fallback is fine, skip native build
   re2: false
+  # downloads the sentry-cli binary used for CI source-map upload (#27)
+  '@sentry/cli': true

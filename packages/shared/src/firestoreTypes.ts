@@ -13,8 +13,11 @@
 import type {
   TActorType,
   TAdminAction,
+  TAuditAction,
+  TBillingStatus,
   TCollaboratorStatus,
   TCollaboratorType,
+  TConsentMethod,
   TDocumentScope,
   TInviteRole,
   TInviteStatus,
@@ -23,13 +26,17 @@ import type {
   TMagicLinkScopeType,
   TMemberRole,
   TMessageChannel,
+  TMessageRecipientType,
   TMessageStatus,
+  TNotificationTrigger,
   TPhaseStatus,
   TPhoneRefType,
+  TProjectActivityAction,
   TProjectLifecycle,
   TProjectStatus,
   TProjectVertical,
   TScanStatus,
+  TSuppressedReason,
   TTaskStatus,
   TTaskUpdateAction,
   TTaskUpdateAuthorType,
@@ -59,6 +66,39 @@ export interface IWorkspaceClaims {
   /** Present and `true` only on Siapp-admin accounts. Set once via the
    *  `setAdminClaim.ts` bootstrap script; never set by user-initiated flows. */
   isAdmin?: boolean;
+}
+
+/**
+ * Custom claims minted by `redeemPortalLink` (#21, D1): a portal principal
+ * is project-scoped and single-workspace by construction. It carries NO
+ * `workspaces` claim, so every firm rule automatically denies it; the
+ * portal rules in firestore.rules/storage.rules string-compare `wid`/`pid`
+ * against the match path.
+ */
+export interface IPortalClaims {
+  portal: {
+    wid: string;
+    pid: string;
+    cid: string;
+    linkId: string;
+  };
+}
+
+/**
+ * Custom claims minted by `redeemCollabLink` (#22, E1): a collaborator
+ * principal is pinned to ONE task in ONE project in ONE workspace. Like
+ * portal claims it carries NO `workspaces` claim, so every firm rule
+ * automatically denies it; the collab rules string-compare `wid`/`pid`/`tid`
+ * against the match path.
+ */
+export interface ICollabClaims {
+  collab: {
+    wid: string;
+    pid: string;
+    tid: string;
+    colid: string;
+    linkId: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +165,23 @@ export interface IWorkspaceWhatsappAllowance {
   used: number;
 }
 
+/**
+ * Workspace quiet-hours window (#18, D1/D6). `start`/`end` are 'HH:mm' wall
+ * clock in `timezone`; `start > end` means the window wraps midnight.
+ * Timezone is a literal at MVP (Malaysia-only, fixed UTC+8).
+ */
+export interface IQuietHoursSettings {
+  enabled: boolean;
+  start: string;
+  end: string;
+  timezone: 'Asia/Kuala_Lumpur';
+}
+
+/** `workspaces/{wid}.notifications` — server-written via updateNotificationSettings (#18). */
+export interface INotificationSettings {
+  quietHours: IQuietHoursSettings;
+}
+
 /** `/workspaces/{wid}` */
 export interface IWorkspaceDoc {
   id: string;
@@ -133,11 +190,19 @@ export interface IWorkspaceDoc {
   ownerId: string;
   plan: TWorkspacePlan;
   planExpiresAt: Date;
+  /**
+   * Billing state (#24, D2). Absent = 'active' (no backfill). 'read_only'
+   * is set by the trial-expiry sweep or the founder via adminAdjustWorkspace;
+   * every firm/portal/collab write path is denied while set.
+   */
+  billingStatus?: TBillingStatus;
   seatLimit: number;
   seatsUsed: number;
   branding: IWorkspaceBranding;
   whatsappAllowance: IWorkspaceWhatsappAllowance;
   defaultLocale: TLocale;
+  /** Absent = QUIET_HOURS_DEFAULT (#18, D1). */
+  notifications?: INotificationSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -187,6 +252,36 @@ export interface IInviteDoc {
   revokedBy?: string;
 }
 
+/**
+ * WhatsApp/SMS notification consent record (#26, D1/D8) on client and
+ * collaborator docs. One consent covers both phone channels. Written by the
+ * firm CRUD forms (rules-validated); a `granted: false` record is a dated
+ * refusal — itself compliance evidence — so the field is never deleted by
+ * the firm. Absent field = no consent (D2: no grandfathering).
+ */
+export interface IWaConsent {
+  granted: boolean;
+  method: TConsentMethod;
+  /** uid of the firm member attesting the consent. */
+  recordedBy: string;
+  recordedAt: Date;
+  /** Language the consent was given in (Meta opt-in log requirement). */
+  language: TLocale;
+  /** Version id of the attestation copy, e.g. 'consent_v1'. */
+  textVersion: string;
+}
+
+/**
+ * PDPA erasure marker (#26, D3) — server-only (deletePersonalData callable).
+ * Presence means the doc was anonymized in place and is frozen: rules deny
+ * every further firm update.
+ */
+export interface IPdpaErased {
+  /** uid of the owner/admin who ran the deletion. */
+  requestedBy: string;
+  at: Date;
+}
+
 /** `/workspaces/{wid}/clients/{cid}` */
 export interface IClientDoc {
   id: string;
@@ -197,6 +292,10 @@ export interface IClientDoc {
   language: TLocale;
   notes?: string;
   notificationsOptOut?: boolean;
+  /** WA/SMS consent record (#26). Absent = no consent (D2). */
+  waConsent?: IWaConsent;
+  /** Server-only erasure marker (#26, D3). */
+  pdpaErased?: IPdpaErased;
   createdAt: Date;
   createdBy: string;
 }
@@ -212,14 +311,27 @@ export interface ICollaboratorDoc {
   type: TCollaboratorType;
   status: TCollaboratorStatus;
   notificationsOptOut?: boolean;
+  /** WA/SMS consent record (#26). Absent = no consent (D2). */
+  waConsent?: IWaConsent;
+  /** Server-only erasure marker (#26, D3). */
+  pdpaErased?: IPdpaErased;
   createdAt: Date;
   invitedBy: string;
   lastTaskAt?: Date;
 }
 
-/** `/workspaces/{wid}/magicLinks/{shortCode}` — collaborator + client tokens (server-only). */
+/**
+ * `/workspaces/{wid}/magicLinks/{linkId}` — collaborator + client tokens
+ * (server-only; rules deny all client access, #21 D2). The doc id is a
+ * random linkId, NOT the shortCode: the URL token is `{shortCode}_{secret}`
+ * and only the secret's SHA-256 is at rest (`secretHash`); `shortCode` is
+ * the indexed lookup key.
+ */
 export interface IMagicLinkDoc {
+  id: string;
   shortCode: string;
+  /** SHA-256 hex of the URL secret — raw secrets are never persisted. */
+  secretHash: string;
   audience: TMagicLinkKind;
   scopeType: TMagicLinkScopeType;
   scopeId: string;
@@ -231,6 +343,12 @@ export interface IMagicLinkDoc {
   revoked: boolean;
   revokedAt?: Date;
   revokedBy?: string;
+  createdBy: string;
+  /**
+   * #22: present on task-scoped collaborator links only — redemption needs
+   * the project path and `scopeId` carries the task id. Server-written.
+   */
+  projectId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +359,8 @@ export interface IProjectSummary {
   totalTasks: number;
   doneTasks: number;
   overdueTasks: number;
+  /** Optional: absent on projects untouched since the #17 trigger deploy. */
+  blockedTasks?: number;
   progressPct: number;
   lastActivityAt: Date;
 }
@@ -314,6 +434,18 @@ export interface ITaskCollaboratorAssignee {
 
 export type TTaskAssignee = ITaskUserAssignee | ITaskCollaboratorAssignee;
 
+/**
+ * Per-task notification triggers + recipients (#18, D2). `sendWhatsapp: false`
+ * short-circuits everything regardless of this map (D8).
+ */
+export interface ITaskNotifyConfig {
+  statusChange: boolean;
+  dueSoon: boolean;
+  blocked: boolean;
+  toClient: boolean;
+  toInternal: boolean;
+}
+
 /** `/workspaces/{wid}/projects/{pid}/tasks/{tid}` */
 export interface ITaskDoc {
   id: string;
@@ -330,14 +462,23 @@ export interface ITaskDoc {
   visibleToCollaboratorIds: string[];
   /** Empty/missing = unrestricted; see 20-access-control-departments.md. */
   restrictedToDepartments: string[];
+  /**
+   * Why the task is blocked (#22, D-d) — set by submitCollabUpdate
+   * (need-help) or firm edits; cleared when status leaves 'blocked'.
+   */
+  blockedReason?: string;
   /** Per-task WhatsApp toggle (D-031: copied on Duplicate). */
   sendWhatsapp: boolean;
+  /** Trigger/recipient config (#18, D2). Absent = TASK_NOTIFY_DEFAULTS. */
+  notify?: ITaskNotifyConfig;
   /** Task ids this task depends on (D-031 dependency links). */
   dependsOn: string[];
   order: number;
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
+  /** Rules-pinned to the caller on every update (#23, D4 actor attribution). */
+  updatedBy?: string;
 }
 
 export interface ITaskUpdatePayload {
@@ -402,16 +543,30 @@ export interface IMessageRelatedTo {
   id: string;
 }
 
-/** `/workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log. */
+/**
+ * `/workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log doubling as
+ * the queue/outbox (#18, D3). Server-written only. The #19 dispatcher
+ * consumes `status == 'queued' && suppressed != true &&
+ * (holdUntil absent || holdUntil <= now)` (D9 contract).
+ */
 export interface IMessageDoc {
   id: string;
   channel: TMessageChannel;
   recipientPhone: string;
-  recipientType: TPhoneRefType;
+  recipientType: TMessageRecipientType;
   recipientId: string;
   templateName: string;
   variables: Record<string, string>;
   status: TMessageStatus;
+  /** Event that produced this record (#18). */
+  trigger: TNotificationTrigger;
+  /** True = audit-only record that must never dispatch (#18, D8). */
+  suppressed?: boolean;
+  suppressedReason?: TSuppressedReason;
+  /** Quiet-hours hold — dispatchable only at/after this instant (#18, D6). */
+  holdUntil?: Date;
+  /** Mirrors the deterministic doc id for due-soon dedupe (#18, D5). */
+  dedupeKey?: string;
   twilioSid?: string;
   conversationId?: string;
   errorCode?: string;
@@ -427,7 +582,7 @@ export interface IAuditLogDoc {
   id: string;
   actorType: TActorType;
   actorId: string;
-  action: string;
+  action: TAuditAction;
   targetType: string;
   targetId: string;
   before?: Record<string, unknown>;
@@ -435,6 +590,42 @@ export interface IAuditLogDoc {
   ip?: string;
   userAgent?: string;
   ts: Date;
+}
+
+/** Payload carried by a project activity entry (#23, D1). */
+export interface IProjectActivityPayload {
+  from?: unknown;
+  to?: unknown;
+}
+
+/**
+ * `/workspaces/{wid}/projects/{pid}/activity/{aid}` — per-project activity
+ * timeline (#23, D1). Server-written only (Admin SDK); read by firm members
+ * with department gating on the denormalized `restrictedToDepartments` copy
+ * (snapshotted from the source task/doc at event time, D6).
+ */
+export interface IProjectActivityDoc {
+  id: string;
+  action: TProjectActivityAction;
+  actorType: TActorType;
+  actorId: string;
+  actorNameDenorm: string;
+  taskId?: string;
+  taskTitleDenorm?: string;
+  docId?: string;
+  docNameDenorm?: string;
+  /** Copied from the source task/doc at event time; [] = unrestricted. */
+  restrictedToDepartments: string[];
+  payload: IProjectActivityPayload;
+  /** D-027 §5 draft-preview marker — suppressed notification would have fired. */
+  wouldHaveNotified?: boolean;
+  /**
+   * #21 (D4): denormalized at write time — true only for the client-safe
+   * action subset, so portal list queries are rules-provable. Absent on
+   * pre-#21 entries (never surfaced to clients; no backfill).
+   */
+  visibleToClient?: boolean;
+  at: Date;
 }
 
 /** `/workspaces/{wid}/usageCounters/{period}` e.g. period = "2026-07" */

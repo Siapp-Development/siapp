@@ -9,7 +9,7 @@
 import { Button, Card, CardContent, CardHeader, Label } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 
 import { useClients } from '../clients/useClients.ts';
 import {
@@ -88,12 +88,13 @@ export function ProjectsListPage({
 }: IProjectsListPageProps) {
   const projects = useProjects(workspaceId);
   const clients = useClients(workspaceId);
-  const [creating, setCreating] = useState(false);
+  const [searchParams] = useSearchParams();
+  const canCreate = role === 'owner' || role === 'admin' || role === 'pm';
+  // ?new=1 opens the chooser on arrival (the Home "New project" CTA, #17).
+  const [creating, setCreating] = useState(canCreate && searchParams.get('new') === '1');
   const [createMode, setCreateMode] = useState<'blank' | 'duplicate'>('blank');
   const [sourceId, setSourceId] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-
-  const canCreate = role === 'owner' || role === 'admin' || role === 'pm';
 
   const rows = projects.status === 'ready' ? projects.rows : [];
   const clientOptions = clients.status === 'ready' ? clients.rows : [];

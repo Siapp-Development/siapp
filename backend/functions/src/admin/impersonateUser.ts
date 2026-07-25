@@ -11,6 +11,7 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 
 import { assertAdminCall, callerIp } from './adminGuard.js';
 import { writeAdminLog } from './writeAdminLog.js';
+import { writeAuditLog } from '../lib/auditLog.js';
 
 export interface IImpersonateInput {
   targetUid: string;
@@ -74,6 +75,23 @@ export async function impersonateUser(
     after: { reason: reason.trim() },
     ip: callerIp(request),
   });
+
+  // #23 Q2: mirror into every workspace the target belongs to, so firm
+  // owners can see support impersonation in their own audit trail.
+  const workspaceIds = Object.keys(
+    (targetClaims?.['workspaces'] as Record<string, unknown> | undefined) ?? {},
+  );
+  for (const wid of workspaceIds) {
+    await writeAuditLog(wid, {
+      actorType: 'admin',
+      actorId: request.auth!.uid,
+      action: 'admin.impersonate',
+      targetType: 'user',
+      targetId: targetUid,
+      after: { reason: reason.trim() },
+      ip: callerIp(request),
+    });
+  }
 
   return { customToken };
 }

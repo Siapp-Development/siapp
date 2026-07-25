@@ -14,6 +14,7 @@ Closes **Q44** (blocker). Locks the structural choice that everything downstream
 2. **Denormalize for read patterns.** Names, counts, and rollups are duplicated onto parent docs so dashboards render in one read. Cloud Functions keep them consistent.
 3. **No joins, no cross-workspace queries** at MVP. If a use case needs them, it's a v2 feature, not a data-model change.
 4. **Magic-link access is server-mediated.** Collaborators and clients never touch Firestore from the client. A Cloud Run endpoint validates the JWT and uses the Admin SDK with `withConverter`-style scope checks.
+   > **Superseded for the client portal (#21, D1):** the portal redeems its link through the `redeemPortalLink` callable, which mints a Firebase **custom token** carrying `portal` claims (`wid`/`pid`/`cid`/`linkId`). After sign-in, the portal reads Firestore/Storage **directly through the client SDK**, gated by portal-claim rules (project get when live, phases/milestones, `visibleToClient` documents + activity, client-uploads). The collaborator task page (#22) follows the same pattern: `redeemCollabLink` mints a custom token with `collab` claims (`wid`/`pid`/`tid`/`colid`/`linkId`, uid `collab_{wid}_{tid}_{colid}`); reads go through collab-claim rules and writes go through the `submitCollabUpdate` callable plus rules-gated `collab-uploads/` Storage writes.
 5. **Pre-aggregate, don't compute.** Counts (`summary.totalTasks`, `usageCounters`) are maintained on writes — never computed at read time.
 6. **Indexes are part of the model.** Every list view in the UI maps to a composite index defined upfront.
 
@@ -89,6 +90,7 @@ workspaces/{wid}
 │   │   ├── (task doc)
 │   │   └── updates/{updid}
 │   ├── documents/{did}
+│   ├── activity/{actid}       // project-level activity feed (#23)
 │   └── milestones/{mid}
 ├── magicLinks/{shortCode}
 ├── messages/{mid}
@@ -106,6 +108,7 @@ workspaces/{wid}
   ownerId: string,             // creator's uid
   plan: 'trial' | 'standard' | 'business',   // MVP: all paying workspaces = 'standard' (single tier per D-030); other values reserved for post-MVP
   planExpiresAt: Timestamp,
+  billingStatus?: 'active' | 'read_only',    // #24 (D2): absent = 'active' (no backfill). 'read_only' denies all firm/portal/collab writes at rules level; reads stay open (D3). Set by the trial-expiry sweep or the founder admin panel.
   seatLimit: number,
   seatsUsed: number,           // maintained by Cloud Function on member changes
   branding: {
@@ -279,6 +282,9 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   description?: string,
   phaseId?: string,
   status: 'todo' | 'in_progress' | 'blocked' | 'done',
+  blockedReason?: string,          // #22 (D-d): collaborator "need help" reason (≤ 1000 chars).
+                                   // Set by submitCollabUpdate alongside status: 'blocked';
+                                   // cleared whenever status leaves 'blocked'.
 
   startDate?: Timestamp,           // optional kickoff date; pairs with dependsOn for sequencing (D-031)
   dueDate?: Timestamp,
@@ -302,7 +308,10 @@ External parties (subcontractors, vendors). **Free** — do not count against an
   order: number,                   // for manual sort within phase / board
   createdAt: Timestamp,
   updatedAt: Timestamp,
-  createdBy: string
+  createdBy: string,
+  updatedBy?: string               // uid of the last editor; required on every client update (#23).
+                                   // Rules enforce updatedBy == request.auth.uid on update; the
+                                   // activity trigger uses it to attribute task change events.
 }
 ```
 
@@ -338,6 +347,48 @@ Append-only. Drives task page activity feed, audit, and notifications.
 }
 ```
 
+### `workspaces/{wid}/projects/{pid}/activity/{actid}` — project activity feed (#23)
+
+Added by #23 (impl plan D1). This doc originally modelled activity only as the task-scoped
+`updates/{updid}` stream above; D-033 (Activity tab) and D-027 §5 (feed markers) both assume a
+**project-level** feed, so #23 introduced this denormalized, append-only subcollection. Written
+exclusively by Cloud Functions (Admin SDK) — client `write: false`; reads are firm-member only and
+department-gated via `restrictedToDepartments` (same semantics as tasks, see
+20-access-control-departments.md).
+
+> **Extended by #21 (D4):** each entry also carries a denormalized `visibleToClient: boolean`.
+> The client portal reuses this subcollection as its updates feed via a rules-proven
+> `where('visibleToClient', '==', true)` query served by a `(visibleToClient ASC, at DESC)`
+> composite index. True only for: client-visible unrestricted task events (created/status/due
+> date), client-visible `doc_added`, `client_document_uploaded`, `project_published` and
+> `project_completed`. Assignment events and deletions are never client-visible.
+
+```typescript
+{
+  id: string,
+  action:                          // TProjectActivityAction (packages/shared/src/enums.ts)
+    | 'task_created' | 'task_status_changed' | 'task_assigned' | 'task_unassigned'
+    | 'task_due_date_changed' | 'task_deleted'
+    | 'doc_added' | 'doc_deleted' | 'client_document_uploaded'   // #21: portal upload, actorType 'client'
+    | 'project_created' | 'project_published' | 'project_completed'
+    | 'project_archived' | 'project_deleted' | 'project_reopened'
+    | 'client_link_changed',
+  actorType: 'user' | 'client' | 'collaborator' | 'system',
+  actorId: string,                 // '' for system entries
+  actorNameDenorm: string,
+  taskId?: string,
+  taskTitleDenorm?: string,        // survives task deletion
+  docId?: string,
+  docNameDenorm?: string,
+  restrictedToDepartments: string[], // copied from the source task; [] = unrestricted
+  payload: { from?: unknown, to?: unknown },
+  wouldHaveNotified?: boolean,     // draft-lifecycle marker (D-027 §5): set on task_status_changed
+                                   // when notifications were suppressed because lifecycle !== 'published'
+  visibleToClient: boolean,        // #21 D4: portal updates-feed filter (see note above)
+  at: Timestamp                    // serverTimestamp
+}
+```
+
 ### `workspaces/{wid}/projects/{pid}/documents/{did}`
 
 ```typescript
@@ -346,14 +397,14 @@ Append-only. Drives task page activity feed, audit, and notifications.
   name: string,
   mimeType: string,
   sizeBytes: number,
-  storagePath: string,           // Firebase Storage path. Client uploads land under `.../projects/{projId}/client-uploads/{uuid}-{filename}` per D-034.
+  storagePath: string,           // Firebase Storage path. Client uploads land under `.../projects/{projId}/client-uploads/{uuid}-{filename}` per D-034; collaborator uploads under `.../projects/{projId}/collab-uploads/{uuid}-{filename}` (#22, D-f).
   scope: 'project' | 'task',
   scopeId: string,
   uploadedBy: string,            // uid, colid, or cid (client)
   uploaderType: 'firm_member' | 'collaborator' | 'client',  // D-034: client uploads via portal are always `uploaderType: 'client'`, `scope: 'project'`, `visibleToClient: true`.
   uploadedAt: Timestamp,
   visibleToClient: boolean,      // for task-scoped docs: defaults to the parent task's `visibleToClient` at upload time. Applies equally to firm and collaborator uploads (D-029). Client-uploaded docs are always true.
-  visibleToCollaboratorIds: string[],
+  visibleToCollaboratorIds: string[], // collaborator uploads (#22) pin this to `[colid]` so the uploader can read the doc back.
   restrictedToDepartments: string[], // inherits task restriction; can be set directly for project-scoped docs. Client uploads always start with `[]` (unrestricted within the firm).
   scanStatus: 'pending' | 'clean' | 'infected',
   retentionUntil?: Timestamp,    // for Q54 — set on project close
@@ -391,6 +442,8 @@ Append-only. Drives task page activity feed, audit, and notifications.
 }
 ```
 
+> **Implemented (#21, Q2):** a minimal milestones editor lives in the firm project Details tab. Owner/admin/pm create/update/delete directly via the client SDK under `validMilestoneFields` rules; the portal overview shows the earliest incomplete milestone as "next milestone".
+
 > **Project templates removed from MVP (D-031).** The `workspaces/{wid}/templates/{tplid}` collection that previously held vertical project blueprints has been removed. New projects in MVP are created via one of two paths:
 >
 > 1. **Siapp-Admin starter project** — the tenant-provisioning script ([Z2]) writes one starter project per new firm from a hardcoded internal seed (`functions/src/provisioning/seeds/{residentialBuild,conveyancing}.ts`). Phases + tasks land directly in `phases/` and `tasks/` subcollections under the new project; no template doc exists.
@@ -408,13 +461,19 @@ Append-only. Drives task page activity feed, audit, and notifications.
 
 `shortCode` is the URL-safe identifier (e.g. `a8K2pQ`). Looked up first, then validated against the JWT.
 
+> **Implemented shape for client portal links (#21, D2):** the doc id is a random `linkId` (not the shortCode); `shortCode` is an indexed field resolved via a collection-group query. The URL token is `{shortCode}_{secret}` and only `secretHash` (SHA-256 of the secret) is stored — the raw secret is never at rest, so issuing always **rotates** (old links are revoked, a fresh one is minted). TTL is 90 days; one active link per project+client pair.
+>
+> **Collaborator task links (#22, D-a/D-e)** reuse the same collection and shape with `audience: 'collaborator'` / `scopeType: 'task'`: `scopeId` is the task id, `subjectId` the colid, and `projectId` (below) carries the project so redemption can build the doc path. One active rotating link per (task, collaborator) pair; links are revoked when the collaborator is unassigned, and issuing requires the project to be `published` or `completed`.
+
 ```typescript
 {
-  shortCode: string,           // doc id
+  shortCode: string,           // indexed field (portal links: doc id = linkId)
+  secretHash?: string,         // portal + collab links — SHA-256 of the URL secret
   audience: 'collaborator' | 'client',
   scopeType: 'task' | 'project',
   scopeId: string,             // taskId or projectId
   subjectId: string,           // colid or cid
+  projectId?: string,          // #22: set on collaborator task links (scopeId is the taskId)
   issuedAt: Timestamp,
   expiresAt: Timestamp,
   lastUsedAt?: Timestamp,
@@ -478,7 +537,7 @@ JWT signature is verified server-side; this doc enables fast lookup, revocation,
 ```typescript
 {
   period: string,
-  whatsappConv: number,         // counted on Twilio webhook delivery
+  whatsappConv: number,         // #24 (D4): counted when the message is ENQUEUED (messages/{mid} onCreate), not on Twilio delivery — MVP has no Twilio webhook yet; conservative overcount is acceptable for billing
   smsSegments: number,
   storageBytes: number,
   activeProjects: number,
@@ -504,6 +563,18 @@ user.customClaims = {
 
 Security rules read this for O(1) membership + role + department checks without an extra Firestore read. Watch the 1 KB claims budget; if it's ever exceeded, drop `departments` from claims and read `members/{uid}` once per session.
 
+Portal (#21) and collaborator (#22) sessions use **custom tokens** with their own claim shapes instead of `workspaces`:
+
+```typescript
+// Client portal session (uid: portal_{wid}_{pid}_{cid})
+{ portal: { wid: string, pid: string, cid: string, linkId: string } }
+
+// Collaborator task session (uid: collab_{wid}_{tid}_{colid})
+{ collab: { wid: string, pid: string, tid: string, colid: string, linkId: string } }
+```
+
+Rules pin every portal read to the claimed project and every collab read/write to the claimed task; the deterministic uid lets the task-activity trigger attribute `updatedBy: collab_…` writes to the collaborator.
+
 ## Required composite indexes
 
 Define in `firestore.indexes.json`. List view → index mapping:
@@ -518,6 +589,8 @@ Define in `firestore.indexes.json`. List view → index mapping:
 | Failed messages dashboard | `messages` | `status ASC, createdAt DESC` |
 | Active magic links | `magicLinks` | `revoked ASC, expiresAt DESC` |
 | Collaborator history | `tasks` (collection group) | `assignees.id ASC, completedAt DESC` |
+| Collaborator's own notes on /t (#22) | `updates` | `authorId ASC, createdAt DESC` |
+| Collaborator-visible files on /t (#22) | `documents` | `visibleToCollaboratorIds CONTAINS, deletedAt ASC, scopeId ASC` |
 
 **Collection-group queries** are used sparingly — only for "my tasks" cross-project view. Each requires explicit indexing.
 
@@ -531,7 +604,7 @@ Every project carries a `lifecycle` field, set on create and changed only by exp
 |---|---|---|---|---|---|
 | `draft` (default on create) | Project created (blank, duplicated, or Siapp-Admin starter); before publish | **Suppressed.** Events still written to `updates/*` and a `would_have_sent: true` flag on the corresponding `outbox` doc for preview. No Twilio calls made. | None — portal returns "This project hasn't started yet" if a client URL is opened. | Not generated. Pre-assignments stored on tasks; queued until publish. | ✅ Full edit |
 | `published` | PM explicitly publishes the project | **Active.** Triggers fire per task/recipient toggles. On the transition itself: one welcome WA to client + one assignment WA per pre-assigned collaborator. | ✅ Full read per `visibleToClient` rules. | ✅ Generated on assignment. | ✅ Full edit |
-| `completed` | PM marks project done (or final milestone closes) | **Suppressed** except a one-time "project completed" handover WA to client. | ✅ Read-only. | Existing links revoked; no new links issued. | ⚠️ Read-only except admin can re-open → returns to `published` |
+| `completed` | PM marks project done (or final milestone closes) | **Suppressed** except a one-time "project completed" handover WA to client. | ✅ Read-only. | ✅ Links keep working and can still be issued (#22, matches portal issuance). | ⚠️ Read-only except admin can re-open → returns to `published` |
 | `archived` | PM archives a completed/abandoned project; hides from default lists | **Suppressed.** All outbound dropped silently. | Revoked. Portal URL returns 404. | Revoked. | 🚫 Read-only |
 | `deleted` | Owner soft-deletes the project | **Suppressed.** | Revoked. | Revoked. | 🚫 Hidden everywhere. Hard-purged after retention window (see [14-legal-compliance.md](./14-legal-compliance.md)). |
 
@@ -608,13 +681,13 @@ Firestore limit: **1 sustained write/sec per document**.
 | `onDelete members/{uid}` | `decrementSeatsUsed` + `removeCustomClaim` | Reverse of above. |
 | `onWrite departments/{depId}` | `recomputeDepartmentMemberCount` | Maintains `departments.memberCount`. |
 | `onWrite collaborators/{colid}` | `syncPhoneIndex` | Maintains `phoneIndex/{phone}`. |
-| `onCreate messages/{mid}` (status delivered) | `incrementUsageCounter` | Bumps sharded counter on `usageCounters/{currentPeriod}`. |
+| `onCreate messages/{mid}` | `onMessageCreated` (#24, D4) | Counts usage at enqueue time: bumps `usageCounters/{currentPeriod}.whatsappConv` + `workspaces.whatsappAllowance.used` in a transaction; enqueues the 90% owner WA alert once per period. Suppressed/alert messages don't count. |
 | `onCreate updates/{updid}` (status_change, photo_added) | `updateTaskState` + `triggerNotifications` | Cascades changes; enqueues WhatsApp messages. Gated by `project.lifecycle` (see below). |
 | `onUpdate projects/{pid}` (lifecycle → published) | `firePublishWelcomeMessages` | Sends one-time welcome WA to client + first assignment WA to any pre-assigned collaborators. Idempotent on `project.publishedAt`. |
 | `onUpdate projects/{pid}` (lifecycle → completed) | `setRetentionDates` + `fireCompletionMessages` | Sets `retentionUntil` on documents; sends handover WA to client; suppresses further outbound. |
 | `onUpdate projects/{pid}` (lifecycle → archived | deleted) | `revokeExternalAccess` | Invalidates client + collaborator magic-link JWTs; suppresses all outbound. |
 | `scheduled daily` | `expireMagicLinks` | Marks expired links revoked. |
-| `scheduled daily` | `expireTrials` | Sets workspace to read-only after day 30. |
+| `scheduled daily` | `onTrialExpirySweep` (#24, D7) | Sets `billingStatus: 'read_only'` on trial workspaces past `planExpiresAt`. Paid lapses are flipped manually from the admin panel. |
 
 ## Storage layout (Firebase Storage)
 

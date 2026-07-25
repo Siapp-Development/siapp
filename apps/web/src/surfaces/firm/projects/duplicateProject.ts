@@ -12,7 +12,7 @@
  * outright (decision 2) rather than partially copied.
  */
 
-import type { TMemberRole, TTaskAssignee } from '@siapp/shared';
+import type { ITaskNotifyConfig, TMemberRole, TTaskAssignee } from '@siapp/shared';
 import {
   Timestamp,
   collection,
@@ -69,6 +69,7 @@ export interface IDuplicateTaskSource {
   visibleToClient: boolean;
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  notify: ITaskNotifyConfig;
   dependsOn: string[];
 }
 
@@ -92,6 +93,7 @@ export interface IDuplicateTaskDoc {
   visibleToCollaboratorIds: string[];
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  notify: ITaskNotifyConfig;
   /** Remapped to copied task ids; dangling entries dropped. */
   dependsOn: string[];
   order: number;
@@ -136,6 +138,7 @@ export function buildDuplicatePlan(
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [...task.restrictedToDepartments],
     sendWhatsapp: task.sendWhatsapp,
+    notify: { ...task.notify },
     dependsOn: task.dependsOn
       .map((dep) => taskIdMap.get(dep))
       .filter((dep): dep is string => dep !== undefined),
@@ -248,6 +251,7 @@ export async function duplicateProject(args: IDuplicateProjectArgs): Promise<str
       visibleToCollaboratorIds: task.visibleToCollaboratorIds,
       restrictedToDepartments: task.restrictedToDepartments,
       sendWhatsapp: task.sendWhatsapp,
+      notify: task.notify,
       dependsOn: task.dependsOn,
       order: task.order,
       createdAt: serverTimestamp(),

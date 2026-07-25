@@ -47,6 +47,12 @@ export interface ITaskDueSoonVars extends IBaseTemplateVars {
   taskLink: string;
 }
 
+export interface ITaskBlockedVars extends IBaseTemplateVars {
+  trigger: 'task_blocked';
+  taskTitle: string;
+  projectTitle: string;
+}
+
 export interface INeedHelpVars extends IBaseTemplateVars {
   trigger: 'need_help';
   collaboratorName: string;
@@ -65,5 +71,6 @@ export type TTemplateVars =
   | ITaskAssignedVars
   | ITaskStatusChangeVars
   | ITaskDueSoonVars
+  | ITaskBlockedVars
   | INeedHelpVars
   | IInboundAutoReplyVars;

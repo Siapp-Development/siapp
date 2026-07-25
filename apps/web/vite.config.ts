@@ -2,12 +2,38 @@
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 
 const SURFACES = ['apex', 'dashboard', 'admin'] as const;
 type TSurface = (typeof SURFACES)[number];
+
+/**
+ * Firebase env vars that must be baked into every production bundle. Vite
+ * inlines them at build time, so a build without them ships a bundle that
+ * throws FirebaseConfigError on load. The committed apps/web/.env provides
+ * them; this guard fails the build loudly if that file goes missing.
+ */
+const REQUIRED_FIREBASE_ENV_KEYS = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+] as const;
+
+function assertFirebaseEnv(env: Record<string, string>): void {
+  const missing = REQUIRED_FIREBASE_ENV_KEYS.filter((key) => !env[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `Refusing to build without Firebase config. Missing: ${missing.join(', ')}. ` +
+        'These should come from the committed apps/web/.env file.',
+    );
+  }
+}
 
 function isSurface(mode: string): mode is TSurface {
   return (SURFACES as readonly string[]).includes(mode);
@@ -62,12 +88,37 @@ function surfaceEntry(surface: TSurface): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // vitest and plain `vite build` run without a surface mode; default to apex.
   const surface: TSurface = isSurface(mode) ? mode : 'apex';
 
+  if (command === 'build') {
+    assertFirebaseEnv(loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'));
+  }
+
+  // Sentry source-map upload (#27, Part B): only when CI provides the auth
+  // token (main-branch builds). Local/PR builds skip it — no maps generated,
+  // no upload attempted. Maps are 'hidden' (no sourceMappingURL comment) and
+  // deleted after upload so they never reach Firebase Hosting.
+  const sentryAuthToken = process.env['SENTRY_AUTH_TOKEN'];
+  const uploadSourceMaps = command === 'build' && !!sentryAuthToken;
+
   return {
-    plugins: [react(), tailwindcss(), surfaceEntry(surface)],
+    plugins: [
+      react(),
+      tailwindcss(),
+      surfaceEntry(surface),
+      ...(uploadSourceMaps
+        ? [
+            sentryVitePlugin({
+              org: 'siapp-4u',
+              project: 'siapp-web',
+              authToken: sentryAuthToken,
+              sourcemaps: { filesToDeleteAfterUpload: [`dist/${surface}/**/*.map`] },
+            }),
+          ]
+        : []),
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -77,6 +128,7 @@ export default defineConfig(({ mode }) => {
       outDir: `dist/${surface}`,
       emptyOutDir: true,
       manifest: true,
+      sourcemap: uploadSourceMaps ? ('hidden' as const) : false,
       rollupOptions: {
         input: fileURLToPath(new URL(`./${surface}.html`, import.meta.url)),
       },

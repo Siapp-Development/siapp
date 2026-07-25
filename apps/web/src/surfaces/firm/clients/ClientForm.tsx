@@ -2,12 +2,15 @@
  * Create / edit form for a client's firm-editable fields (#16). The
  * server-only notificationsOptOut flag is never shown here — it surfaces
  * as a read-only badge on the list page (D-035).
+ * #26: captures the firm-attested WhatsApp/SMS consent (D1); a flip on edit
+ * writes a fresh dated record via useClients.
  */
 
 import { Alert, Button, Input, Label } from '@siapp/ui';
 import type { TLocale } from '@siapp/shared';
 import { useState, type FormEvent } from 'react';
 
+import { ConsentCheckbox } from '../pdpa/ConsentCheckbox.tsx';
 import { normalizePhone } from './normalizePhone.ts';
 import type { IClientFormValues, IClientRow } from './useClients.ts';
 
@@ -20,18 +23,21 @@ const LANGUAGES = Object.keys(LANGUAGE_LABELS) as TLocale[];
 export interface IClientFormProps {
   /** When set, the form edits this client; otherwise it creates a new one. */
   client?: IClientRow;
+  /** For the consent attestation copy (#26 D1). */
+  firmName: string;
   onSubmit: (values: IClientFormValues) => Promise<void>;
   onCancel: () => void;
   submitLabel: string;
 }
 
-export function ClientForm({ client, onSubmit, onCancel, submitLabel }: IClientFormProps) {
+export function ClientForm({ client, firmName, onSubmit, onCancel, submitLabel }: IClientFormProps) {
   const [name, setName] = useState(client?.name ?? '');
   const [phone, setPhone] = useState(client?.phone ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
   const [companyName, setCompanyName] = useState(client?.companyName ?? '');
   const [language, setLanguage] = useState<TLocale>(client?.language ?? 'en');
   const [notes, setNotes] = useState(client?.notes ?? '');
+  const [waConsentGranted, setWaConsentGranted] = useState(client?.waConsentGranted === true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +67,7 @@ export function ClientForm({ client, onSubmit, onCancel, submitLabel }: IClientF
         companyName: companyName.trim(),
         language,
         notes: notes.trim(),
+        waConsentGranted,
       });
     } catch {
       setError('Could not save the client.');
@@ -129,6 +136,13 @@ export function ClientForm({ client, onSubmit, onCancel, submitLabel }: IClientF
           onChange={(event) => setNotes(event.target.value)}
         />
       </div>
+      <ConsentCheckbox
+        firmName={firmName}
+        checked={waConsentGranted}
+        onChange={setWaConsentGranted}
+        storedGranted={client?.waConsentGranted ?? null}
+        storedRecordedAt={client?.waConsentRecordedAt ?? null}
+      />
       <div className="flex gap-2">
         <Button type="submit" disabled={pending} aria-busy={pending}>
           {pending ? 'Saving…' : submitLabel}

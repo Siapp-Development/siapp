@@ -10,6 +10,9 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 
+import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
+import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
+
 function requireWorkspaceAdmin(request: CallableRequest, workspaceId: string): string {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -32,7 +35,8 @@ export const setMemberDepartments = onCall(async (request) => {
   if (!workspaceId || !memberUid) {
     throw new HttpsError('invalid-argument', 'workspaceId and memberUid are required.');
   }
-  requireWorkspaceAdmin(request, workspaceId);
+  const actorUid = requireWorkspaceAdmin(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
 
   const departmentsRaw = data['departments'];
   if (
@@ -63,6 +67,18 @@ export const setMemberDepartments = onCall(async (request) => {
     const before = memberSnap.get('departments');
     txn.update(memberRef, { departments });
     return Array.isArray(before) ? (before as string[]) : [];
+  });
+
+  // #23 (D5): access-control change → attributed audit entry.
+  await writeAuditLog(workspaceId, {
+    actorType: 'user',
+    actorId: actorUid,
+    action: 'member.departments_change',
+    targetType: 'member',
+    targetId: memberUid,
+    before: { departments: previous },
+    after: { departments },
+    ...callableRequestMeta(request),
   });
 
   // memberCount is display-only, so an eventually-consistent recount outside

@@ -85,3 +85,38 @@ export function isClaimsNoOp(
 export function claimsPayloadSizeBytes(payload: IWorkspaceClaims): number {
   return new TextEncoder().encode(JSON.stringify(payload)).length;
 }
+
+/**
+ * Merge a rebuilt membership payload into a user's existing custom claims,
+ * preserving every non-membership claim — notably `isAdmin` (#10). The
+ * `workspaces` key is replaced wholesale: memberships are rebuilt from
+ * Firestore, so stale entries must not survive the merge (#62).
+ */
+export function mergeMembershipClaims(
+  existing: Record<string, unknown> | undefined,
+  payload: IWorkspaceClaims,
+): Record<string, unknown> {
+  return { ...existing, workspaces: payload.workspaces };
+}
+
+/**
+ * Add or update a single workspace entry in a user's existing claims without
+ * touching other memberships or non-membership claims (#62). Used by
+ * `acceptInvite` for the deterministic pre-trigger claim write.
+ */
+export function upsertMembershipClaim(
+  existing: Record<string, unknown> | undefined,
+  workspaceId: string,
+  entry: IWorkspaceClaimEntry,
+): Record<string, unknown> {
+  const existingWorkspaces =
+    existing !== undefined &&
+    typeof existing['workspaces'] === 'object' &&
+    existing['workspaces'] !== null
+      ? (existing['workspaces'] as Record<string, unknown>)
+      : {};
+  return {
+    ...existing,
+    workspaces: { ...existingWorkspaces, [workspaceId]: entry },
+  };
+}

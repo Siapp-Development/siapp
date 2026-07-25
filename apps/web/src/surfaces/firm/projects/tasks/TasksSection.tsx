@@ -6,7 +6,7 @@
  */
 
 import { Alert, Button, Card, CardContent, CardHeader, Input, cn } from '@siapp/ui';
-import type { TMemberRole } from '@siapp/shared';
+import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
@@ -176,6 +176,8 @@ export interface ITasksSectionProps {
   userName: string;
   /** Project-level edit gate (draft/published + role, from the detail page). */
   canEdit: boolean;
+  /** Project lifecycle — collab task links need published/completed (#22). */
+  lifecycle: TProjectLifecycle;
 }
 
 export function TasksSection({
@@ -186,6 +188,7 @@ export function TasksSection({
   uid,
   userName,
   canEdit,
+  lifecycle,
 }: ITasksSectionProps) {
   const tasksState = useTasks(workspaceId, projectId, role, departments);
   const phasesState = usePhases(workspaceId, projectId);
@@ -418,6 +421,7 @@ export function TasksSection({
             departments={departmentRows}
             role={role}
             memberDepartments={departments}
+            lifecycle={lifecycle}
             canEdit={canEdit}
             uid={uid}
             userName={userName}
