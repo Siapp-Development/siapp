@@ -56,10 +56,14 @@ service cloud.firestore {
     }
 
     // O(1) membership check from custom claims — no membership-doc read.
+    // The `in` guard matters: internal-admin tokens (isAdmin bootstrap) have
+    // no `workspaces` claim at all, and a bare property access on a missing
+    // claim is an evaluation ERROR — which poisons any || chain in a list
+    // query's proof, denying the query outright.
     function isFirmMember(wid) {
       return isSignedIn()
-        && request.auth.token.workspaces != null
-        && request.auth.token.workspaces[wid] != null;
+        && 'workspaces' in request.auth.token
+        && wid in request.auth.token.workspaces;
     }
 
     // Role gate from custom claims (first used by auditLog reads below).
@@ -522,7 +526,10 @@ service cloud.firestore {
     }
 
     match /workspaces/{wid} {
-      allow read: if isFirmMember(wid);
+      // isSiappAdmin: the admin panel lists all workspaces and reads single
+      // workspace docs (WorkspaceListPage / WorkspaceDetailPage). Without it
+      // the list query is unprovable and fails for every internal admin.
+      allow read: if isSiappAdmin() || isFirmMember(wid);
       allow write: if false;
 
       match /members/{memberUid} {
