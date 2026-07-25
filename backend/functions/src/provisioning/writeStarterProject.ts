@@ -100,6 +100,10 @@ export async function writeStarterProject(
       assignees: [],
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+      // Rules-required attribution (#23): without createdBy the task fails
+      // validTaskFields on every subsequent firm-side update.
+      createdBy: ownerUid,
+      updatedBy: ownerUid,
     });
   }
 

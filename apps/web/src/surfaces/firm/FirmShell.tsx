@@ -2,7 +2,7 @@ import { Button, cn } from '@siapp/ui';
 import type { ReactNode } from 'react';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
-import siappLogoSimple from '@/assets/siapp-logo-simple.png';
+import siappLogoSimpleReversed from '@/assets/siapp-logo-simple-reversed.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { BillingBanners } from './billing/BillingBanners.tsx';
 import { BillingSettingsPage } from './billing/BillingSettingsPage.tsx';
@@ -159,9 +159,9 @@ export function FirmShell() {
       <aside className="on-dark sticky top-0 flex h-screen w-60 flex-col bg-sidebar px-4 py-5">
         <p className="flex items-center px-3">
           <img
-            src={siappLogoSimple}
+            src={siappLogoSimpleReversed}
             alt="Siapp"
-            className="h-9 w-9 rounded-md bg-white object-contain p-1"
+            className="h-9 w-9 object-contain"
           />
         </p>
         <p className="mt-5 px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">
