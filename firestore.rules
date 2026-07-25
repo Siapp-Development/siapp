@@ -484,7 +484,10 @@ service cloud.firestore {
         && d.order is number
         && d.createdAt is timestamp
         && d.updatedAt is timestamp
-        && d.createdBy is string;
+        // Legacy tolerance: provisioning-seeded starter tasks predate
+        // createdBy stamping — updates must not brick them. The create rule
+        // still pins createdBy == auth.uid, and the update rule freezes it.
+        && (!('createdBy' in d) || d.createdBy is string);
     }
 
     // Firm-staff profile — own doc only. No delete; list stays denied.
