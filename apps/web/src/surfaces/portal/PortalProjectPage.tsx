@@ -48,6 +48,11 @@ export function PortalProjectPage() {
         <h1 id="overview-heading" className="text-3xl font-bold tracking-tight">
           {project.name}
         </h1>
+        {project.clientName !== '' && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Prepared for <span className="font-medium text-foreground">{project.clientName}</span>
+          </p>
+        )}
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div>
             <dt className="text-xs tracking-wide text-muted-foreground uppercase">Started</dt>
