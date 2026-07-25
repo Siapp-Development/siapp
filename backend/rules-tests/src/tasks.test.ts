@@ -278,6 +278,23 @@ describe('task update', () => {
     );
   });
 
+  it('allows editing a legacy provisioning-seeded task without createdBy', async () => {
+    // Starter tasks written by adminProvisionWorkspace predate createdBy
+    // stamping — updates must not be bricked by validTaskFields.
+    const legacyPath = `${TASKS_PATH}/task-legacy`;
+    const legacy = validTask('task-legacy');
+    delete legacy['createdBy'];
+    await seedDoc(testEnv, legacyPath, legacy);
+
+    await assertSucceeds(
+      updateDoc(doc(dbAs('owner'), legacyPath), {
+        dueDate: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        updatedBy: 'user-owner',
+      }),
+    );
+  });
+
   it('denies tampering with id, createdAt, and createdBy', async () => {
     const tampering: Array<Record<string, unknown>> = [
       { id: 'renamed' },
