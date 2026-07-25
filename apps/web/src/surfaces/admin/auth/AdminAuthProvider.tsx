@@ -1,11 +1,10 @@
 import type { IWorkspaceClaims } from '@siapp/shared';
 import { FirebaseError } from 'firebase/app';
 import {
-  GoogleAuthProvider,
   TotpMultiFactorGenerator,
   getMultiFactorResolver,
+  getRedirectResult,
   onIdTokenChanged,
-  signInWithPopup,
   signOut,
   type MultiFactorError,
   type MultiFactorResolver,
@@ -15,6 +14,7 @@ import { createContext, useEffect, useMemo, useState, type ReactNode } from 'rea
 
 import { auth } from '@/lib/firebase.ts';
 import { shouldUseEmulators } from '@/lib/firebaseConfig';
+import { signInWithGoogle } from '@/lib/googleSignIn.ts';
 
 export type TAdminAuthState =
   | { status: 'loading' }
@@ -47,6 +47,19 @@ export interface IAdminAuthProviderProps {
  */
 export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
   const [state, setState] = useState<TAdminAuthState>({ status: 'loading' });
+
+  // When the popup was blocked, sign-in falls back to the redirect flow (#78);
+  // an MFA-enrolled account then surfaces its challenge here on return
+  // instead of in the signInWithGoogle catch below.
+  useEffect(() => {
+    getRedirectResult(auth).catch((error: unknown) => {
+      if (error instanceof FirebaseError && error.code === 'auth/multi-factor-auth-required') {
+        const resolver = getMultiFactorResolver(auth, error as MultiFactorError);
+        setState({ status: 'mfaChallenge', resolver });
+      }
+      // Other redirect errors leave the signed-out screen in place.
+    });
+  }, []);
 
   useEffect(() => {
     return onIdTokenChanged(auth, (user) => {
@@ -85,9 +98,8 @@ export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
     () => ({
       state,
       signInWithGoogle: async () => {
-        const provider = new GoogleAuthProvider();
         try {
-          await signInWithPopup(auth, provider);
+          await signInWithGoogle(auth);
           // onIdTokenChanged will update state automatically.
         } catch (error) {
           // An MFA-enrolled account must resolve a second-factor challenge
