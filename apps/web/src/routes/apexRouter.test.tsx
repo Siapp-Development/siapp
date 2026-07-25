@@ -119,7 +119,12 @@ describe('apexRouter', () => {
   it('serves the marketing page at / with heading and landmarks', () => {
     renderAt('/');
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Siapp' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Every client knows where their project stands.',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();

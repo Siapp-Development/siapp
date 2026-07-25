@@ -1,30 +1,28 @@
-import { Button } from '@siapp/ui';
+import { Suspense, lazy } from 'react';
 
-import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 
-/** Marketing landing skeleton at siapp.app/ — real content in a later ticket. */
+import { MarketingFooter } from './components/MarketingFooter.tsx';
+import { MarketingNav } from './components/MarketingNav.tsx';
+import { Hero } from './sections/Hero.tsx';
+import './marketing.css';
+
+const BelowFold = lazy(() => import('./sections/BelowFold.tsx'));
+
+/** Marketing landing page at siapp.app/ (impl-28). */
 export function MarketingHome() {
   return (
-    <>
+    <div id="top" className="mk-root bg-background">
       <SkipLink />
-      <header className="border-b border-border bg-card px-6 py-4">
-        <nav aria-label="Main">
-          <img src={siappLogoFull} alt="Siapp" className="h-8 w-auto" />
-        </nav>
-      </header>
-      <main id="main" className="mx-auto max-w-3xl px-6 py-16">
-        <h1>
-          <img src={siappLogoFull} alt="Siapp" className="h-20 w-auto" />
-        </h1>
-        <p className="mt-4 text-lg">
-          Simple project tracking for small firms — keep clients and collaborators in the loop
-          without the busywork.
-        </p>
-        <Button asChild className="mt-8">
-          <a href="https://dashboard.siapp.app">Go to your dashboard</a>
-        </Button>
+      <MarketingNav />
+      <main id="main">
+        <Hero />
+        {/* Reserved min-height keeps CLS at 0 while the chunk loads. */}
+        <Suspense fallback={<div aria-hidden="true" className="min-h-[200vh]" />}>
+          <BelowFold />
+        </Suspense>
       </main>
-    </>
+      <MarketingFooter />
+    </div>
   );
 }
