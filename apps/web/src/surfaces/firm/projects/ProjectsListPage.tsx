@@ -6,7 +6,7 @@
  * Duplicate from existing (structure carries, content clears).
  */
 
-import { Button, Card, CardContent, CardHeader, Label } from '@siapp/ui';
+import { Badge, Button, Card, CardContent, CardHeader, Label, Progress } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -39,26 +39,35 @@ interface IProjectListItemProps {
 
 function ProjectListItem({ project, workspaceSlug }: IProjectListItemProps) {
   return (
-    <li className="rounded-md border border-border px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-2">
+    <li className="rounded-lg border border-border bg-card px-4 py-3.5 shadow-card transition-colors duration-150 hover:border-primary/40">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <span className="flex min-w-0 items-center gap-2">
           <Link
             to={`/${workspaceSlug}/projects/${project.id}`}
-            className="font-medium text-foreground hover:text-primary"
+            className="truncate font-display text-base font-semibold text-foreground hover:text-primary"
           >
             {project.name}
           </Link>
-          {project.code !== '' && (
-            <span className="text-xs text-muted-foreground">{project.code}</span>
-          )}
+          {project.code !== '' && <Badge variant="outline">{project.code}</Badge>}
           <LifecycleBadge lifecycle={project.lifecycle} />
+          {project.overdueTasks > 0 && (
+            <Badge variant="danger">{project.overdueTasks} overdue</Badge>
+          )}
         </span>
-        <span className="text-sm text-muted-foreground">
-          {STATUS_LABELS[project.status]} · {project.progressPct}% complete
-          {project.overdueTasks > 0 && ` · ${project.overdueTasks} overdue`}
+        <span className="flex w-44 items-center gap-2">
+          <Progress
+            value={project.progressPct}
+            label={`${project.name} progress`}
+            className="flex-1"
+          />
+          <span className="text-sm font-medium text-muted-foreground tabular-nums">
+            {project.progressPct}%
+          </span>
         </span>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        {STATUS_LABELS[project.status]}
+        {' · '}
         {project.clientNameDenorm !== '' ? project.clientNameDenorm : 'No client linked'}
         {project.startDate !== null && ` · starts ${project.startDate.toLocaleDateString()}`}
         {project.targetEndDate !== null && ` · due ${project.targetEndDate.toLocaleDateString()}`}
@@ -113,11 +122,13 @@ export function ProjectsListPage({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-5">
         <div>
-          <h1 className="text-2xl font-bold">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{workspaceName}</p>
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {workspaceName}
+          </p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">Projects</h1>
         </div>
         {canCreate && !creating && (
           <Button type="button" onClick={openCreateCard}>

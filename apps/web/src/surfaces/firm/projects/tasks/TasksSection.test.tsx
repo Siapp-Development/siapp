@@ -187,8 +187,8 @@ describe('TasksSection', () => {
     renderSection();
 
     const labels = screen.getAllByText(/due 1\/1\/2020/i);
-    expect(labels[0]).toHaveClass('text-destructive');
-    expect(labels[1]).not.toHaveClass('text-destructive');
+    expect(labels[0]).toHaveClass('text-danger');
+    expect(labels[1]).not.toHaveClass('text-danger');
   });
 
   it('shows restricted rows dimmed and an access explainer when selected', async () => {

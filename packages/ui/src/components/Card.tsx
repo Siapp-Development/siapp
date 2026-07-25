@@ -7,7 +7,10 @@ export type TCardProps = HTMLAttributes<HTMLDivElement>;
 export function Card({ className, ...props }: TCardProps) {
   return (
     <div
-      className={cn('rounded-md border border-border bg-card text-foreground shadow-sm', className)}
+      className={cn(
+        'rounded-lg border border-border bg-card text-foreground shadow-card',
+        className,
+      )}
       {...props}
     />
   );

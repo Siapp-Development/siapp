@@ -114,7 +114,10 @@ describe('ProjectsListPage', () => {
     );
     expect(screen.getByText('Draft')).toBeInTheDocument();
     expect(screen.getByText('Published')).toBeInTheDocument();
-    expect(screen.getByText(/40% complete/)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Office fit-out progress' })).toHaveAttribute(
+      'aria-valuenow',
+      '40',
+    );
     expect(screen.getByText(/2 overdue/)).toBeInTheDocument();
     expect(screen.getByText(/Ahmad Corp/)).toBeInTheDocument();
   });
