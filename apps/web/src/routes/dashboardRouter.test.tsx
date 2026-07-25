@@ -13,6 +13,7 @@ vi.mock('firebase/auth', () => ({
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
+  signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
 }));
 

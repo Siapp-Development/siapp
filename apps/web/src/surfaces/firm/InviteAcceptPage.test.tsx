@@ -18,6 +18,7 @@ vi.mock('firebase/auth', () => ({
   sendEmailVerification: mocks.sendEmailVerification,
   signInWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
+  signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
 }));
 vi.mock('@/lib/callables.ts', async (importOriginal) => ({

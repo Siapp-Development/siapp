@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { FirebaseError } from 'firebase/app';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,6 +16,7 @@ vi.mock('firebase/auth', () => ({
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
+  signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
 }));
 
@@ -50,6 +51,7 @@ async function fillAndSubmit(email: string, password: string) {
 beforeEach(() => {
   vi.mocked(signInWithEmailAndPassword).mockReset();
   vi.mocked(signInWithPopup).mockReset();
+  vi.mocked(signInWithRedirect).mockReset();
 });
 
 describe('LoginPage', () => {
@@ -126,6 +128,19 @@ describe('LoginPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /continue with google/i }));
 
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the redirect flow when the Google popup is blocked (#78)', async () => {
+    vi.mocked(signInWithPopup).mockRejectedValue(
+      new FirebaseError('auth/popup-blocked', 'blocked'),
+    );
+    vi.mocked(signInWithRedirect).mockResolvedValue(undefined as never);
+    renderLogin();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+
+    expect(signInWithRedirect).toHaveBeenCalledOnce();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 

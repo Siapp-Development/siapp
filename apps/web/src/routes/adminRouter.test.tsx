@@ -24,9 +24,11 @@ vi.mock('firebase/auth', () => ({
     static assertionForEnrollment = vi.fn();
   },
   getMultiFactorResolver: vi.fn(),
+  getRedirectResult: vi.fn(async () => null),
   multiFactor: vi.fn(),
   onIdTokenChanged: vi.fn(),
   signInWithPopup: vi.fn(),
+  signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
 }));
 vi.mock('firebase/functions', () => ({

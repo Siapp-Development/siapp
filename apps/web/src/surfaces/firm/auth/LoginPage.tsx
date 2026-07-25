@@ -1,12 +1,13 @@
 import { Alert, Button, Card, CardContent, CardHeader, Input, Label, Separator } from '@siapp/ui';
 import { FirebaseError } from 'firebase/app';
-import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 
 import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { auth } from '@/lib/firebase.ts';
+import { signInWithGoogle } from '@/lib/googleSignIn.ts';
 import { useAuth } from './useAuth.ts';
 
 /** Map Firebase Auth error codes to friendly copy; null = dismissed, say nothing. */
@@ -94,7 +95,7 @@ export function LoginPage() {
     setPending(true);
     setFormError(null);
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      await signInWithGoogle(auth);
       navigate(next, { replace: true });
     } catch (error) {
       setFormError(friendlyAuthError(error));

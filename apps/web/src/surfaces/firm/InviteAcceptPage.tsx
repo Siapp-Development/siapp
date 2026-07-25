@@ -12,11 +12,9 @@
 import { Alert, Button, Card, CardContent, CardHeader, Input, Label, Separator } from '@siapp/ui';
 import { FirebaseError } from 'firebase/app';
 import {
-  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   signInWithEmailAndPassword,
-  signInWithPopup,
 } from 'firebase/auth';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -24,6 +22,7 @@ import { useNavigate, useParams } from 'react-router';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { acceptInvite, inviteErrorCode } from '@/lib/callables.ts';
 import { auth } from '@/lib/firebase.ts';
+import { signInWithGoogle } from '@/lib/googleSignIn.ts';
 import { useAuth } from './auth/useAuth.ts';
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -113,7 +112,7 @@ function SignInCard() {
     setPending(true);
     setFormError(null);
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
+      await signInWithGoogle(auth);
     } catch (error) {
       setFormError(friendlyAuthError(error));
       setPending(false);
