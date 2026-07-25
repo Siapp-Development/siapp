@@ -3,6 +3,7 @@ import { FirebaseError } from 'firebase/app';
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router';
 
+import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { MFA_ENROLLED_FLAG } from './AdminMfaEnrollScreen.tsx';
 import { useAdminAuth } from './useAdminAuth.ts';
@@ -81,6 +82,7 @@ export function AdminLoginPage() {
       <main id="main" className="flex min-h-screen items-center justify-center px-6">
         <div className="w-full max-w-sm space-y-6">
           <div>
+            <img src={siappLogoFull} alt="" className="mb-4 h-12 w-auto" />
             <h1 className="text-2xl font-bold">Siapp Admin</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Internal tooling — authorised access only.
