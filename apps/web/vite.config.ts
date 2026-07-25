@@ -2,7 +2,6 @@
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
@@ -23,6 +22,9 @@ const REQUIRED_FIREBASE_ENV_KEYS = [
   'VITE_FIREBASE_STORAGE_BUCKET',
   'VITE_FIREBASE_MESSAGING_SENDER_ID',
   'VITE_FIREBASE_APP_ID',
+  // impl-28: marketing CTAs link to the external Typeform; a bundle built
+  // without it would ship dead "Request early access" buttons.
+  'VITE_EARLY_ACCESS_FORM_URL',
 ] as const;
 
 function assertFirebaseEnv(env: Record<string, string>): void {
@@ -96,29 +98,8 @@ export default defineConfig(({ mode, command }) => {
     assertFirebaseEnv(loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'));
   }
 
-  // Sentry source-map upload (#27, Part B): only when CI provides the auth
-  // token (main-branch builds). Local/PR builds skip it — no maps generated,
-  // no upload attempted. Maps are 'hidden' (no sourceMappingURL comment) and
-  // deleted after upload so they never reach Firebase Hosting.
-  const sentryAuthToken = process.env['SENTRY_AUTH_TOKEN'];
-  const uploadSourceMaps = command === 'build' && !!sentryAuthToken;
-
   return {
-    plugins: [
-      react(),
-      tailwindcss(),
-      surfaceEntry(surface),
-      ...(uploadSourceMaps
-        ? [
-            sentryVitePlugin({
-              org: 'siapp-4u',
-              project: 'siapp-web',
-              authToken: sentryAuthToken,
-              sourcemaps: { filesToDeleteAfterUpload: [`dist/${surface}/**/*.map`] },
-            }),
-          ]
-        : []),
-    ],
+    plugins: [react(), tailwindcss(), surfaceEntry(surface)],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -128,7 +109,6 @@ export default defineConfig(({ mode, command }) => {
       outDir: `dist/${surface}`,
       emptyOutDir: true,
       manifest: true,
-      sourcemap: uploadSourceMaps ? ('hidden' as const) : false,
       rollupOptions: {
         input: fileURLToPath(new URL(`./${surface}.html`, import.meta.url)),
       },

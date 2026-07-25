@@ -1,0 +1,120 @@
+/**
+ * Marketing-surface tokens (impl-28). Layered on top of packages/ui
+ * tokens.css — no new colors here, only marketing-specific type scale,
+ * rhythm and motion. Scoped under .mk-root so nothing leaks into the
+ * portal routes that share the apex bundle.
+ */
+.mk-root {
+  /* Type scale — clamp()-based, no JS breakpoints */
+  --mk-hero-size: clamp(2.375rem, 5.5vw, 4.25rem);
+  --mk-h2-size: clamp(1.75rem, 3vw, 2.625rem);
+  --mk-lede-size: clamp(1.0625rem, 1.4vw, 1.1875rem);
+
+  /* Layout rhythm */
+  --mk-container: 72rem;
+  --mk-section-y: clamp(4rem, 10vw, 7rem);
+
+  /* Motion */
+  --mk-dur-fast: 180ms;
+  --mk-dur: 320ms;
+  --mk-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /*
+   * WCAG AA overrides: the shared --success/--warning text colors sit at
+   * 4.44:1 and 3.04:1 on their tint backgrounds — below the 4.5:1 minimum
+   * for the small demo status chips on this page. Darkened here, scoped to
+   * marketing only, so app surfaces are untouched.
+   */
+  --success: #2a7449;
+  --warning: #8a6508;
+  --color-success: #2a7449;
+  --color-warning: #8a6508;
+}
+
+/* Smooth anchor scrolling only while the marketing page is mounted. */
+html:has(.mk-root) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.mk-root) {
+    scroll-behavior: auto;
+  }
+}
+
+/* Anchor targets clear the sticky nav. */
+.mk-root [id] {
+  scroll-margin-top: 5rem;
+}
+
+.mk-hero-title {
+  font-size: var(--mk-hero-size);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.mk-h2 {
+  font-size: var(--mk-h2-size);
+  line-height: 1.15;
+}
+
+.mk-lede {
+  font-size: var(--mk-lede-size);
+  line-height: 1.6;
+}
+
+/* Section-entry reveal: opacity + small rise, triggered by [data-inview]. */
+.mk-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity var(--mk-dur) var(--mk-ease),
+    transform var(--mk-dur) var(--mk-ease);
+}
+
+.mk-reveal[data-inview='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Crossfade used when the industry demo remounts. */
+@keyframes mk-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* FAQ accordion panel: grid-rows trick animates height without JS measuring. */
+.mk-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--mk-dur) var(--mk-ease);
+}
+
+.mk-collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.mk-collapse > div {
+  overflow: hidden;
+  /* Keep collapsed content out of the a11y tree / tab order; the visibility
+     flip is delayed until the height transition finishes on close. */
+  visibility: hidden;
+  transition: visibility 0s var(--mk-dur);
+}
+
+.mk-collapse[data-open='true'] > div {
+  visibility: visible;
+  transition: none;
+}
