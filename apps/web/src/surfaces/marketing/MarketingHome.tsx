@@ -1,5 +1,6 @@
 import { Button } from '@siapp/ui';
 
+import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 
 /** Marketing landing skeleton at siapp.app/ — real content in a later ticket. */
@@ -9,11 +10,13 @@ export function MarketingHome() {
       <SkipLink />
       <header className="border-b border-border bg-card px-6 py-4">
         <nav aria-label="Main">
-          <span className="text-lg font-semibold text-primary">Siapp</span>
+          <img src={siappLogoFull} alt="Siapp" className="h-8 w-auto" />
         </nav>
       </header>
       <main id="main" className="mx-auto max-w-3xl px-6 py-16">
-        <h1 className="text-4xl font-bold text-foreground">Siapp</h1>
+        <h1>
+          <img src={siappLogoFull} alt="Siapp" className="h-20 w-auto" />
+        </h1>
         <p className="mt-4 text-lg">
           Simple project tracking for small firms — keep clients and collaborators in the loop
           without the busywork.

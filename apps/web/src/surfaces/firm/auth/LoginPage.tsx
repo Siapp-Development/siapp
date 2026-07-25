@@ -4,6 +4,7 @@ import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from 
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 
+import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import { auth } from '@/lib/firebase.ts';
 import { useAuth } from './useAuth.ts';
@@ -106,14 +107,8 @@ export function LoginPage() {
       <SkipLink />
       <main id="main" className="flex min-h-screen items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm">
-          <div className="mb-6 flex items-center justify-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className="flex h-9 w-9 items-center justify-center rounded-md bg-accent font-display text-lg font-bold text-accent-foreground"
-            >
-              S
-            </span>
-            <span className="font-display text-2xl font-bold tracking-tight">Siapp</span>
+          <div className="mb-6 flex justify-center">
+            <img src={siappLogoFull} alt="Siapp" className="h-16 w-auto" />
           </div>
           <Card className="shadow-raised">
             <CardHeader>
