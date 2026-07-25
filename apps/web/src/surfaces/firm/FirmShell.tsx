@@ -143,9 +143,14 @@ export function FirmShell() {
           <p className="mt-2">
             This workspace doesn't exist or your account doesn't have access to it.
           </p>
-          <Button asChild variant="outline" className="mt-6">
-            <Link to="/">Go to your workspace</Link>
-          </Button>
+          <div className="mt-6 flex gap-3">
+            <Button asChild variant="outline">
+              <Link to="/">Go to your workspace</Link>
+            </Button>
+            <Button variant="outline" onClick={() => void signOutUser()}>
+              Sign out
+            </Button>
+          </div>
         </main>
       </>
     );

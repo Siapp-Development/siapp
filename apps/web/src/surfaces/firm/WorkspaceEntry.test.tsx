@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { User } from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -32,8 +33,8 @@ function signedIn(overrides: Partial<Extract<TAuthState, { status: 'signedIn' }>
   };
 }
 
-function renderEntry(state: TAuthState) {
-  const value: IAuthContextValue = { state, signOutUser: vi.fn(async () => {}) };
+function renderEntry(state: TAuthState, signOutUser = vi.fn(async () => {})) {
+  const value: IAuthContextValue = { state, signOutUser };
   const router = createMemoryRouter(
     [
       {
@@ -118,5 +119,49 @@ describe('WorkspaceEntry', () => {
     );
 
     expect(screen.getByRole('alert')).toHaveTextContent(/couldn't load your workspace/i);
+  });
+
+  // #82 — a user stuck on a terminal screen must always be able to leave the session.
+  it('lets the user sign out from the no-workspace screen (#82)', async () => {
+    const signOutUser = vi.fn(async () => {});
+    renderEntry(signedIn({}), signOutUser);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /sign out/i }));
+
+    expect(signOutUser).toHaveBeenCalledOnce();
+  });
+
+  it('lets the user sign out from the workspace error screen (#82)', async () => {
+    const signOutUser = vi.fn(async () => {});
+    renderEntry(
+      signedIn({
+        claims: { workspaces: { wksA: { role: 'owner', departments: [] } } },
+        workspaces: 'error',
+      }),
+      signOutUser,
+    );
+
+    await userEvent.setup().click(screen.getByRole('button', { name: /sign out/i }));
+
+    expect(signOutUser).toHaveBeenCalledOnce();
+  });
+
+  it('shows a sign-out button on the workspace picker (#82)', () => {
+    renderEntry(
+      signedIn({
+        claims: {
+          workspaces: {
+            wksA: { role: 'owner', departments: [] },
+            wksB: { role: 'pm', departments: [] },
+          },
+        },
+        workspaces: [
+          { id: 'wksA', name: 'Acme Builders', slug: 'acme' },
+          { id: 'wksB', name: 'Beta Legal', slug: 'beta' },
+        ],
+      }),
+    );
+
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 });
