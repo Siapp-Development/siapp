@@ -7,3 +7,15 @@ import { afterEach } from 'vitest';
 afterEach(() => {
   cleanup();
 });
+
+// jsdom < 26 ships HTMLDialogElement without showModal/close — minimal
+// polyfill so the Drawer (native <dialog>) can be exercised in tests.
+if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
+}
