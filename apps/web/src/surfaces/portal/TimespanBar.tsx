@@ -34,12 +34,12 @@ export function TimespanBar({
       className="relative h-2 w-full rounded-full bg-muted"
     >
       <div
-        className="h-2 rounded-full bg-primary/40"
+        className="h-2 rounded-full bg-accent/30"
         style={{ width: `${percent}%` }}
         data-testid="timespan-fill"
       />
       <div
-        className="absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded bg-primary"
+        className="absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded bg-accent"
         style={{ left: `${percent}%` }}
         data-testid="timespan-today"
       />

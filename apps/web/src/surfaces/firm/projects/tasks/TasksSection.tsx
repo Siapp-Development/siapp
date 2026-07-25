@@ -13,6 +13,7 @@ import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
+import { TaskStatusBadge } from './TaskStatusBadge.tsx';
 import {
   createPhase,
   createTask,
@@ -53,19 +54,19 @@ function TaskRowItem({ task, departmentNames, selected, onSelect }: ITaskRowItem
         type="button"
         onClick={onSelect}
         className={cn(
-          'flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-left text-sm hover:bg-muted',
-          selected && 'bg-muted',
+          'flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2.5 text-left text-sm transition-colors duration-150 hover:bg-muted',
+          selected && 'bg-primary-tint',
         )}
       >
         <span className="min-w-40 flex-1 font-medium">{task.title}</span>
-        <span className="text-muted-foreground">{TASK_STATUS_LABELS[task.status]}</span>
+        <TaskStatusBadge status={task.status} />
         {task.assignees.length > 0 && (
           <span className="flex gap-1" aria-label="Assignees">
             {task.assignees.map((assignee) => (
               <span
                 key={`${assignee.type}-${assignee.id}`}
                 title={assignee.name}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary"
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-xs font-medium text-primary-deep"
               >
                 {initials(assignee.name)}
               </span>
@@ -73,7 +74,12 @@ function TaskRowItem({ task, departmentNames, selected, onSelect }: ITaskRowItem
           </span>
         )}
         {task.dueDate !== null && (
-          <span className={cn('text-xs', isOverdue(task) ? 'text-destructive' : 'text-muted-foreground')}>
+          <span
+            className={cn(
+              'text-xs',
+              isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+            )}
+          >
             Due {task.dueDate.toLocaleDateString()}
           </span>
         )}

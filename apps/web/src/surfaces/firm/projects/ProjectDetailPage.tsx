@@ -254,7 +254,7 @@ export function ProjectDetailPage({
     (project.lifecycle === 'draft' || project.lifecycle === 'published');
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
         <Link
           to={`/${workspaceSlug}/projects`}
@@ -263,7 +263,7 @@ export function ProjectDetailPage({
           ← Projects
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold">{project.name}</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
           <LifecycleBadge lifecycle={project.lifecycle} />
         </div>
         {project.lifecycle === 'completed' && (
@@ -273,7 +273,7 @@ export function ProjectDetailPage({
         )}
       </div>
 
-      <div role="tablist" aria-label="Project sections" className="flex gap-1 border-b">
+      <div role="tablist" aria-label="Project sections" className="flex gap-1 border-b border-border">
         {(
           [
             { id: 'tasks', label: 'Tasks' },
@@ -289,10 +289,10 @@ export function ProjectDetailPage({
             aria-selected={tab === entry.id}
             onClick={() => setTab(entry.id)}
             className={cn(
-              'border-b-2 px-3 py-2 text-sm font-medium',
+              '-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors duration-150',
               tab === entry.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                ? 'border-accent text-foreground'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
             )}
           >
             {entry.label}
