@@ -1,12 +1,12 @@
 /**
- * Inline task detail panel (#13, wireframe A5): Details form with explicit
- * Save (status/due-date/assignee diffs append matching activity entries) and
- * an Activity tab with the append-only update feed plus a comment box with
- * @mention typeahead. Comments render as markdown (react-markdown, no raw
- * HTML) with mentions bolded.
+ * Task detail panel (#13, wireframe A5), rendered inside the right-side
+ * drawer: Details form with explicit Save (status/due-date/assignee diffs
+ * append matching activity entries) and an Activity tab with the append-only
+ * update feed plus a comment box with @mention typeahead. Comments render as
+ * markdown (react-markdown, no raw HTML) with mentions bolded.
  */
 
-import { Alert, Button, Card, CardContent, CardHeader, Input, Label, cn } from '@siapp/ui';
+import { Alert, Button, Input, Label, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle, TTaskAssignee, TTaskStatus } from '@siapp/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -408,10 +408,10 @@ export function TaskDetailPanel({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h3 className="text-base font-semibold">{task.title}</h3>
+    <div className="flex min-h-full flex-col">
+      <div className="sticky top-0 z-10 flex flex-row items-center justify-between gap-3 border-b border-border bg-card p-6 pb-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <h3 className="truncate text-base font-semibold">{task.title}</h3>
           <div role="tablist" aria-label="Task detail tabs" className="flex gap-1">
             {(['details', 'activity'] as const).map((entry) => (
               <button
@@ -435,8 +435,8 @@ export function TaskDetailPanel({
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Close
         </Button>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="p-6">
         {/* #22 (D-d): surface the collaborator's help request to the firm. */}
         {task.status === 'blocked' && task.blockedReason !== '' && (
           <Alert variant="destructive" className="mb-4">
@@ -843,7 +843,7 @@ export function TaskDetailPanel({
             />
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -31,6 +31,13 @@ vi.mock('../../collaborators/useCollaborators.ts', () => ({
   useCollaborators: () => ({ status: 'ready', rows: [] }),
 }));
 
+const milestonesData = vi.hoisted(() => ({
+  state: { status: 'ready', rows: [] } as unknown,
+}));
+vi.mock('../milestones/useMilestones.ts', () => ({
+  useMilestones: () => milestonesData.state,
+}));
+
 vi.mock('./TaskDetailPanel.tsx', () => ({
   TaskDetailPanel: (props: { task: { id: string } }) => (
     <div data-testid="task-detail-panel" data-task-id={props.task.id} />
@@ -89,6 +96,8 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
       userName="Alice Tan"
       canEdit
       lifecycle="published"
+      projectStartDate={null}
+      projectTargetDate={null}
       {...overrides}
     />,
   );
@@ -96,6 +105,7 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  milestonesData.state = { status: 'ready', rows: [] };
   tasksData.phasesState = {
     status: 'ready',
     rows: [
@@ -211,6 +221,74 @@ describe('TasksSection', () => {
     renderSection();
 
     await userEvent.click(screen.getByRole('button', { name: /pour foundation/i }));
+    expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
+  });
+
+  it('opens the detail panel in a modal drawer and closes it on Escape', async () => {
+    tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: /pour foundation/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Task: Pour foundation' });
+    expect(dialog).toContainElement(screen.getByTestId('task-detail-panel'));
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('task-detail-panel')).not.toBeInTheDocument();
+  });
+
+  it('switches to the timeline view with bars, milestones and a today line', async () => {
+    const due = new Date();
+    due.setDate(due.getDate() + 10);
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({
+          id: 't1',
+          phaseId: 'ph1',
+          startDate: new Date(),
+          dueDate: due,
+          status: 'in_progress',
+        }),
+      ],
+    };
+    milestonesData.state = {
+      status: 'ready',
+      rows: [{ id: 'm1', name: 'Handover', targetDate: due, completedAt: null, order: 1 }],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+
+    expect(screen.getByRole('region', { name: 'Project timeline' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /pour foundation — in progress/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /milestone: handover/i })).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-today')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '→ Today' })).toBeInTheDocument();
+    // Editing affordances live in the list view only.
+    expect(screen.queryByRole('button', { name: '+ Add phase' })).not.toBeInTheDocument();
+  });
+
+  it('marks overdue timeline bars with the accent colour and opens the drawer on click', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({
+          id: 't1',
+          phaseId: 'ph1',
+          startDate: new Date('2020-01-01T00:00:00'),
+          dueDate: new Date('2020-01-10T00:00:00'),
+        }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+    const bar = screen.getByRole('button', { name: /pour foundation — to do, overdue/i });
+    expect(bar).toHaveClass('bg-accent');
+
+    await userEvent.click(bar);
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
   });
 

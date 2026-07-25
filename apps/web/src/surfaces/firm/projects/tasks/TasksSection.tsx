@@ -1,19 +1,22 @@
 /**
- * Phase-grouped task list for a project (#13, wireframe A3). Collapsible
- * phase groups with quick-add; department-restricted tasks the member cannot
- * read appear as dimmed header rows (safe projection via
- * getRestrictedTaskHeaders). Selecting a task opens the inline detail panel.
+ * Project board (#13, wireframe A3): phase-grouped task list plus the
+ * Gantt-style timeline view (D-033). Collapsible phase groups with
+ * quick-add; department-restricted tasks the member cannot read appear as
+ * dimmed header rows (safe projection via getRestrictedTaskHeaders).
+ * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Button, Card, CardContent, CardHeader, Input, cn } from '@siapp/ui';
+import { Alert, Button, Drawer, Input, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
+import { useMilestones } from '../milestones/useMilestones.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import { TaskStatusBadge } from './TaskStatusBadge.tsx';
+import { TimelineView } from './TimelineView.tsx';
 import {
   createPhase,
   createTask,
@@ -184,6 +187,9 @@ export interface ITasksSectionProps {
   canEdit: boolean;
   /** Project lifecycle — collab task links need published/completed (#22). */
   lifecycle: TProjectLifecycle;
+  /** Project schedule bounds — anchor the timeline view's visible range. */
+  projectStartDate: Date | null;
+  projectTargetDate: Date | null;
 }
 
 export function TasksSection({
@@ -195,13 +201,17 @@ export function TasksSection({
   userName,
   canEdit,
   lifecycle,
+  projectStartDate,
+  projectTargetDate,
 }: ITasksSectionProps) {
   const tasksState = useTasks(workspaceId, projectId, role, departments);
   const phasesState = usePhases(workspaceId, projectId);
   const membersState = useMembers(workspaceId);
   const departmentsState = useDepartments(workspaceId);
   const collaboratorsState = useCollaborators(workspaceId);
+  const milestonesState = useMilestones(workspaceId, projectId);
 
+  const [view, setView] = useState<'list' | 'timeline'>('list');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addingPhase, setAddingPhase] = useState(false);
@@ -355,17 +365,61 @@ export function TasksSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3">
-        {phases.map((phase) => renderGroup(phase.id, phase))}
-        {renderGroup(NO_PHASE, null)}
-        {tasksState.rows.length === 0 && phases.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No tasks yet.{canEdit && ' Add a phase or a task to get started.'}
-          </p>
-        )}
+      <div className="flex items-center justify-between gap-3">
+        <div
+          role="group"
+          aria-label="Board view"
+          className="flex rounded-md border border-border p-0.5"
+        >
+          {(
+            [
+              { id: 'list', label: 'List' },
+              { id: 'timeline', label: 'Timeline' },
+            ] as const
+          ).map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-pressed={view === entry.id}
+              onClick={() => setView(entry.id)}
+              className={cn(
+                'rounded px-3 py-1 text-sm transition-colors duration-150',
+                view === entry.id
+                  ? 'bg-primary-tint font-medium text-primary-deep'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
       </div>
 
+      {view === 'timeline' ? (
+        <TimelineView
+          phases={phases}
+          grouped={grouped}
+          noPhaseKey={NO_PHASE}
+          milestones={milestonesState.status === 'ready' ? milestonesState.rows : []}
+          projectStart={projectStartDate}
+          projectEnd={projectTargetDate}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {phases.map((phase) => renderGroup(phase.id, phase))}
+          {renderGroup(NO_PHASE, null)}
+          {tasksState.rows.length === 0 && phases.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No tasks yet.{canEdit && ' Add a phase or a task to get started.'}
+            </p>
+          )}
+        </div>
+      )}
+
       {canEdit &&
+        view === 'list' &&
         (addingPhase ? (
           <form onSubmit={(event) => void handleAddPhase(event)} className="flex gap-2">
             <Input
@@ -395,49 +449,58 @@ export function TasksSection({
           </Button>
         ))}
 
-      {selectedRow !== null &&
-        (selectedRow.restricted ? (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <h3 className="text-base font-semibold">Restricted task</h3>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedId(null)}>
-                Close
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
+      <Drawer
+        open={selectedRow !== null}
+        onClose={() => setSelectedId(null)}
+        aria-label={selectedRow !== null ? `Task: ${selectedRow.title}` : 'Task detail'}
+      >
+        {selectedRow !== null &&
+          (selectedRow.restricted ? (
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">Restricted task</h3>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedId(null)}
+                >
+                  Close
+                </Button>
+              </div>
+              <p className="mt-4 text-sm text-muted-foreground">
                 This task contains restricted content visible to:{' '}
                 {selectedRow.restrictedToDepartments
                   .map((dep) => departmentNames.get(dep) ?? dep)
                   .join(', ')}
                 . Ask an admin for access if you need it.
               </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <TaskDetailPanel
-            key={selectedRow.id}
-            workspaceId={workspaceId}
-            projectId={projectId}
-            task={selectedRow}
-            allTasks={visibleTasks}
-            phases={phases}
-            members={members}
-            collaborators={collaborators}
-            departments={departmentRows}
-            role={role}
-            memberDepartments={departments}
-            lifecycle={lifecycle}
-            canEdit={canEdit}
-            uid={uid}
-            userName={userName}
-            onClose={() => setSelectedId(null)}
-            onDeleted={() => {
-              setSelectedId(null);
-              tasksState.refreshRestricted();
-            }}
-          />
-        ))}
+            </div>
+          ) : (
+            <TaskDetailPanel
+              key={selectedRow.id}
+              workspaceId={workspaceId}
+              projectId={projectId}
+              task={selectedRow}
+              allTasks={visibleTasks}
+              phases={phases}
+              members={members}
+              collaborators={collaborators}
+              departments={departmentRows}
+              role={role}
+              memberDepartments={departments}
+              lifecycle={lifecycle}
+              canEdit={canEdit}
+              uid={uid}
+              userName={userName}
+              onClose={() => setSelectedId(null)}
+              onDeleted={() => {
+                setSelectedId(null);
+                tasksState.refreshRestricted();
+              }}
+            />
+          ))}
+      </Drawer>
     </div>
   );
 }

@@ -310,6 +310,8 @@ export function ProjectDetailPage({
           userName={userName}
           canEdit={canEdit}
           lifecycle={project.lifecycle}
+          projectStartDate={project.startDate}
+          projectTargetDate={project.targetEndDate}
         />
       )}
 
