@@ -19,6 +19,7 @@ import { db } from '@/lib/firebase.ts';
 
 export interface IPortalProject {
   name: string;
+  clientName: string;
   lifecycle: string;
   startDate: Date | null;
   targetEndDate: Date | null;
@@ -58,6 +59,7 @@ function mapProject(data: DocumentData): IPortalProject {
   const summary = (data['summary'] ?? {}) as Record<string, unknown>;
   return {
     name: String(data['name'] ?? ''),
+    clientName: String(data['clientNameDenorm'] ?? ''),
     lifecycle: String(data['lifecycle'] ?? ''),
     startDate: asDate(data['startDate']),
     targetEndDate: asDate(data['targetEndDate']),

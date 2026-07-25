@@ -1,5 +1,6 @@
 import type { TWorkspacePlan } from '@siapp/shared';
 
+import siappLogoFull from '@/assets/siapp-logo-full.png';
 import { PrivacyNotice } from '@/components/PrivacyNotice.tsx';
 
 /**
@@ -14,13 +15,13 @@ export function PortalFooter({ tier, firmName }: { tier: TWorkspacePlan; firmNam
       {tier === 'business' ? (
         <p>{firmName}</p>
       ) : (
-        <p>
+        <p className="flex items-center justify-center gap-1.5">
           Powered by{' '}
           <a
             href="https://siapp.app"
-            className="font-medium text-primary underline-offset-2 hover:underline"
+            className="inline-flex items-center transition-opacity duration-150 hover:opacity-80"
           >
-            Siapp
+            <img src={siappLogoFull} alt="Siapp" className="h-5 w-auto" />
           </a>
         </p>
       )}
