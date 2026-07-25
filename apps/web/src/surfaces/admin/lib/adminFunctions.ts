@@ -7,7 +7,10 @@ import type { TBillingStatus, TWorkspacePlan } from '@siapp/shared';
 
 import { functions } from '@/lib/firebase.ts';
 
-// ── Provision ───────────────────────────────────────────────────────────────
+// ── Provision ──────────────────────────────────────────────────────────────────────────────
+
+/** Starter-project template ids (mirrors the backend TProvisionTemplate). */
+export type TProvisionTemplate = 'residential-build' | 'building-approval' | 'conveyancing';
 
 export interface IProvisionInput {
   workspaceName: string;
@@ -18,6 +21,8 @@ export interface IProvisionInput {
   /** ISO 8601 date string */
   planExpiresAt: string;
   vertical: 'construction' | 'legal';
+  /** Optional — omitted falls back to the vertical's default seed. */
+  template?: TProvisionTemplate;
 }
 
 export interface IProvisionResult {

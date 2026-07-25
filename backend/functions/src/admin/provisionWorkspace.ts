@@ -13,9 +13,20 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import type { TWorkspacePlan } from './adminTypes.js';
 import { assertAdminCall, callerIp } from './adminGuard.js';
 import { writeAdminLog } from './writeAdminLog.js';
+import type { ISeedDefinition } from '../provisioning/seedTypes.js';
 import { residentialBuildSeed } from '../provisioning/seeds/residentialBuild.js';
+import { buildingApprovalSeed } from '../provisioning/seeds/buildingApproval.js';
 import { conveyancingSeed } from '../provisioning/seeds/conveyancing.js';
 import { writeStarterProject } from '../provisioning/writeStarterProject.js';
+
+/** Starter-project template ids, keyed to their seed + parent vertical. */
+export type TProvisionTemplate = 'residential-build' | 'building-approval' | 'conveyancing';
+
+const TEMPLATE_SEEDS: Record<TProvisionTemplate, ISeedDefinition> = {
+  'residential-build': residentialBuildSeed,
+  'building-approval': buildingApprovalSeed,
+  conveyancing: conveyancingSeed,
+};
 
 export interface IProvisionInput {
   workspaceName: string;
@@ -28,6 +39,12 @@ export interface IProvisionInput {
   /** ISO 8601 date string, e.g. "2026-09-18" */
   planExpiresAt: string;
   vertical: 'construction' | 'legal';
+  /**
+   * Starter-project template. Optional for backwards compatibility — when
+   * omitted, the vertical's default is used (construction →
+   * residential-build, legal → conveyancing). Must belong to `vertical`.
+   */
+  template?: TProvisionTemplate;
 }
 
 export interface IProvisionResult {
@@ -67,6 +84,20 @@ function validateInput(input: IProvisionInput): void {
   }
   if (!['construction', 'legal'].includes(input.vertical)) {
     throw new HttpsError('invalid-argument', 'vertical must be construction or legal');
+  }
+  if (input.template !== undefined) {
+    if (!(input.template in TEMPLATE_SEEDS)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'template must be residential-build, building-approval, or conveyancing',
+      );
+    }
+    if (TEMPLATE_SEEDS[input.template].vertical !== input.vertical) {
+      throw new HttpsError(
+        'invalid-argument',
+        `template "${input.template}" does not belong to the ${input.vertical} vertical`,
+      );
+    }
   }
 }
 
@@ -154,8 +185,13 @@ export async function provisionWorkspace(
     invitedBy: request.auth!.uid,
   });
 
-  // Seed the starter project.
-  const seed = input.vertical === 'construction' ? residentialBuildSeed : conveyancingSeed;
+  // Seed the starter project — explicit template, or the vertical default.
+  const seed =
+    input.template !== undefined
+      ? TEMPLATE_SEEDS[input.template]
+      : input.vertical === 'construction'
+        ? residentialBuildSeed
+        : conveyancingSeed;
   const pid = await writeStarterProject(wid, seed, ownerUid, ownerName);
 
   // Audit log.

@@ -3,10 +3,29 @@ import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { SkipLink } from '@/components/SkipLink.tsx';
-import { provisionWorkspaceFn, type IProvisionInput } from '../lib/adminFunctions.ts';
+import {
+  provisionWorkspaceFn,
+  type IProvisionInput,
+  type TProvisionTemplate,
+} from '../lib/adminFunctions.ts';
 
-type TVertical = 'construction' | 'legal';
 type TPlan = 'trial' | 'standard' | 'business';
+
+interface ITemplateOption {
+  id: TProvisionTemplate;
+  label: string;
+  vertical: 'construction' | 'legal';
+}
+
+const TEMPLATE_OPTIONS: ITemplateOption[] = [
+  { id: 'residential-build', label: 'Residential build (~60 tasks)', vertical: 'construction' },
+  {
+    id: 'building-approval',
+    label: 'Building plan approval — KM / BP / CCC (44 tasks)',
+    vertical: 'construction',
+  },
+  { id: 'conveyancing', label: 'Conveyancing (~30 tasks)', vertical: 'legal' },
+];
 
 function slugify(name: string): string {
   return name
@@ -41,7 +60,7 @@ export function ProvisionWorkspacePage() {
     d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
-  const [vertical, setVertical] = useState<TVertical>('construction');
+  const [template, setTemplate] = useState<TProvisionTemplate>('residential-build');
 
   const [fieldErrors, setFieldErrors] = useState<IFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -81,6 +100,7 @@ export function ProvisionWorkspacePage() {
 
     setPending(true);
     try {
+      const selected = TEMPLATE_OPTIONS.find((o) => o.id === template) ?? TEMPLATE_OPTIONS[0];
       const input: IProvisionInput = {
         workspaceName: workspaceName.trim(),
         workspaceSlug,
@@ -88,7 +108,8 @@ export function ProvisionWorkspacePage() {
         seatLimit,
         plan,
         planExpiresAt,
-        vertical,
+        vertical: selected.vertical,
+        template: selected.id,
       };
       const result = await provisionWorkspaceFn(input);
       setSuccess(result.data);
@@ -242,28 +263,20 @@ export function ProvisionWorkspacePage() {
           </div>
 
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Vertical</legend>
-            <div className="flex gap-6">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="vertical"
-                  value="construction"
-                  checked={vertical === 'construction'}
-                  onChange={() => setVertical('construction')}
-                />
-                Residential build (~60 tasks)
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="vertical"
-                  value="legal"
-                  checked={vertical === 'legal'}
-                  onChange={() => setVertical('legal')}
-                />
-                Conveyancing (~30 tasks)
-              </label>
+            <legend className="text-sm font-medium">Starter template</legend>
+            <div className="flex flex-col gap-2">
+              {TEMPLATE_OPTIONS.map((option) => (
+                <label key={option.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="template"
+                    value={option.id}
+                    checked={template === option.id}
+                    onChange={() => setTemplate(option.id)}
+                  />
+                  {option.label}
+                </label>
+              ))}
             </div>
           </fieldset>
 
