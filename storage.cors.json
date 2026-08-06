@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://siapp.app",
+      "https://dashboard.siapp.app",
+      "https://admin.siapp.app"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Disposition", "Content-Length"],
+    "maxAgeSeconds": 3600
+  }
+]
