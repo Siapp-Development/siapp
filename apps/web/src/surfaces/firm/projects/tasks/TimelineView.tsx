@@ -7,7 +7,7 @@
 
 import { Button, cn } from '@siapp/ui';
 import type { TTaskStatus } from '@siapp/shared';
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, type DragEvent, type KeyboardEvent } from 'react';
 
 import type { IMilestoneRow } from '../milestones/useMilestones.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
@@ -102,13 +102,40 @@ const BAR_STATUS_CLASSES: Record<TTaskStatus, string> = {
 };
 
 interface ITimelineTaskRowProps {
+  groupKey: string;
   row: TTaskListRow;
   range: ITimelineRange;
   selected: boolean;
+  showDragHandle: boolean;
+  dragEnabled: boolean;
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragStart: ((event: DragEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void) | null;
+  onHandleKeyDown:
+    | ((event: KeyboardEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void)
+    | null;
+  onDragOver: ((event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void) | null;
+  onDrop: ((event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void) | null;
+  onDragEnd: (() => void) | null;
   onSelect: () => void;
 }
 
-function TimelineTaskRow({ row, range, selected, onSelect }: ITimelineTaskRowProps) {
+function TimelineTaskRow({
+  groupKey,
+  row,
+  range,
+  selected,
+  showDragHandle,
+  dragEnabled,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onHandleKeyDown,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onSelect,
+}: ITimelineTaskRowProps) {
   const startDate = row.restricted ? row.dueDate : (row.startDate ?? row.dueDate);
   const endDate = row.dueDate ?? startDate;
   const hasBar = startDate !== null && endDate !== null;
@@ -121,15 +148,64 @@ function TimelineTaskRow({ row, range, selected, onSelect }: ITimelineTaskRowPro
     row.dueDate !== null ? ` — due ${row.dueDate.toLocaleDateString()}` : '';
 
   return (
-    <div className="group/row relative flex h-9 items-center border-b border-border/60">
+    <div
+      id={`timeline-task-row-${row.id}`}
+      className={cn(
+        'group/row relative flex h-9 items-center border-b border-border/60',
+        dropTarget && 'bg-primary-tint/40',
+      )}
+      onDragOver={
+        dragEnabled && onDragOver !== null
+          ? (event) => onDragOver(event, row.id, groupKey)
+          : undefined
+      }
+      onDrop={
+        dragEnabled && onDrop !== null
+          ? (event) => onDrop(event, row.id, groupKey)
+          : undefined
+      }
+    >
       <div
         className={cn(
           'sticky left-0 z-10 flex h-full shrink-0 items-center gap-1.5 truncate border-r border-border bg-card pr-3 pl-6 text-sm',
           row.restricted && 'opacity-60',
           selected && 'font-medium',
+          dragging && 'opacity-70',
         )}
         style={{ width: LABEL_COL_PX }}
       >
+        {showDragHandle && (
+          <button
+            type="button"
+            draggable={dragEnabled}
+            disabled={!dragEnabled}
+            onDragStart={
+              onDragStart !== null
+                ? (event) => onDragStart(event, row.id, groupKey)
+                : undefined
+            }
+            onDragEnd={onDragEnd ?? undefined}
+            onKeyDown={
+              onHandleKeyDown !== null
+                ? (event) => onHandleKeyDown(event, row.id, groupKey)
+                : undefined
+            }
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            aria-label={`Drag to reorder ${row.title}`}
+            id={`timeline-reorder-handle-${row.id}`}
+            className={cn(
+              'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+              'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+              dragEnabled && 'cursor-grab',
+              dragging && 'cursor-grabbing',
+            )}
+          >
+            <span aria-hidden="true" className="leading-none">
+              ⋮⋮
+            </span>
+          </button>
+        )}
         <button
           type="button"
           onClick={onSelect}
@@ -181,6 +257,19 @@ export interface ITimelineViewProps {
   projectEnd: Date | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  canEdit: boolean;
+  reorderPendingByGroup: ReadonlySet<string>;
+  activeDrag: { taskId: string; groupKey: string } | null;
+  dropTargetByGroup: Readonly<Record<string, string | null>>;
+  onDragStartTask: (event: DragEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void;
+  onHandleKeyDownTask: (
+    event: KeyboardEvent<HTMLButtonElement>,
+    taskId: string,
+    groupKey: string,
+  ) => void;
+  onDragOverTask: (event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void;
+  onDropTask: (event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void;
+  onDragEndTask: () => void;
 }
 
 export function TimelineView({
@@ -192,6 +281,15 @@ export function TimelineView({
   projectEnd,
   selectedId,
   onSelect,
+  canEdit,
+  reorderPendingByGroup,
+  activeDrag,
+  dropTargetByGroup,
+  onDragStartTask,
+  onHandleKeyDownTask,
+  onDragOverTask,
+  onDropTask,
+  onDragEndTask,
 }: ITimelineViewProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -300,9 +398,23 @@ export function TimelineView({
               {group.rows.map((row) => (
                 <TimelineTaskRow
                   key={row.id}
+                  groupKey={group.key}
                   row={row}
                   range={range}
                   selected={row.id === selectedId}
+                  showDragHandle={canEdit && !row.restricted}
+                  dragEnabled={canEdit && !row.restricted && !reorderPendingByGroup.has(group.key)}
+                  dragging={activeDrag?.groupKey === group.key && activeDrag.taskId === row.id}
+                  dropTarget={
+                    activeDrag?.groupKey === group.key &&
+                    activeDrag.taskId !== row.id &&
+                    dropTargetByGroup[group.key] === row.id
+                  }
+                  onDragStart={onDragStartTask}
+                  onHandleKeyDown={onHandleKeyDownTask}
+                  onDragOver={onDragOverTask}
+                  onDrop={onDropTask}
+                  onDragEnd={onDragEndTask}
                   onSelect={() => onSelect(row.id)}
                 />
               ))}

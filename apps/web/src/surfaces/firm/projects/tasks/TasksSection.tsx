@@ -8,7 +8,15 @@
 
 import { Alert, Button, Drawer, Input, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
@@ -52,8 +60,15 @@ interface ITaskRowItemProps {
   selected: boolean;
   highlighted: boolean;
   onSelect: () => void;
-  onMoveUp: (() => void) | null;
-  onMoveDown: (() => void) | null;
+  showDragHandle: boolean;
+  dragEnabled: boolean;
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragStart: ((event: DragEvent<HTMLButtonElement>) => void) | null;
+  onDragEnd: (() => void) | null;
+  onHandleKeyDown: ((event: KeyboardEvent<HTMLButtonElement>) => void) | null;
+  onDragOver: ((event: DragEvent<HTMLLIElement>) => void) | null;
+  onDrop: ((event: DragEvent<HTMLLIElement>) => void) | null;
 }
 
 function TaskRowItem({
@@ -62,85 +77,165 @@ function TaskRowItem({
   selected,
   highlighted,
   onSelect,
-  onMoveUp,
-  onMoveDown,
+  showDragHandle,
+  dragEnabled,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragEnd,
+  onHandleKeyDown,
+  onDragOver,
+  onDrop,
 }: ITaskRowItemProps) {
   return (
     <li
       id={`task-row-${task.id}`}
+      onDragOver={onDragOver ?? undefined}
+      onDrop={onDrop ?? undefined}
       className={cn(
         'border-b border-border/70 last:border-b-0',
         highlighted && 'bg-warning/10 ring-1 ring-warning/40',
+        dropTarget && 'bg-primary-tint/60',
       )}
     >
-      <button
-        type="button"
-        onClick={onSelect}
+      <div
         className={cn(
-          'flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2.5 text-left text-sm transition-colors duration-150 hover:bg-muted',
+          'flex items-start gap-2 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 hover:bg-muted',
           selected && 'bg-primary-tint',
+          dragging && 'opacity-60',
         )}
       >
-        <span className="min-w-40 flex-1 font-medium">{task.title}</span>
-        <TaskStatusBadge status={task.status} />
-        {task.assignees.length > 0 && (
-          <span className="flex gap-1" aria-label="Assignees">
-            {task.assignees.map((assignee) => (
-              <span
-                key={`${assignee.type}-${assignee.id}`}
-                title={assignee.name}
-                className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-xs font-medium text-primary-deep"
-              >
-                {initials(assignee.name)}
-              </span>
-            ))}
-          </span>
-        )}
-        {task.dueDate !== null && (
-          <span
+        {showDragHandle && (
+          <button
+            type="button"
+            draggable={dragEnabled}
+            disabled={!dragEnabled}
+            onDragStart={onDragStart ?? undefined}
+            onDragEnd={onDragEnd ?? undefined}
+            onKeyDown={onHandleKeyDown ?? undefined}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            aria-label={`Drag to reorder ${task.title}`}
+            id={`task-reorder-handle-${task.id}`}
             className={cn(
-              'text-xs',
-              isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+              'mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+              'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+              dragEnabled && 'cursor-grab',
+              dragging && 'cursor-grabbing',
             )}
           >
-            Due {task.dueDate.toLocaleDateString()}
-          </span>
+            <span aria-hidden="true" className="leading-none">
+              ⋮⋮
+            </span>
+          </button>
         )}
-        {task.restrictedToDepartments.length > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            Restricted ·{' '}
-            {task.restrictedToDepartments
-              .map((dep) => departmentNames.get(dep) ?? dep)
-              .join(', ')}
-          </span>
-        )}
-      </button>
-      {(onMoveUp !== null || onMoveDown !== null) && (
-        <div className="-mt-1 flex justify-end gap-1 px-3 pb-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={onMoveUp === null}
-            onClick={onMoveUp ?? undefined}
-            aria-label={`Move ${task.title} up`}
-          >
-            Move up
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={onMoveDown === null}
-            onClick={onMoveDown ?? undefined}
-            aria-label={`Move ${task.title} down`}
-          >
-            Move down
-          </Button>
-        </div>
-      )}
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left"
+        >
+          <span className="min-w-40 flex-1 font-medium">{task.title}</span>
+          <TaskStatusBadge status={task.status} />
+          {task.assignees.length > 0 && (
+            <span className="flex gap-1" aria-label="Assignees">
+              {task.assignees.map((assignee) => (
+                <span
+                  key={`${assignee.type}-${assignee.id}`}
+                  title={assignee.name}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-xs font-medium text-primary-deep"
+                >
+                  {initials(assignee.name)}
+                </span>
+              ))}
+            </span>
+          )}
+          {task.dueDate !== null && (
+            <span
+              className={cn(
+                'text-xs',
+                isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+              )}
+            >
+              Due {task.dueDate.toLocaleDateString()}
+            </span>
+          )}
+          {task.restrictedToDepartments.length > 0 && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+              Restricted ·{' '}
+              {task.restrictedToDepartments
+                .map((dep) => departmentNames.get(dep) ?? dep)
+                .join(', ')}
+            </span>
+          )}
+        </button>
+      </div>
     </li>
   );
+}
+
+interface IActiveDrag {
+  taskId: string;
+  groupKey: string;
+}
+
+interface IDragStartPayload {
+  taskId: string;
+  groupKey: string;
+  event: DragEvent<HTMLButtonElement>;
+}
+
+function isReadableTask(row: TTaskListRow): row is ITaskRow {
+  return !row.restricted;
+}
+
+function moveTaskWithinRows(
+  rows: readonly ITaskRow[],
+  fromTaskId: string,
+  toTaskId: string,
+): readonly ITaskRow[] {
+  const sourceIndex = rows.findIndex((row) => row.id === fromTaskId);
+  const targetIndex = rows.findIndex((row) => row.id === toTaskId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return rows;
+  }
+  const nextRows = [...rows];
+  const [moved] = nextRows.splice(sourceIndex, 1);
+  if (moved === undefined) {
+    return rows;
+  }
+  nextRows.splice(targetIndex, 0, moved);
+  return nextRows;
+}
+
+function moveTaskByOffset(
+  rows: readonly ITaskRow[],
+  taskId: string,
+  offset: number,
+): readonly ITaskRow[] {
+  const sourceIndex = rows.findIndex((row) => row.id === taskId);
+  if (sourceIndex < 0) {
+    return rows;
+  }
+  const targetIndex = sourceIndex + offset;
+  if (targetIndex < 0 || targetIndex >= rows.length) {
+    return rows;
+  }
+  const nextRows = [...rows];
+  const [moved] = nextRows.splice(sourceIndex, 1);
+  if (moved === undefined) {
+    return rows;
+  }
+  nextRows.splice(targetIndex, 0, moved);
+  return nextRows;
+}
+
+function focusReorderHandle(taskId: string, view: 'list' | 'timeline'): void {
+  const handleId =
+    view === 'list' ? `task-reorder-handle-${taskId}` : `timeline-reorder-handle-${taskId}`;
+  const handle = document.getElementById(handleId);
+  if (handle instanceof HTMLButtonElement) {
+    handle.focus();
+  }
 }
 
 interface IRestrictedRowItemProps {
@@ -266,6 +361,8 @@ export function TasksSection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [reorderPendingByGroup, setReorderPendingByGroup] = useState<ReadonlySet<string>>(new Set());
+  const [activeDrag, setActiveDrag] = useState<IActiveDrag | null>(null);
+  const [dropTargetByGroup, setDropTargetByGroup] = useState<Readonly<Record<string, string | null>>>({});
   const [addingPhase, setAddingPhase] = useState(false);
   const [phaseName, setPhaseName] = useState('');
   const [phasePending, setPhasePending] = useState(false);
@@ -344,6 +441,18 @@ export function TasksSection({
       window.clearTimeout(timeoutId);
     };
   }, [deepLinkedTaskId, taskRows, phaseIds, onSelectedTaskChange, tasksState.status, phasesState.status]);
+
+  useEffect(() => {
+    if (activeDrag === null) {
+      return;
+    }
+    const groupRows = (grouped.get(activeDrag.groupKey) ?? []).filter(isReadableTask);
+    const dragTaskExists = groupRows.some((row) => row.id === activeDrag.taskId);
+    if (!dragTaskExists) {
+      setActiveDrag(null);
+      setDropTargetByGroup({});
+    }
+  }, [activeDrag, grouped]);
 
   if (isLoading) {
     return <p className="text-sm">Loading tasks…</p>;
@@ -424,27 +533,95 @@ export function TasksSection({
     }
   }
 
-  async function moveTaskInGroup(groupKey: string, taskId: string, direction: -1 | 1): Promise<void> {
-    const rows = (grouped.get(groupKey) ?? []).filter((row): row is ITaskRow => !row.restricted);
-    const index = rows.findIndex((row) => row.id === taskId);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= rows.length) {
+  function clearDragState(): void {
+    setActiveDrag(null);
+    setDropTargetByGroup({});
+  }
+
+  function canDragInGroup(groupKey: string): boolean {
+    return canEdit && !reorderPendingByGroup.has(groupKey);
+  }
+
+  function handleDragStart({ taskId, groupKey, event }: IDragStartPayload): void {
+    if (!canDragInGroup(groupKey)) {
+      event.preventDefault();
       return;
     }
-    const reordered = [...rows];
-    const [moved] = reordered.splice(index, 1);
-    if (moved === undefined) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', taskId);
+    setActiveDrag({ taskId, groupKey });
+    setDropTargetByGroup((prev) => ({ ...prev, [groupKey]: null }));
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>, groupKey: string, targetTaskId: string): void {
+    if (activeDrag === null || activeDrag.groupKey !== groupKey || !canDragInGroup(groupKey)) {
       return;
     }
-    reordered.splice(nextIndex, 0, moved);
+    if (activeDrag.taskId === targetTaskId) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetByGroup((prev) => {
+      if (prev[groupKey] === targetTaskId) {
+        return prev;
+      }
+      return { ...prev, [groupKey]: targetTaskId };
+    });
+  }
+
+  async function handleDrop(groupKey: string, targetTaskId: string): Promise<void> {
+    if (activeDrag === null || activeDrag.groupKey !== groupKey || !canDragInGroup(groupKey)) {
+      clearDragState();
+      return;
+    }
+    const rows = (grouped.get(groupKey) ?? []).filter(isReadableTask);
+    const reordered = moveTaskWithinRows(rows, activeDrag.taskId, targetTaskId);
+    clearDragState();
+    if (reordered === rows) {
+      return;
+    }
+    await persistGroupOrder(groupKey, reordered);
+    setSelectedId(activeDrag.taskId);
+  }
+
+  async function handleKeyboardReorder(
+    event: KeyboardEvent<HTMLButtonElement>,
+    groupKey: string,
+    taskId: string,
+  ): Promise<void> {
+    if (!canDragInGroup(groupKey)) {
+      return;
+    }
+    const offset =
+      event.key === 'ArrowUp'
+        ? -1
+        : event.key === 'ArrowDown'
+          ? 1
+          : null;
+    if (offset === null) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rows = (grouped.get(groupKey) ?? []).filter(isReadableTask);
+    const reordered = moveTaskByOffset(rows, taskId, offset);
+    if (reordered === rows) {
+      return;
+    }
     await persistGroupOrder(groupKey, reordered);
     setSelectedId(taskId);
+    window.requestAnimationFrame(() => {
+      focusReorderHandle(taskId, view);
+    });
   }
 
   function renderGroup(key: string, phase: IPhaseRow | null): ReactNode {
     const rows = grouped.get(key) ?? [];
-    const reorderable = rows.filter((row): row is ITaskRow => !row.restricted);
     const pendingReorder = reorderPendingByGroup.has(key);
+    const dragEnabled = canEdit && !pendingReorder;
+    const dropTargetTaskId = dropTargetByGroup[key] ?? null;
     if (phase === null && rows.length === 0 && !canEdit) {
       return null;
     }
@@ -487,24 +664,40 @@ export function TasksSection({
                       selected={row.id === selectedId}
                       highlighted={row.id === highlightId}
                       onSelect={() => setSelectedId(row.id)}
-                      onMoveUp={
-                        canEdit && !pendingReorder
-                          ? (() => {
-                              const index = reorderable.findIndex((entry) => entry.id === row.id);
-                              return index > 0
-                                ? () => void moveTaskInGroup(key, row.id, -1)
-                                : null;
-                            })()
+                      showDragHandle={canEdit}
+                      dragEnabled={dragEnabled}
+                      dragging={
+                        activeDrag?.groupKey === key && activeDrag.taskId === row.id
+                      }
+                      dropTarget={
+                        activeDrag?.groupKey === key &&
+                        activeDrag.taskId !== row.id &&
+                        dropTargetTaskId === row.id
+                      }
+                      onDragStart={
+                        dragEnabled
+                          ? (event) => handleDragStart({ taskId: row.id, groupKey: key, event })
                           : null
                       }
-                      onMoveDown={
-                        canEdit && !pendingReorder
-                          ? (() => {
-                              const index = reorderable.findIndex((entry) => entry.id === row.id);
-                              return index >= 0 && index < reorderable.length - 1
-                                ? () => void moveTaskInGroup(key, row.id, 1)
-                                : null;
-                            })()
+                      onDragEnd={dragEnabled ? clearDragState : null}
+                      onHandleKeyDown={
+                        dragEnabled
+                          ? (event) => {
+                              void handleKeyboardReorder(event, key, row.id);
+                            }
+                          : null
+                      }
+                      onDragOver={
+                        dragEnabled
+                          ? (event) => handleDragOver(event, key, row.id)
+                          : null
+                      }
+                      onDrop={
+                        dragEnabled
+                          ? (event) => {
+                              event.preventDefault();
+                              void handleDrop(key, row.id);
+                            }
                           : null
                       }
                     />
@@ -563,6 +756,22 @@ export function TasksSection({
           projectEnd={projectTargetDate}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          canEdit={canEdit}
+          reorderPendingByGroup={reorderPendingByGroup}
+          activeDrag={activeDrag}
+          dropTargetByGroup={dropTargetByGroup}
+          onDragStartTask={(event, taskId, groupKey) =>
+            handleDragStart({ taskId, groupKey, event })
+          }
+          onDragOverTask={(event, taskId, groupKey) => handleDragOver(event, groupKey, taskId)}
+          onDropTask={(event, taskId, groupKey) => {
+            event.preventDefault();
+            void handleDrop(groupKey, taskId);
+          }}
+          onDragEndTask={clearDragState}
+          onHandleKeyDownTask={(event, taskId, groupKey) => {
+            void handleKeyboardReorder(event, groupKey, taskId);
+          }}
         />
       ) : (
         <div className="flex flex-col gap-3">
