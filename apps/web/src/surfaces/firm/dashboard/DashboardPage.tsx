@@ -57,7 +57,7 @@ function TaskListItem({ task, workspaceSlug }: ITaskListItemProps) {
       <span className="flex min-w-0 flex-col">
         <span className="truncate font-medium">{task.title}</span>
         <Link
-          to={`/${workspaceSlug}/projects/${task.projectId}`}
+          to={`/${workspaceSlug}/projects/${task.projectId}?task=${task.id}`}
           className="truncate text-sm text-muted-foreground hover:text-primary"
         >
           {task.projectName}

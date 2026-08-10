@@ -1,7 +1,7 @@
 /**
  * Duplicate project (#15, D-031): structure carries, content clears.
  *
- * Task titles, order, phase grouping, dependency links, restrictedToDepartments,
+ * Task titles, order, phase grouping, restrictedToDepartments,
  * visibleToClient and sendWhatsapp carry; assignees, dates, statuses, updates,
  * documents and % complete clear. The copy starts as a draft; the onTaskWrite
  * trigger recomputes its summary as the copied tasks land.
@@ -70,7 +70,6 @@ export interface IDuplicateTaskSource {
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
   notify: ITaskNotifyConfig;
-  dependsOn: string[];
 }
 
 export interface IDuplicatePhaseDoc {
@@ -94,8 +93,6 @@ export interface IDuplicateTaskDoc {
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
   notify: ITaskNotifyConfig;
-  /** Remapped to copied task ids; dangling entries dropped. */
-  dependsOn: string[];
   order: number;
 }
 
@@ -106,9 +103,7 @@ export interface IDuplicatePlan {
 
 /**
  * Builds the copied phase/task docs with fresh ids from `idFor`, remapping
- * `phaseId` and `dependsOn` through old→new id maps and applying the D-031
- * copy/clear table. dependsOn entries pointing at tasks that no longer exist
- * (stale ids — task delete doesn't clean up inbound deps) are dropped.
+ * `phaseId` through old→new id maps and applying the D-031 copy/clear table.
  */
 export function buildDuplicatePlan(
   sourcePhases: readonly IDuplicatePhaseSource[],
@@ -118,7 +113,6 @@ export function buildDuplicatePlan(
   const phaseEntries = sourcePhases.map((phase) => ({ phase, newId: idFor() }));
   const taskEntries = sourceTasks.map((task) => ({ task, newId: idFor() }));
   const phaseIdMap = new Map(phaseEntries.map(({ phase, newId }) => [phase.id, newId]));
-  const taskIdMap = new Map(taskEntries.map(({ task, newId }) => [task.id, newId]));
 
   const phases: IDuplicatePhaseDoc[] = phaseEntries.map(({ phase, newId }) => ({
     id: newId,
@@ -139,9 +133,6 @@ export function buildDuplicatePlan(
     restrictedToDepartments: [...task.restrictedToDepartments],
     sendWhatsapp: task.sendWhatsapp,
     notify: { ...task.notify },
-    dependsOn: task.dependsOn
-      .map((dep) => taskIdMap.get(dep))
-      .filter((dep): dep is string => dep !== undefined),
     order: task.order,
   }));
 
@@ -252,7 +243,6 @@ export async function duplicateProject(args: IDuplicateProjectArgs): Promise<str
       restrictedToDepartments: task.restrictedToDepartments,
       sendWhatsapp: task.sendWhatsapp,
       notify: task.notify,
-      dependsOn: task.dependsOn,
       order: task.order,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),

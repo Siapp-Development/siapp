@@ -68,6 +68,8 @@ service firebase.storage {
     function isAllowedContentType() {
       return request.resource.contentType in [
         'application/pdf',
+        'application/zip',
+        'application/x-zip-compressed',
         'image/png',
         'image/jpeg',
         'image/webp',
@@ -86,6 +88,22 @@ service firebase.storage {
     function isClientAllowedContentType() {
       return request.resource.contentType in [
         'application/pdf',
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword'
+      ];
+    }
+
+    // Mirrors COLLAB_ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (#87):
+    // collaborator uploads additionally accept zip files.
+    function isCollabAllowedContentType() {
+      return request.resource.contentType in [
+        'application/pdf',
+        'application/zip',
+        'application/x-zip-compressed',
         'image/png',
         'image/jpeg',
         'image/webp',
@@ -130,9 +148,7 @@ service firebase.storage {
         || isCollabPrincipal(wid, pid);
       allow create: if isCollabPrincipal(wid, pid)
         && request.resource.size <= 25 * 1024 * 1024
-        // COLLAB_ALLOWED_DOCUMENT_MIME_TYPES is identical to the client
-        // list, so the same helper serves both (parity via rules test).
-        && isClientAllowedContentType();
+        && isCollabAllowedContentType();
       allow update, delete: if false;
     }
   }

@@ -130,7 +130,17 @@ function TimelineTaskRow({ row, range, selected, onSelect }: ITimelineTaskRowPro
         )}
         style={{ width: LABEL_COL_PX }}
       >
-        <span className="truncate">{row.title}</span>
+        <button
+          type="button"
+          onClick={onSelect}
+          className={cn(
+            'max-w-full truncate text-left underline-offset-2 transition-colors hover:text-primary hover:underline',
+            'focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+          )}
+          aria-label={`Open task details for ${row.title}`}
+        >
+          {row.title}
+        </button>
         {row.restricted && (
           <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground">
             Restricted
@@ -142,7 +152,7 @@ function TimelineTaskRow({ row, range, selected, onSelect }: ITimelineTaskRowPro
         onClick={onSelect}
         aria-label={`${row.title} — ${TASK_STATUS_LABELS[row.status]}${overdue ? ', overdue' : ''}${dueLabel}`}
         className={cn(
-          'absolute top-1/2 h-4 -translate-y-1/2 rounded-full transition-shadow',
+          'absolute top-1/2 h-4 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
           'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
           hasBar
             ? (overdue ? 'bg-accent' : BAR_STATUS_CLASSES[row.status])

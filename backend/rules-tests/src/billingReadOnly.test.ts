@@ -106,7 +106,6 @@ function validTask(wid: string, id: string, creator: string): [string, Record<st
       visibleToCollaboratorIds: [],
       restrictedToDepartments: [],
       sendWhatsapp: false,
-      dependsOn: [],
       order: 1,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),

@@ -8,7 +8,7 @@
 
 import { Alert, Button, Drawer, Input, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
@@ -20,6 +20,7 @@ import { TimelineView } from './TimelineView.tsx';
 import {
   createPhase,
   createTask,
+  reorderTasks,
   usePhases,
   useTasks,
   type IPhaseRow,
@@ -29,6 +30,8 @@ import {
 } from './useTasks.ts';
 
 const NO_PHASE = '__none__';
+const EMPTY_PHASES: readonly IPhaseRow[] = [];
+const EMPTY_TASK_ROWS: readonly TTaskListRow[] = [];
 
 function initials(name: string): string {
   return name
@@ -47,12 +50,29 @@ interface ITaskRowItemProps {
   task: ITaskRow;
   departmentNames: Map<string, string>;
   selected: boolean;
+  highlighted: boolean;
   onSelect: () => void;
+  onMoveUp: (() => void) | null;
+  onMoveDown: (() => void) | null;
 }
 
-function TaskRowItem({ task, departmentNames, selected, onSelect }: ITaskRowItemProps) {
+function TaskRowItem({
+  task,
+  departmentNames,
+  selected,
+  highlighted,
+  onSelect,
+  onMoveUp,
+  onMoveDown,
+}: ITaskRowItemProps) {
   return (
-    <li>
+    <li
+      id={`task-row-${task.id}`}
+      className={cn(
+        'border-b border-border/70 last:border-b-0',
+        highlighted && 'bg-warning/10 ring-1 ring-warning/40',
+      )}
+    >
       <button
         type="button"
         onClick={onSelect}
@@ -95,6 +115,30 @@ function TaskRowItem({ task, departmentNames, selected, onSelect }: ITaskRowItem
           </span>
         )}
       </button>
+      {(onMoveUp !== null || onMoveDown !== null) && (
+        <div className="-mt-1 flex justify-end gap-1 px-3 pb-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={onMoveUp === null}
+            onClick={onMoveUp ?? undefined}
+            aria-label={`Move ${task.title} up`}
+          >
+            Move up
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={onMoveDown === null}
+            onClick={onMoveDown ?? undefined}
+            aria-label={`Move ${task.title} down`}
+          >
+            Move down
+          </Button>
+        </div>
+      )}
     </li>
   );
 }
@@ -107,7 +151,7 @@ interface IRestrictedRowItemProps {
 
 function RestrictedRowItem({ header, departmentNames, onSelect }: IRestrictedRowItemProps) {
   return (
-    <li>
+    <li className="border-b border-border/70 last:border-b-0">
       <button
         type="button"
         onClick={onSelect}
@@ -190,6 +234,10 @@ export interface ITasksSectionProps {
   /** Project schedule bounds — anchor the timeline view's visible range. */
   projectStartDate: Date | null;
   projectTargetDate: Date | null;
+  /** Optional URL-driven task target (`?task=`) for deep-link opening. */
+  deepLinkedTaskId?: string | null;
+  /** Report drawer/task selection changes back to URL state. */
+  onSelectedTaskChange?: (taskId: string | null) => void;
 }
 
 export function TasksSection({
@@ -203,6 +251,8 @@ export function TasksSection({
   lifecycle,
   projectStartDate,
   projectTargetDate,
+  deepLinkedTaskId = null,
+  onSelectedTaskChange,
 }: ITasksSectionProps) {
   const tasksState = useTasks(workspaceId, projectId, role, departments);
   const phasesState = usePhases(workspaceId, projectId);
@@ -214,6 +264,8 @@ export function TasksSection({
   const [view, setView] = useState<'list' | 'timeline'>('list');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [reorderPendingByGroup, setReorderPendingByGroup] = useState<ReadonlySet<string>>(new Set());
   const [addingPhase, setAddingPhase] = useState(false);
   const [phaseName, setPhaseName] = useState('');
   const [phasePending, setPhasePending] = useState(false);
@@ -232,25 +284,73 @@ export function TasksSection({
   const members = membersState.status === 'ready' ? membersState.rows : [];
   const collaborators = collaboratorsState.status === 'ready' ? collaboratorsState.rows : [];
 
-  if (tasksState.status === 'loading' || phasesState.status === 'loading') {
+  const isLoading = tasksState.status === 'loading' || phasesState.status === 'loading';
+  const hasError = tasksState.status === 'error' || phasesState.status === 'error';
+
+  const phases = phasesState.status === 'ready' ? phasesState.rows : EMPTY_PHASES;
+  const taskRows = tasksState.status === 'ready' ? tasksState.rows : EMPTY_TASK_ROWS;
+  const phaseIds = useMemo(() => new Set(phases.map((phase) => phase.id)), [phases]);
+  const grouped = useMemo(() => {
+    const next = new Map<string, TTaskListRow[]>();
+    for (const row of taskRows) {
+      const key = row.phaseId !== null && phaseIds.has(row.phaseId) ? row.phaseId : NO_PHASE;
+      const list = next.get(key) ?? [];
+      list.push(row);
+      next.set(key, list);
+    }
+    return next;
+  }, [taskRows, phaseIds]);
+  const selectedRow = taskRows.find((row) => row.id === selectedId) ?? null;
+
+  useEffect(() => {
+    onSelectedTaskChange?.(selectedId);
+  }, [selectedId, onSelectedTaskChange]);
+
+  useEffect(() => {
+    if (tasksState.status !== 'ready' || phasesState.status !== 'ready') {
+      return;
+    }
+    if (deepLinkedTaskId === null || deepLinkedTaskId === '') {
+      return;
+    }
+    const target = taskRows.find((row) => row.id === deepLinkedTaskId);
+    if (target === undefined) {
+      onSelectedTaskChange?.(null);
+      return;
+    }
+    const groupKey = target.phaseId !== null && phaseIds.has(target.phaseId) ? target.phaseId : NO_PHASE;
+    setCollapsed((prev) => {
+      if (!prev.has(groupKey)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(groupKey);
+      return next;
+    });
+    setSelectedId(deepLinkedTaskId);
+    setHighlightId(deepLinkedTaskId);
+    const timeoutId = window.setTimeout(() => {
+      setHighlightId((current) => (current === deepLinkedTaskId ? null : current));
+    }, 2500);
+    const prefersReducedMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const rowEl = document.getElementById(`task-row-${deepLinkedTaskId}`);
+    if (rowEl !== null && typeof rowEl.scrollIntoView === 'function') {
+      rowEl.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center' });
+    }
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [deepLinkedTaskId, taskRows, phaseIds, onSelectedTaskChange, tasksState.status, phasesState.status]);
+
+  if (isLoading) {
     return <p className="text-sm">Loading tasks…</p>;
   }
-  if (tasksState.status === 'error' || phasesState.status === 'error') {
+  if (hasError) {
     return <Alert variant="destructive">Tasks could not be loaded.</Alert>;
   }
-
-  const phases = phasesState.rows;
-  const phaseIds = new Set(phases.map((phase) => phase.id));
-  const grouped = new Map<string, TTaskListRow[]>();
-  for (const row of tasksState.rows) {
-    const key = row.phaseId !== null && phaseIds.has(row.phaseId) ? row.phaseId : NO_PHASE;
-    const list = grouped.get(key) ?? [];
-    list.push(row);
-    grouped.set(key, list);
-  }
-
-  const selectedRow = tasksState.rows.find((row) => row.id === selectedId) ?? null;
-  const visibleTasks = tasksState.rows.filter((row): row is ITaskRow => !row.restricted);
 
   function toggleGroup(key: string): void {
     setCollapsed((prev) => {
@@ -281,7 +381,7 @@ export function TasksSection({
         visibleToClient: false,
         restrictedToDepartments: [],
         sendWhatsapp: false,
-        dependsOn: [],
+        collaboratorCanSeeAllAttachments: true,
       },
       order,
       uid,
@@ -306,8 +406,45 @@ export function TasksSection({
     }
   }
 
+  async function persistGroupOrder(groupKey: string, rows: readonly ITaskRow[]): Promise<void> {
+    setReorderPendingByGroup((prev) => new Set(prev).add(groupKey));
+    try {
+      await reorderTasks(
+        workspaceId,
+        projectId,
+        rows.map((row) => row.id),
+        uid,
+      );
+    } finally {
+      setReorderPendingByGroup((prev) => {
+        const next = new Set(prev);
+        next.delete(groupKey);
+        return next;
+      });
+    }
+  }
+
+  async function moveTaskInGroup(groupKey: string, taskId: string, direction: -1 | 1): Promise<void> {
+    const rows = (grouped.get(groupKey) ?? []).filter((row): row is ITaskRow => !row.restricted);
+    const index = rows.findIndex((row) => row.id === taskId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= rows.length) {
+      return;
+    }
+    const reordered = [...rows];
+    const [moved] = reordered.splice(index, 1);
+    if (moved === undefined) {
+      return;
+    }
+    reordered.splice(nextIndex, 0, moved);
+    await persistGroupOrder(groupKey, reordered);
+    setSelectedId(taskId);
+  }
+
   function renderGroup(key: string, phase: IPhaseRow | null): ReactNode {
     const rows = grouped.get(key) ?? [];
+    const reorderable = rows.filter((row): row is ITaskRow => !row.restricted);
+    const pendingReorder = reorderPendingByGroup.has(key);
     if (phase === null && rows.length === 0 && !canEdit) {
       return null;
     }
@@ -348,7 +485,28 @@ export function TasksSection({
                       task={row}
                       departmentNames={departmentNames}
                       selected={row.id === selectedId}
+                      highlighted={row.id === highlightId}
                       onSelect={() => setSelectedId(row.id)}
+                      onMoveUp={
+                        canEdit && !pendingReorder
+                          ? (() => {
+                              const index = reorderable.findIndex((entry) => entry.id === row.id);
+                              return index > 0
+                                ? () => void moveTaskInGroup(key, row.id, -1)
+                                : null;
+                            })()
+                          : null
+                      }
+                      onMoveDown={
+                        canEdit && !pendingReorder
+                          ? (() => {
+                              const index = reorderable.findIndex((entry) => entry.id === row.id);
+                              return index >= 0 && index < reorderable.length - 1
+                                ? () => void moveTaskInGroup(key, row.id, 1)
+                                : null;
+                            })()
+                          : null
+                      }
                     />
                   ),
                 )}
@@ -410,7 +568,7 @@ export function TasksSection({
         <div className="flex flex-col gap-3">
           {phases.map((phase) => renderGroup(phase.id, phase))}
           {renderGroup(NO_PHASE, null)}
-          {tasksState.rows.length === 0 && phases.length === 0 && (
+          {taskRows.length === 0 && phases.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No tasks yet.{canEdit && ' Add a phase or a task to get started.'}
             </p>
@@ -482,7 +640,6 @@ export function TasksSection({
               workspaceId={workspaceId}
               projectId={projectId}
               task={selectedRow}
-              allTasks={visibleTasks}
               phases={phases}
               members={members}
               collaborators={collaborators}

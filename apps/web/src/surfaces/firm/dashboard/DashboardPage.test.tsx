@@ -69,10 +69,11 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     restrictedToDepartments: [],
     sendWhatsapp: false,
     notify: { ...TASK_NOTIFY_DEFAULTS },
-    dependsOn: [],
+    collaboratorCanSeeAllAttachments: true,
     order: 0,
     createdBy: UID,
     blockedReason: '',
+    blockedBy: null,
     projectId: 'p1',
     projectName: 'Bungalow build',
     ...overrides,
@@ -150,7 +151,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('link', { name: 'Office fit-out' })).toHaveAttribute(
       'href',
-      '/acme/projects/p9',
+      '/acme/projects/p9?task=t1',
     );
   });
 

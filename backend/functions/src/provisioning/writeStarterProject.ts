@@ -62,8 +62,8 @@ export async function writeStarterProject(
   }
 
   // ── Task documents ──────────────────────────────────────────────────────
-  // Assign deterministic task ids so dependsOn references are stable and
-  // so a re-run (if ever needed) produces the same ids.
+  // Assign deterministic task ids so a re-run (if ever needed) produces
+  // the same ids.
   const taskIdMap = new Map<string, string>();
   for (const task of seed.tasks) {
     const firestoreTaskId = `task-${seed.vertical}-${String(task.order).padStart(3, '0')}`;
@@ -77,22 +77,12 @@ export async function writeStarterProject(
     }
     const taskRef = db.doc(`workspaces/${wid}/projects/${pid}/tasks/${firestoreTaskId}`);
 
-    // Resolve dependsOn local ids → Firestore ids.
-    const dependsOn = (task.dependsOn ?? []).map((localId) => {
-      const resolved = taskIdMap.get(localId);
-      if (resolved === undefined) {
-        throw new Error(`dependsOn reference ${localId} not found in task ${task.id}`);
-      }
-      return resolved;
-    });
-
     batch.set(taskRef, {
       id: firestoreTaskId,
       title: task.title,
       order: task.order,
       phaseId: task.phaseRef,
       status: 'todo',
-      dependsOn,
       visibleToClient: task.visibleToClient,
       visibleToCollaboratorIds: [],
       restrictedToDepartments: task.restrictedToDepartments,

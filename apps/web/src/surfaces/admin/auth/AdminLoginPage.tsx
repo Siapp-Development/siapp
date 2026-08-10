@@ -10,11 +10,40 @@ import { useAdminAuth } from './useAdminAuth.ts';
 
 const CODE_RE = /^\d{6}$/;
 
+function adminAuthError(error: unknown): string {
+  if (!(error instanceof FirebaseError)) {
+    return 'Something went wrong. Please try again.';
+  }
+  switch (error.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+    case 'auth/invalid-email':
+      return 'Invalid email or password.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait and try again.';
+    case 'auth/network-request-failed':
+      return 'Network error. Check your connection and try again.';
+    default:
+      return 'Sign-in failed. Try again or contact the Siapp team.';
+  }
+}
+
 /** [Z1] Siapp Admin sign-in screen — Google SSO + TOTP second factor (#10, #63). */
 export function AdminLoginPage() {
-  const { state, signInWithGoogle, completeMfaSignIn, cancelMfaChallenge } = useAdminAuth();
+  const {
+    state,
+    signInWithGoogle,
+    signInWithPassword,
+    sendForgotPasswordEmail,
+    completeMfaSignIn,
+    cancelMfaChallenge,
+  } = useAdminAuth();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [resetSent, setResetSent] = useState(false);
   const [code, setCode] = useState('');
   const [justEnrolled, setJustEnrolled] = useState(
     () => sessionStorage.getItem(MFA_ENROLLED_FLAG) === '1',
@@ -45,13 +74,48 @@ export function AdminLoginPage() {
         ) {
           setError(null);
         } else {
-          setError('Sign-in failed. Try again or contact the Siapp team.');
+          setError(adminAuthError(err));
         }
       } else {
-        setError('Something went wrong. Please try again.');
+        setError(adminAuthError(err));
       }
     } finally {
       setPending(false);
+    }
+  }
+
+  async function handlePasswordSignIn(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (email.trim() === '' || password === '') {
+      setError('Enter your email and password.');
+      return;
+    }
+    setPending(true);
+    setError(null);
+    setResetSent(false);
+    try {
+      await signInWithPassword(email.trim(), password);
+    } catch (err) {
+      setError(adminAuthError(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleForgotPassword(): Promise<void> {
+    if (email.trim() === '') {
+      setError('Enter your email address first.');
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      await sendForgotPasswordEmail(email.trim());
+    } catch {
+      // Intentionally swallow provider-specific errors to avoid account enumeration.
+    } finally {
+      setPending(false);
+      setResetSent(true);
     }
   }
 
@@ -101,6 +165,12 @@ export function AdminLoginPage() {
             </p>
           )}
 
+          {resetSent && (
+            <p role="status" aria-live="polite" className="text-sm">
+              If that account exists, a password reset email has been sent.
+            </p>
+          )}
+
           {state.status === 'mfaChallenge' ? (
             <form onSubmit={(event) => void handleCodeSubmit(event)} className="space-y-2">
               <Label htmlFor="mfa-signin-code">Authenticator code</Label>
@@ -135,13 +205,53 @@ export function AdminLoginPage() {
               </div>
             </form>
           ) : (
-            <Button
-              className="w-full"
-              disabled={pending}
-              onClick={() => void handleGoogleSignIn()}
-            >
-              {pending ? 'Signing in…' : 'Sign in with Google'}
-            </Button>
+            <div className="space-y-3">
+              <form onSubmit={(event) => void handlePasswordSignIn(event)} className="space-y-2">
+                <div className="space-y-1">
+                  <Label htmlFor="admin-email">Email</Label>
+                  <Input
+                    id="admin-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="admin-password">Password</Label>
+                  <Input
+                    id="admin-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={pending}>
+                  {pending ? 'Signing in…' : 'Sign in with email'}
+                </Button>
+              </form>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={pending}
+                onClick={() => void handleGoogleSignIn()}
+              >
+                {pending ? 'Signing in…' : 'Sign in with Google'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={pending}
+                onClick={() => void handleForgotPassword()}
+              >
+                Forgot password?
+              </Button>
+            </div>
           )}
         </div>
       </main>

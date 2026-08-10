@@ -158,7 +158,9 @@ export const submitCollabUpdate = onCall(async (request) => {
         ? { completedAt: FieldValue.serverTimestamp() }
         : { completedAt: FieldValue.delete() }),
       // D-d: leaving 'blocked' clears the reason.
-      ...(fromStatus === 'blocked' ? { blockedReason: FieldValue.delete() } : {}),
+      ...(fromStatus === 'blocked'
+        ? { blockedReason: FieldValue.delete(), blockedBy: FieldValue.delete() }
+        : {}),
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actorUid,
     });
@@ -174,6 +176,11 @@ export const submitCollabUpdate = onCall(async (request) => {
     await taskRef.update({
       status: 'blocked',
       blockedReason: update.reason,
+      blockedBy: {
+        kind: 'collaborator',
+        id: colid,
+        name: collaboratorName,
+      },
       completedAt: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: actorUid,
@@ -213,7 +220,7 @@ export const submitCollabUpdate = onCall(async (request) => {
     taskTitleDenorm: taskTitle,
     restrictedToDepartments: restrictions,
     visibleToClient: false,
-    payload: {},
+    payload: { text: update.text },
   });
   return { ok: true };
 });

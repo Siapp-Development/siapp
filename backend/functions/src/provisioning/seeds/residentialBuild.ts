@@ -7,8 +7,6 @@ import type { ISeedDefinition } from '../seedTypes.js';
  * milestone tasks (first + last in each phase) are client-visible and
  * WhatsApp-notified; internal work items are firm-only.
  *
- * dependsOn links wire a sequential dependency graph across phases
- * (last task of phase N → first task of phase N+1).
  */
 export const residentialBuildSeed: ISeedDefinition = {
   vertical: 'construction',
@@ -94,7 +92,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Foundation excavation started',
       order: 8,
       phaseRef: 'phase-foundation',
-      dependsOn: ['t-pc-07'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -160,7 +157,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Ground-floor slab casting',
       order: 15,
       phaseRef: 'phase-structure',
-      dependsOn: ['t-f-07'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -244,7 +240,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Plumbing rough-in started',
       order: 24,
       phaseRef: 'phase-mep',
-      dependsOn: ['t-s-09'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -292,7 +287,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Wall plastering — ground floor',
       order: 29,
       phaseRef: 'phase-finishes',
-      dependsOn: ['t-mep-05'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -385,7 +379,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Electrical second fix (switches, sockets, DB)',
       order: 39,
       phaseRef: 'phase-fitout',
-      dependsOn: ['t-fin-10'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -478,7 +471,6 @@ export const residentialBuildSeed: ISeedDefinition = {
       title: 'Pre-handover defect check',
       order: 49,
       phaseRef: 'phase-handover',
-      dependsOn: ['t-fo-10'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],

@@ -49,10 +49,10 @@ function collabTask(id: string, extra: Record<string, unknown> = {}): Record<str
     status: 'in_progress',
     assignees: [{ type: 'collaborator', id: COL_ID }],
     visibleToClient: false,
+    collaboratorCanSeeAllAttachments: true,
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
-    dependsOn: [],
     order: 1,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
@@ -293,13 +293,16 @@ describe('collab document reads', () => {
     await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-shared`)));
   });
 
-  it('denies other-task, unshared and soft-deleted docs', async () => {
+  it('denies other-task and soft-deleted docs', async () => {
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-otherscope`)));
-    await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-notshared`)));
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-del`)));
   });
 
-  it('lists only when the query pins scopeId + membership + deletedAt', async () => {
+  it('allows unshared docs when collaboratorCanSeeAllAttachments is true/missing (#92)', async () => {
+    await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-notshared`)));
+  });
+
+  it('allows scopeId+membership+deletedAt list shape', async () => {
     await assertSucceeds(
       getDocs(
         query(
@@ -310,11 +313,90 @@ describe('collab document reads', () => {
         ),
       ),
     );
-    await assertFails(
+  });
+
+  it('allows scopeId+deletedAt list when task flag is true or missing (#92)', async () => {
+    await assertSucceeds(
       getDocs(
         query(
           collection(dbAsCollab(), `${PUB_PREFIX}/documents`),
           where('scopeId', '==', TASK_OPEN),
+          where('deletedAt', '==', null),
+        ),
+      ),
+    );
+
+    const TASK_MISSING_FLAG = 'ctask-missing-flag';
+    const legacyTask = collabTask(TASK_MISSING_FLAG);
+    delete legacyTask['collaboratorCanSeeAllAttachments'];
+    await seedDoc(testEnv, `${PUB_PREFIX}/tasks/${TASK_MISSING_FLAG}`, legacyTask);
+    await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-missing-flag`, {
+      scope: 'task',
+      scopeId: TASK_MISSING_FLAG,
+      visibleToClient: false,
+      visibleToCollaboratorIds: [],
+      restrictedToDepartments: [],
+      deletedAt: null,
+    });
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(dbAsCollab(TASK_MISSING_FLAG), `${PUB_PREFIX}/documents`),
+          where('scopeId', '==', TASK_MISSING_FLAG),
+          where('deletedAt', '==', null),
+        ),
+      ),
+    );
+  });
+
+  it('requires visibleToCollaboratorIds pin when task flag is false (#92)', async () => {
+    const TASK_RESTRICTED = 'ctask-restricted-attachments';
+    await seedDoc(
+      testEnv,
+      `${PUB_PREFIX}/tasks/${TASK_RESTRICTED}`,
+      collabTask(TASK_RESTRICTED, { collaboratorCanSeeAllAttachments: false }),
+    );
+    await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-restricted-attachments`, {
+      scope: 'task',
+      scopeId: TASK_RESTRICTED,
+      visibleToClient: false,
+      visibleToCollaboratorIds: [COL_ID],
+      restrictedToDepartments: [],
+      deletedAt: null,
+    });
+    await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-restricted-unshared`, {
+      scope: 'task',
+      scopeId: TASK_RESTRICTED,
+      visibleToClient: false,
+      visibleToCollaboratorIds: [],
+      restrictedToDepartments: [],
+      deletedAt: null,
+    });
+
+    await assertFails(
+      getDoc(doc(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents/cdoc-restricted-unshared`)),
+    );
+    await assertSucceeds(
+      getDoc(
+        doc(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents/cdoc-restricted-attachments`),
+      ),
+    );
+
+    await assertFails(
+      getDocs(
+        query(
+          collection(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents`),
+          where('scopeId', '==', TASK_RESTRICTED),
+          where('deletedAt', '==', null),
+        ),
+      ),
+    );
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents`),
+          where('scopeId', '==', TASK_RESTRICTED),
+          where('visibleToCollaboratorIds', 'array-contains', COL_ID),
           where('deletedAt', '==', null),
         ),
       ),
@@ -385,7 +467,7 @@ describe('collab document create (D-f)', () => {
         }),
       ),
     );
-    await assertFails(
+    await assertSucceeds(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-mime`),
         validCollabDocPayload('cnew-mime', { mimeType: 'application/zip' }),
@@ -394,7 +476,14 @@ describe('collab document create (D-f)', () => {
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size`),
-        validCollabDocPayload('cnew-size', { sizeBytes: 25 * 1024 * 1024 + 1 }),
+        validCollabDocPayload('cnew-size', { mimeType: 'application/x-msdownload' }),
+      ),
+    );
+
+    await assertFails(
+      setDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size-too-large`),
+        validCollabDocPayload('cnew-size-too-large', { sizeBytes: 30 * 1024 * 1024 }),
       ),
     );
   });

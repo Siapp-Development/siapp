@@ -5,6 +5,8 @@ import {
   getMultiFactorResolver,
   getRedirectResult,
   onIdTokenChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signOut,
   type MultiFactorError,
   type MultiFactorResolver,
@@ -27,6 +29,8 @@ export type TAdminAuthState =
 export interface IAdminAuthContextValue {
   state: TAdminAuthState;
   signInWithGoogle: () => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  sendForgotPasswordEmail: (email: string) => Promise<void>;
   /** Resolve a pending TOTP challenge with a 6-digit authenticator code. */
   completeMfaSignIn: (code: string) => Promise<void>;
   /** Abandon a pending TOTP challenge and return to signed-out. */
@@ -42,8 +46,8 @@ export interface IAdminAuthProviderProps {
 
 /**
  * Auth provider for the Siapp admin surface.
- * Google sign-in only; requires the `isAdmin` custom claim and (outside the
- * emulator) a second-factor signal on the ID token — #10 mandates SSO + MFA.
+ * Sign-in requires the `isAdmin` custom claim and (outside the emulator) a
+ * second-factor signal on the ID token — #10/#94 keep MFA + claims gating.
  */
 export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
   const [state, setState] = useState<TAdminAuthState>({ status: 'loading' });
@@ -111,6 +115,22 @@ export function AdminAuthProvider({ children }: IAdminAuthProviderProps) {
           }
           throw error;
         }
+      },
+      signInWithPassword: async (email: string, password: string) => {
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          // onIdTokenChanged will update state automatically.
+        } catch (error) {
+          if (error instanceof FirebaseError && error.code === 'auth/multi-factor-auth-required') {
+            const resolver = getMultiFactorResolver(auth, error as MultiFactorError);
+            setState({ status: 'mfaChallenge', resolver });
+            return;
+          }
+          throw error;
+        }
+      },
+      sendForgotPasswordEmail: async (email: string) => {
+        await sendPasswordResetEmail(auth, email);
       },
       completeMfaSignIn: async (code: string) => {
         if (state.status !== 'mfaChallenge') {

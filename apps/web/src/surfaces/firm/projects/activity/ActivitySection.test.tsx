@@ -29,6 +29,7 @@ function row(overrides: Partial<IActivityRow> = {}): IActivityRow {
     docName: '',
     from: null,
     to: null,
+    noteText: null,
     wouldHaveNotified: false,
     restrictedToDepartments: [],
     at: new Date('2026-07-01T10:00:00'),
@@ -103,6 +104,23 @@ describe('ActivitySection', () => {
     };
     renderSection();
     expect(screen.getByText('Would have notified — draft')).toBeInTheDocument();
+  });
+
+  it('shows Notes label detail for collaborator note events', () => {
+    hook.state = {
+      status: 'ready',
+      rows: [
+        row({
+          action: 'collaborator_note_added',
+          taskTitle: 'Piling works',
+          noteText: 'Need revised drawing',
+        }),
+      ],
+      hasMore: false,
+      loadingMore: false,
+    };
+    renderSection();
+    expect(screen.getByText(/notes: need revised drawing/i)).toBeInTheDocument();
   });
 
   it('strikes through deleted document names', () => {

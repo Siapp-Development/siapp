@@ -30,7 +30,7 @@ export interface IActivityEntry {
   restrictedToDepartments: string[];
   /** #21 (D4): denormalized portal visibility — client-safe actions only. */
   visibleToClient: boolean;
-  payload: { from?: unknown; to?: unknown };
+  payload: { from?: unknown; to?: unknown; text?: unknown };
   wouldHaveNotified?: boolean;
 }
 

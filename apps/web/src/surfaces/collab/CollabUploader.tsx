@@ -1,6 +1,6 @@
 /**
  * Collaborator uploads for the /t page (#22, D-f): direct rules-gated
- * Storage writes to collab-uploads/ (≤25 MB, image/PDF/DOCX) plus a live
+ * Storage writes to collab-uploads/ (≤25 MB, image/PDF/DOCX/ZIP) plus a live
  * list of the task-scoped documents shared with this collaborator.
  */
 
@@ -55,7 +55,7 @@ export function CollabUploader({
         message:
           invalid === 'too-large'
             ? 'That file is over the 25 MB limit.'
-            : 'Only images, PDFs and Word documents can be uploaded.',
+            : 'Only images, PDFs, Word documents, and ZIP files can be uploaded.',
       });
       return;
     }
@@ -98,7 +98,7 @@ export function CollabUploader({
           className="sr-only"
           aria-hidden="true"
           tabIndex={-1}
-          accept="image/*,.pdf,.doc,.docx"
+          accept="image/*,.pdf,.doc,.docx,.zip"
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file !== undefined) {
@@ -116,7 +116,7 @@ export function CollabUploader({
           Upload a file
         </button>
         <p className="mt-1 text-xs text-muted-foreground">
-          Images, PDF or Word — up to 25 MB.
+          Images, PDF, Word, or ZIP — up to 25 MB.
         </p>
         <div aria-live="polite">
           {upload.phase === 'uploading' ? (

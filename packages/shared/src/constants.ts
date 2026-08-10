@@ -21,6 +21,8 @@ export const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
  */
 export const ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/pdf',
+  'application/zip',
+  'application/x-zip-compressed',
   'image/png',
   'image/jpeg',
   'image/webp',
@@ -129,6 +131,8 @@ export const MAX_COLLAB_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
  */
 export const COLLAB_ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/pdf',
+  'application/zip',
+  'application/x-zip-compressed',
   'image/png',
   'image/jpeg',
   'image/webp',

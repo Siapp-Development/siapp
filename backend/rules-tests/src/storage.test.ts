@@ -111,8 +111,8 @@ describe('storage uploads', () => {
     }
   });
 
-  it('denies disallowed content types (zip, svg)', async () => {
-    for (const contentType of ['application/zip', 'image/svg+xml']) {
+  it('denies disallowed content types (e.g. svg)', async () => {
+    for (const contentType of ['image/svg+xml']) {
       await assertFails(
         put(storageAs('owner'), `${PROJECT_PREFIX}/uuid-bad-type`, PDF_BYTES, contentType),
       );

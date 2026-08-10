@@ -147,9 +147,13 @@ export function activityLine(row: IActivityRow): IActivityLine {
             detail: '',
           };
     case 'collaborator_note_added':
-      // #22 (Q2): mirrored from the /t page — the note text itself stays in
-      // the task's updates stream, not the project timeline.
-      return { actor, text: 'added a note on', subject: task, subjectStruck: false, detail: '' };
+      return {
+        actor,
+        text: 'added a note on',
+        subject: task,
+        subjectStruck: false,
+        detail: row.noteText !== null && row.noteText !== '' ? `Notes: ${row.noteText}` : 'Notes:',
+      };
     case 'collaborator_need_help':
       return {
         actor,

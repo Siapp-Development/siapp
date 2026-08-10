@@ -3,7 +3,7 @@
  * client-uploads/ (D-029 the other way: portal ↔ collab file sharing goes
  * through metadata gates) and collab-uploads/, and may create objects under
  * collab-uploads/ only — ≤25 MB with the COLLAB_ALLOWED_DOCUMENT_MIME_TYPES
- * allowlist (parity asserted below; identical to the client list). Objects
+ * allowlist (parity asserted below; includes zip). Objects
  * stay immutable; cross-project/workspace access is denied. Portal + firm
  * reads of collab-uploads/ are covered (D-029).
  */

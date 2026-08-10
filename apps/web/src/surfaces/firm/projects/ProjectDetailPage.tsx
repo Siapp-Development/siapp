@@ -12,8 +12,8 @@ import type {
   TProjectLifecycle,
   TProjectLifecycleAction,
 } from '@siapp/shared';
-import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
 import { useClients } from '../clients/useClients.ts';
@@ -229,10 +229,35 @@ export function ProjectDetailPage({
   userName,
 }: IProjectDetailPageProps) {
   const { projectId = '' } = useParams<'projectId'>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const state = useProject(workspaceId, projectId);
   const clients = useClients(workspaceId);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<'tasks' | 'documents' | 'activity' | 'details'>('tasks');
+  const deepLinkedTaskId = searchParams.get('task');
+  const handleSelectedTaskChange = useCallback(
+    (taskId: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (taskId !== null) {
+            next.set('task', taskId);
+          } else {
+            next.delete('task');
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  useEffect(() => {
+    if (deepLinkedTaskId !== null && deepLinkedTaskId !== '' && tab !== 'tasks') {
+      setTab('tasks');
+    }
+  }, [deepLinkedTaskId, tab]);
 
   if (state.status === 'loading') {
     return <p className="text-sm">Loading project…</p>;
@@ -312,6 +337,8 @@ export function ProjectDetailPage({
           lifecycle={project.lifecycle}
           projectStartDate={project.startDate}
           projectTargetDate={project.targetEndDate}
+          deepLinkedTaskId={deepLinkedTaskId}
+          onSelectedTaskChange={handleSelectedTaskChange}
         />
       )}
 
