@@ -7,8 +7,6 @@ export interface ITaskDef {
   order: number;
   /** Matches `IPhaseDef.id` of the phase this task belongs to. */
   phaseRef: string;
-  /** ITaskDef.id values this task depends on (within this seed). */
-  dependsOn?: string[];
   visibleToClient: boolean;
   sendWhatsapp: boolean;
   restrictedToDepartments: string[];

@@ -13,8 +13,6 @@ import type { ISeedDefinition } from '../seedTypes.js';
  * milestone tasks (first + last in each phase) are client-visible and
  * WhatsApp-notified; internal work items are firm-only.
  *
- * dependsOn links wire a sequential dependency graph across phases
- * (last task of phase N → first task of phase N+1).
  */
 export const buildingApprovalSeed: ISeedDefinition = {
   vertical: 'construction',
@@ -82,7 +80,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Compile KM submission documentation',
       order: 6,
       phaseRef: 'phase-km-submission',
-      dependsOn: ['t-ap-05'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -139,7 +136,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Prepare 2D building plan (pelan BP) drawings',
       order: 12,
       phaseRef: 'phase-bp-submission',
-      dependsOn: ['t-km-06'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -250,7 +246,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Prepare infrastructure plan submissions',
       order: 24,
       phaseRef: 'phase-infra-permit',
-      dependsOn: ['t-bp-12'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -316,7 +311,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Site possession and construction start',
       order: 31,
       phaseRef: 'phase-construction',
-      dependsOn: ['t-in-07'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -364,7 +358,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Compile staged certifications (Borang G1–G21)',
       order: 36,
       phaseRef: 'phase-ccc',
-      dependsOn: ['t-cs-05'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],
@@ -412,7 +405,6 @@ export const buildingApprovalSeed: ISeedDefinition = {
       title: 'Final inspection with client',
       order: 41,
       phaseRef: 'phase-handover',
-      dependsOn: ['t-cc-05'],
       visibleToClient: true,
       sendWhatsapp: true,
       restrictedToDepartments: [],

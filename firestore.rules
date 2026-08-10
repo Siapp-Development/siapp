@@ -153,6 +153,12 @@ service cloud.firestore {
           .hasAny([request.auth.token.collab.colid]);
     }
 
+    // #92: legacy-missing field defaults to true.
+    function collabCanSeeAllTaskAttachments(wid, pid, tid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(tid))
+        .data.get('collaboratorCanSeeAllAttachments', true) == true;
+    }
+
     // Portal/collab reads re-check the D-027 lifecycle gate on every
     // request (one get(); subcollections only — the project doc checks
     // resource.data directly). Unpublish/archive/delete instantly closes
@@ -343,6 +349,8 @@ service cloud.firestore {
         && d.mimeType in [
           'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
           'image/gif',
+          'application/zip',
+          'application/x-zip-compressed',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'application/msword'
         ]
@@ -386,6 +394,8 @@ service cloud.firestore {
         && d.mimeType in [
           'application/pdf', 'image/png', 'image/jpeg', 'image/webp',
           'image/gif',
+          'application/zip',
+          'application/x-zip-compressed',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'application/msword'
         ]
@@ -447,9 +457,9 @@ service cloud.firestore {
       return d.keys().hasOnly([
           'id', 'title', 'description', 'phaseId', 'status',
           'startDate', 'dueDate', 'completedAt', 'assignees',
-          'visibleToClient', 'visibleToCollaboratorIds',
-          'restrictedToDepartments', 'sendWhatsapp', 'dependsOn',
-          'notify', 'blockedReason',
+          'visibleToClient', 'collaboratorCanSeeAllAttachments',
+          'visibleToCollaboratorIds', 'restrictedToDepartments',
+          'sendWhatsapp', 'notify', 'blockedReason', 'blockedBy',
           'order', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'
         ])
         && d.id == tid
@@ -468,6 +478,8 @@ service cloud.firestore {
         && d.assignees is list
         && d.assignees.size() <= 20
         && d.visibleToClient is bool
+        && (!('collaboratorCanSeeAllAttachments' in d)
+          || d.collaboratorCanSeeAllAttachments is bool)
         && d.visibleToCollaboratorIds is list
         && d.restrictedToDepartments is list
         && d.restrictedToDepartments.size() <= 10
@@ -482,9 +494,16 @@ service cloud.firestore {
           && d.notify.toClient is bool
           && d.notify.toInternal is bool
         ))
-        && d.dependsOn is list
-        && d.dependsOn.size() <= 50
-        && !d.dependsOn.hasAny([tid])
+        && (!('blockedBy' in d) || (
+          d.blockedBy is map
+          && d.blockedBy.keys().hasOnly(['kind', 'id', 'name'])
+          && d.blockedBy.kind in ['collaborator', 'member']
+          && d.blockedBy.id is string
+          && d.blockedBy.id.size() > 0
+          && d.blockedBy.name is string
+          && d.blockedBy.name.size() > 0
+          && d.blockedBy.name.size() <= 120
+        ))
         && d.order is number
         && d.createdAt is timestamp
         && d.updatedAt is timestamp
@@ -826,13 +845,15 @@ service cloud.firestore {
               && resource.data.visibleToClient == true
               && resource.data.deletedAt == null
               && portalProjectLive(wid, pid))
-            // #22: collab principal sees only its own task's non-deleted
-            // docs that are shared with this collaborator.
+            // #22/#92: collab principal sees pinned-task non-deleted docs.
+            // When collaboratorCanSeeAllAttachments is false, visibility must
+            // be explicitly shared to the collaborator.
             || (isCollabProject(wid, pid)
               && resource.data.scopeId == request.auth.token.collab.tid
-              && resource.data.visibleToCollaboratorIds
-                .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
+              && (collabCanSeeAllTaskAttachments(wid, pid, request.auth.token.collab.tid)
+                || resource.data.visibleToCollaboratorIds
+                  .hasAny([request.auth.token.collab.colid]))
               && projectLive(wid, pid));
           allow list: if (isFirmMember(wid)
               && canSeeRestrictedList(wid, resource.data))
@@ -842,13 +863,14 @@ service cloud.firestore {
               && resource.data.visibleToClient == true
               && resource.data.deletedAt == null
               && portalProjectLive(wid, pid))
-            // Provable collab list: queries must constrain scopeId,
-            // visibleToCollaboratorIds (array-contains colid) and deletedAt.
+            // Provable collab list: queries must constrain scopeId/deletedAt,
+            // plus visibleToCollaboratorIds when the task flag is false.
             || (isCollabProject(wid, pid)
               && resource.data.scopeId == request.auth.token.collab.tid
-              && resource.data.visibleToCollaboratorIds
-                .hasAny([request.auth.token.collab.colid])
               && resource.data.deletedAt == null
+              && (collabCanSeeAllTaskAttachments(wid, pid, request.auth.token.collab.tid)
+                || resource.data.visibleToCollaboratorIds
+                  .hasAny([request.auth.token.collab.colid]))
               && projectLive(wid, pid));
           allow create: if workspaceActive(wid)
             && ((hasRole(wid, ['owner', 'admin', 'pm'])
