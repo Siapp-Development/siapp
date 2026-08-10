@@ -2,7 +2,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { FirebaseError } from 'firebase/app';
-import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import {
+  TotpMultiFactorGenerator,
+  getRedirectResult,
+  getMultiFactorResolver,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+} from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,6 +19,12 @@ import { LoginPage } from './LoginPage.tsx';
 vi.mock('@/lib/firebase.ts', () => ({ auth: {}, db: {} }));
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: class GoogleAuthProvider {},
+  TotpMultiFactorGenerator: class TotpMultiFactorGenerator {
+    static FACTOR_ID = 'totp';
+    static assertionForSignIn = vi.fn(() => ({ assertion: 'totp-assertion' }));
+  },
+  getRedirectResult: vi.fn(),
+  getMultiFactorResolver: vi.fn(),
   onIdTokenChanged: vi.fn(() => () => {}),
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
@@ -52,6 +65,10 @@ beforeEach(() => {
   vi.mocked(signInWithEmailAndPassword).mockReset();
   vi.mocked(signInWithPopup).mockReset();
   vi.mocked(signInWithRedirect).mockReset();
+  vi.mocked(getRedirectResult).mockReset();
+  vi.mocked(getMultiFactorResolver).mockReset();
+  vi.mocked(TotpMultiFactorGenerator.assertionForSignIn).mockReset();
+  vi.mocked(getRedirectResult).mockResolvedValue(null as never);
 });
 
 describe('LoginPage', () => {
@@ -107,6 +124,134 @@ describe('LoginPage', () => {
     await fillAndSubmit('alice@firm.test', 'hunter22');
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/too many attempts/i);
+  });
+
+  it('prompts for authenticator code when email/password requires MFA', async () => {
+    const resolveSignIn = vi.fn().mockResolvedValue({} as never);
+    vi.mocked(signInWithEmailAndPassword).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn,
+    } as never);
+    vi.mocked(TotpMultiFactorGenerator.assertionForSignIn).mockReturnValue(
+      { assertion: 'totp-assertion' } as never,
+    );
+    renderLogin();
+
+    await fillAndSubmit('alice@firm.test', 'hunter22');
+
+    expect(await screen.findByLabelText(/authenticator code/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/authenticator code/i), '123456');
+    await userEvent.click(screen.getByRole('button', { name: /verify code/i }));
+
+    expect(TotpMultiFactorGenerator.assertionForSignIn).toHaveBeenCalledWith('factor-1', '123456');
+    expect(resolveSignIn).toHaveBeenCalledWith({ assertion: 'totp-assertion' });
+    expect(await screen.findByText('home stub')).toBeInTheDocument();
+  });
+
+  it('prompts for authenticator code when redirect-return requires MFA', async () => {
+    vi.mocked(getRedirectResult).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn: vi.fn(),
+    } as never);
+
+    renderLogin();
+
+    expect(await screen.findByLabelText(/authenticator code/i)).toBeInTheDocument();
+  });
+
+  it('prompts for authenticator code when Google popup requires MFA', async () => {
+    vi.mocked(signInWithPopup).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn: vi.fn(),
+    } as never);
+    renderLogin();
+
+    await userEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+
+    expect(await screen.findByLabelText(/authenticator code/i)).toBeInTheDocument();
+  });
+
+  it('shows a retryable invalid-code error when MFA verification fails', async () => {
+    const resolveSignIn = vi
+      .fn()
+      .mockRejectedValue(new FirebaseError('auth/invalid-verification-code', 'invalid code'));
+    vi.mocked(signInWithEmailAndPassword).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn,
+    } as never);
+    vi.mocked(TotpMultiFactorGenerator.assertionForSignIn).mockReturnValue(
+      { assertion: 'totp-assertion' } as never,
+    );
+    renderLogin();
+
+    await fillAndSubmit('alice@firm.test', 'hunter22');
+    await userEvent.type(screen.getByLabelText(/authenticator code/i), '123456');
+    await userEvent.click(screen.getByRole('button', { name: /verify code/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/invalid verification code/i);
+    expect(screen.getByRole('button', { name: /verify code/i })).toBeEnabled();
+  });
+
+  it('shows a retryable expired-code error when MFA verification fails', async () => {
+    const resolveSignIn = vi
+      .fn()
+      .mockRejectedValue(new FirebaseError('auth/code-expired', 'expired code'));
+    vi.mocked(signInWithEmailAndPassword).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn,
+    } as never);
+    vi.mocked(TotpMultiFactorGenerator.assertionForSignIn).mockReturnValue(
+      { assertion: 'totp-assertion' } as never,
+    );
+    renderLogin();
+
+    await fillAndSubmit('alice@firm.test', 'hunter22');
+    await userEvent.type(screen.getByLabelText(/authenticator code/i), '123456');
+    await userEvent.click(screen.getByRole('button', { name: /verify code/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/verification code expired/i);
+    expect(screen.getByRole('button', { name: /verify code/i })).toBeEnabled();
+  });
+
+  it('returns to sign-in and clears challenge errors when backing out of MFA', async () => {
+    vi.mocked(signInWithEmailAndPassword).mockRejectedValue(
+      new FirebaseError('auth/multi-factor-auth-required', 'second factor required'),
+    );
+    vi.mocked(getMultiFactorResolver).mockReturnValue({
+      hints: [{ factorId: TotpMultiFactorGenerator.FACTOR_ID, uid: 'factor-1' }],
+      resolveSignIn: vi.fn(),
+    } as never);
+    renderLogin();
+
+    await fillAndSubmit('alice@firm.test', 'hunter22');
+    await userEvent.type(screen.getByLabelText(/authenticator code/i), '123');
+    await userEvent.click(screen.getByRole('button', { name: /verify code/i }));
+    expect(
+      await screen.findByText('Enter the 6-digit code from your authenticator app.'),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /back to sign in/i }));
+
+    expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/authenticator code/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Enter the 6-digit code from your authenticator app.'),
+    ).not.toBeInTheDocument();
   });
 
   it('points cross-provider accounts at the other sign-in method', async () => {

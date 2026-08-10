@@ -1,14 +1,15 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { onIdTokenChanged } from 'firebase/auth';
+import { getRedirectResult, onIdTokenChanged } from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardRoutes } from '@/routes/dashboardRouter.tsx';
 
 vi.mock('@/lib/firebase.ts', () => ({ auth: {}, db: {} }));
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: class GoogleAuthProvider {},
+  getRedirectResult: vi.fn(),
   onIdTokenChanged: vi.fn(),
   sendPasswordResetEmail: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
@@ -23,6 +24,10 @@ vi.mocked(onIdTokenChanged).mockImplementation((_auth, observer) => {
     observer(null);
   }
   return () => {};
+});
+
+beforeEach(() => {
+  vi.mocked(getRedirectResult).mockResolvedValue(null as never);
 });
 
 function renderAt(path: string) {
