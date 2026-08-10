@@ -27,6 +27,8 @@ vi.mock('firebase/auth', () => ({
   getRedirectResult: vi.fn(async () => null),
   multiFactor: vi.fn(),
   onIdTokenChanged: vi.fn(),
+  sendPasswordResetEmail: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
   signInWithRedirect: vi.fn(),
   signOut: vi.fn(),
@@ -90,6 +92,37 @@ describe('adminRouter', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: /siapp admin/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in with email/i })).toBeInTheDocument();
+  });
+
+  it('submits email/password sign-in from the admin login form', async () => {
+    const { signInWithEmailAndPassword } = await import('firebase/auth');
+    vi.mocked(signInWithEmailAndPassword).mockResolvedValue({} as never);
+
+    renderAt('/login');
+    await userEvent.type(await screen.findByLabelText(/^email$/i), 'admin@siapp.test');
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'Passw0rd!');
+    await userEvent.click(screen.getByRole('button', { name: /sign in with email/i }));
+
+    expect(signInWithEmailAndPassword).toHaveBeenCalledWith(
+      expect.anything(),
+      'admin@siapp.test',
+      'Passw0rd!',
+    );
+  });
+
+  it('triggers forgot-password from admin login', async () => {
+    const { sendPasswordResetEmail } = await import('firebase/auth');
+    vi.mocked(sendPasswordResetEmail).mockResolvedValue(undefined);
+
+    renderAt('/login');
+    await userEvent.type(await screen.findByLabelText(/^email$/i), 'admin@siapp.test');
+    await userEvent.click(screen.getByRole('button', { name: /forgot password\?/i }));
+
+    expect(sendPasswordResetEmail).toHaveBeenCalledWith(expect.anything(), 'admin@siapp.test');
+    expect(
+      await screen.findByText(/if that account exists, a password reset email has been sent/i),
+    ).toBeInTheDocument();
   });
 
   it('makes the skip link the first focusable element', async () => {

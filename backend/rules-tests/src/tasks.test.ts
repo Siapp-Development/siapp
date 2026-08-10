@@ -89,10 +89,10 @@ function validTask(
     status: 'todo',
     assignees: [],
     visibleToClient: false,
+    collaboratorCanSeeAllAttachments: true,
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
-    dependsOn: [],
     order: 1,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
@@ -226,9 +226,10 @@ describe('task create', () => {
       { title: 'x'.repeat(201) },
       { status: 'nope' },
       { description: 'x'.repeat(5001) },
-      { dependsOn: ['task-x'] }, // self-dependency
       { requiresPhoto: true }, // removed by D-032 — extra key
       { visibleToClient: 'yes' },
+      { collaboratorCanSeeAllAttachments: 'yes' },
+      { blockedBy: { kind: 'third-party', id: 'x', name: 'Nope' } },
       { restrictedToDepartments: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'] },
     ];
     for (const extra of invalid) {

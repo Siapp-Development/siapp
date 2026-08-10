@@ -63,7 +63,6 @@ function validTask(
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     sendWhatsapp: false,
-    dependsOn: [],
     order: 1,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),

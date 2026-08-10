@@ -38,15 +38,6 @@ describe.each(SEEDS)('%s integrity', (_name, seed) => {
     }
   });
 
-  it('resolves every dependsOn reference to a seed task', () => {
-    const taskIds = new Set(seed.tasks.map((t) => t.id));
-    for (const task of seed.tasks) {
-      for (const dep of task.dependsOn ?? []) {
-        expect(taskIds.has(dep), `task ${task.id} dependsOn ${dep}`).toBe(true);
-      }
-    }
-  });
-
   it('marks every milestone (client-visible task) for WhatsApp notification', () => {
     for (const task of seed.tasks) {
       expect(task.sendWhatsapp, `task ${task.id}`).toBe(task.visibleToClient);
@@ -78,16 +69,10 @@ describe('buildingApprovalSeed', () => {
     ]);
   });
 
-  it('chains phases sequentially via dependsOn on each phase-opening task', () => {
-    // First task of phase N+1 depends on the last task of phase N.
-    const openers = buildingApprovalSeed.tasks.filter((t) => (t.dependsOn ?? []).length > 0);
-    expect(openers.map((t) => t.id)).toEqual([
-      't-km-01',
-      't-bp-01',
-      't-in-01',
-      't-cs-01',
-      't-cc-01',
-      't-ho-01',
-    ]);
+  it('keeps task orders strictly sequential across all phases', () => {
+    const sorted = [...buildingApprovalSeed.tasks].sort((a, b) => a.order - b.order);
+    expect(sorted.map((t) => t.order)).toEqual(
+      Array.from({ length: sorted.length }, (_, i) => i + 1),
+    );
   });
 });

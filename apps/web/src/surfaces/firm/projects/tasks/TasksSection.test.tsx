@@ -11,12 +11,14 @@ const tasksData = vi.hoisted(() => ({
   refreshRestricted: vi.fn(),
   createTask: vi.fn(),
   createPhase: vi.fn(),
+  reorderTasks: vi.fn(),
 }));
 vi.mock('./useTasks.ts', () => ({
   useTasks: () => ({ ...tasksData.tasksState, refreshRestricted: tasksData.refreshRestricted }),
   usePhases: () => tasksData.phasesState,
   createTask: tasksData.createTask,
   createPhase: tasksData.createPhase,
+  reorderTasks: tasksData.reorderTasks,
 }));
 
 vi.mock('../../settings/useTeamData.ts', () => ({
@@ -63,10 +65,11 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     restrictedToDepartments: [],
     sendWhatsapp: false,
     notify: { ...TASK_NOTIFY_DEFAULTS },
-    dependsOn: [],
+    collaboratorCanSeeAllAttachments: true,
     order: 1,
     createdBy: 'u1',
     blockedReason: '',
+    blockedBy: null,
     ...overrides,
   };
 }
@@ -171,6 +174,24 @@ describe('TasksSection', () => {
     expect(tasksData.createPhase).toHaveBeenCalledWith('wksA', 'p1', 'Finishing', 2);
   });
 
+  it('reorders tasks within a phase with keyboard-accessible move controls (#88)', async () => {
+    tasksData.reorderTasks.mockResolvedValue(undefined);
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    const moveUp = screen.getByRole('button', { name: /move second up/i });
+    moveUp.focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(tasksData.reorderTasks).toHaveBeenCalledWith('wksA', 'p1', ['t2', 't1'], 'u1');
+  });
+
   it('hides all add/edit affordances when canEdit is false', () => {
     tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
     renderSection({ canEdit: false, role: 'viewer' });
@@ -236,6 +257,20 @@ describe('TasksSection', () => {
     expect(screen.queryByTestId('task-detail-panel')).not.toBeInTheDocument();
   });
 
+  it('opens and highlights a deep-linked task id from URL state (#90)', () => {
+    const onSelectedTaskChange = vi.fn();
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't2', phaseId: 'ph1', title: 'Deep linked task', order: 2 })],
+    };
+
+    renderSection({ deepLinkedTaskId: 't2', onSelectedTaskChange });
+
+    expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
+    expect(screen.getByRole('button', { name: /deep linked task/i })).toBeInTheDocument();
+    expect(onSelectedTaskChange).toHaveBeenCalledWith('t2');
+  });
+
   it('switches to the timeline view with bars, milestones and a today line', async () => {
     const due = new Date();
     due.setDate(due.getDate() + 10);
@@ -289,6 +324,26 @@ describe('TasksSection', () => {
     expect(bar).toHaveClass('bg-accent');
 
     await userEvent.click(bar);
+    expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
+  });
+
+  it('opens the drawer when clicking the timeline left-side task label (#86)', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({
+          id: 't1',
+          phaseId: 'ph1',
+          startDate: new Date('2026-01-01T00:00:00'),
+          dueDate: new Date('2026-01-10T00:00:00'),
+        }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+    await userEvent.click(screen.getByRole('button', { name: /open task details for pour foundation/i }));
+
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
   });
 

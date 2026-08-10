@@ -1,6 +1,6 @@
 /**
  * Pure planner tests for #15 duplicate project (D-031): structure carries,
- * content clears, phaseId/dependsOn remap through pre-generated ids.
+ * content clears, and phaseId remaps through pre-generated ids.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -41,7 +41,6 @@ function taskSource(overrides: Partial<IDuplicateTaskSource> = {}): IDuplicateTa
     restrictedToDepartments: [],
     sendWhatsapp: false,
     notify: { ...TASK_NOTIFY_DEFAULTS },
-    dependsOn: [],
     ...overrides,
   };
 }
@@ -72,20 +71,6 @@ describe('buildDuplicatePlan', () => {
     expect(plan.tasks[0]?.phaseId).toBe('new-1');
     expect(plan.tasks[1]?.phaseId).toBeNull();
     expect(plan.tasks[2]?.phaseId).toBeNull();
-  });
-
-  it('remaps dependsOn to copied task ids and drops dangling entries', () => {
-    const plan = buildDuplicatePlan(
-      [],
-      [
-        taskSource({ id: 't-1' }),
-        taskSource({ id: 't-2', order: 2, dependsOn: ['t-1', 't-deleted'] }),
-      ],
-      stubIdFor(),
-    );
-
-    expect(plan.tasks[0]?.dependsOn).toEqual([]);
-    expect(plan.tasks[1]?.dependsOn).toEqual(['new-1']);
   });
 
   it('carries structure and clears content on tasks', () => {

@@ -67,10 +67,11 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     restrictedToDepartments: [],
     sendWhatsapp: false,
     notify: { ...TASK_NOTIFY_DEFAULTS },
-    dependsOn: [],
+    collaboratorCanSeeAllAttachments: true,
     order: 1,
     createdBy: 'u1',
     blockedReason: '',
+    blockedBy: null,
     ...overrides,
   };
 }
@@ -90,7 +91,6 @@ function renderPanel(overrides: Partial<Parameters<typeof TaskDetailPanel>[0]> =
       workspaceId="wksA"
       projectId="p1"
       task={taskRow()}
-      allTasks={[taskRow(), taskRow({ id: 't2', title: 'Order rebar' })]}
       phases={[]}
       members={[member('u1', 'Alice Tan'), member('u2', 'Sam Lee')]}
       collaborators={[]}
@@ -294,17 +294,27 @@ describe('TaskDetailPanel details', () => {
     );
   });
 
+  it('saves collaboratorCanSeeAllAttachments toggle (#92)', async () => {
+    renderPanel({ task: taskRow({ collaboratorCanSeeAllAttachments: true }) });
+
+    await userEvent.click(screen.getByLabelText('Collaborators can see all task attachments'));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(tasksData.updateTask).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      't1',
+      expect.objectContaining({ collaboratorCanSeeAllAttachments: false }),
+      false,
+      'u1',
+    );
+  });
+
   it('does not append activity entries when nothing tracked changed', async () => {
     renderPanel();
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     expect(tasksData.updateTask).toHaveBeenCalled();
     expect(tasksData.addTaskUpdate).not.toHaveBeenCalled();
-  });
-
-  it('excludes the task itself from the depends-on list', () => {
-    renderPanel();
-    expect(screen.getByLabelText('Order rebar')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Pour foundation')).not.toBeInTheDocument();
   });
 
   it('limits a pm to their own departments in the restriction selector', () => {
@@ -328,6 +338,20 @@ describe('TaskDetailPanel details', () => {
     renderPanel({ canEdit: false });
     expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
     expect(screen.getByText('To do')).toBeInTheDocument();
+  });
+
+  it('renders blocked callout with blocker and reason metadata (#93)', () => {
+    renderPanel({
+      task: taskRow({
+        status: 'blocked',
+        blockedReason: 'Awaiting revised drawings',
+        blockedBy: { kind: 'collaborator', id: 'col-1', name: 'Lim Electrical' },
+      }),
+    });
+
+    expect(screen.getByText('Task blocked')).toBeInTheDocument();
+    expect(screen.getByText(/blocked by: lim electrical \(collaborator\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/reason: awaiting revised drawings/i)).toBeInTheDocument();
   });
 
   it('requires a confirm step before deleting', async () => {
@@ -382,6 +406,7 @@ describe('TaskDetailPanel activity', () => {
         {
           id: 'up1',
           authorId: 'u2',
+          authorType: 'user',
           authorNameDenorm: 'Sam Lee',
           action: 'status_change',
           text: '',
@@ -393,6 +418,7 @@ describe('TaskDetailPanel activity', () => {
         {
           id: 'up2',
           authorId: 'u2',
+          authorType: 'collaborator',
           authorNameDenorm: 'Sam Lee',
           action: 'comment',
           text: 'Concrete arrives @Alice Tan',
@@ -407,6 +433,7 @@ describe('TaskDetailPanel activity', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'activity' }));
     expect(screen.getByText(/changed status from todo to in_progress/i)).toBeInTheDocument();
+    expect(screen.getByText('Notes:')).toBeInTheDocument();
     expect(screen.getByText(/concrete arrives \*\*@Alice Tan\*\*/i)).toBeInTheDocument();
   });
 });
