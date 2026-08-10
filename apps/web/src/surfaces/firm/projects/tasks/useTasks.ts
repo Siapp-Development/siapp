@@ -12,11 +12,13 @@
  */
 
 import type {
+  ITaskBlockedBy,
   IRestrictedTaskHeader,
   ITaskNotifyConfig,
   TMemberRole,
   TPhaseStatus,
   TTaskAssignee,
+  TTaskUpdateAuthorType,
   TTaskStatus,
   TTaskUpdateAction,
 } from '@siapp/shared';
@@ -34,6 +36,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type Query,
 } from 'firebase/firestore';
@@ -62,11 +65,13 @@ export interface ITaskRow {
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
   notify: ITaskNotifyConfig;
-  dependsOn: string[];
+  /** Missing means true for legacy tasks (#92). */
+  collaboratorCanSeeAllAttachments: boolean;
   order: number;
   createdBy: string;
   /** #22 (D-d): collaborator need-help reason — set while status is blocked. */
   blockedReason: string;
+  blockedBy: ITaskBlockedBy | null;
 }
 
 /** Dimmed header row for a task the member cannot read (A3/A5d). */
@@ -105,6 +110,7 @@ export type TPhasesState =
 export interface ITaskUpdateRow {
   id: string;
   authorId: string;
+  authorType: TTaskUpdateAuthorType;
   authorNameDenorm: string;
   action: TTaskUpdateAction;
   text: string;
@@ -129,6 +135,27 @@ function asDate(value: unknown): Date | null {
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+function asTaskUpdateAuthorType(value: unknown): TTaskUpdateAuthorType {
+  return value === 'user' || value === 'client' || value === 'collaborator' ? value : 'system';
+}
+
+function asBlockedBy(value: unknown): ITaskBlockedBy | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (
+    (raw['kind'] === 'collaborator' || raw['kind'] === 'member') &&
+    typeof raw['id'] === 'string' &&
+    raw['id'] !== '' &&
+    typeof raw['name'] === 'string' &&
+    raw['name'] !== ''
+  ) {
+    return { kind: raw['kind'], id: raw['id'], name: raw['name'] };
+  }
+  return null;
 }
 
 /** Effective notify config: stored map with defaults for absent keys (#18 D2). */
@@ -166,10 +193,14 @@ export function mapTask(id: string, data: DocumentData): ITaskRow {
     restrictedToDepartments: asStringArray(data['restrictedToDepartments']),
     sendWhatsapp: data['sendWhatsapp'] === true,
     notify: mapNotify(data['notify']),
-    dependsOn: asStringArray(data['dependsOn']),
+    collaboratorCanSeeAllAttachments:
+      typeof data['collaboratorCanSeeAllAttachments'] === 'boolean'
+        ? data['collaboratorCanSeeAllAttachments']
+        : true,
     order: typeof data['order'] === 'number' ? data['order'] : 0,
     createdBy: String(data['createdBy'] ?? ''),
     blockedReason: typeof data['blockedReason'] === 'string' ? data['blockedReason'] : '',
+    blockedBy: asBlockedBy(data['blockedBy']),
   };
 }
 
@@ -361,6 +392,7 @@ export function useTaskUpdates(
           return {
             id: docSnap.id,
             authorId: String(data['authorId'] ?? ''),
+            authorType: asTaskUpdateAuthorType(data['authorType']),
             authorNameDenorm: String(data['authorNameDenorm'] ?? ''),
             action: (data['action'] ?? 'comment') as TTaskUpdateAction,
             text: typeof payload['text'] === 'string' ? payload['text'] : '',
@@ -394,9 +426,10 @@ export interface ITaskFormValues {
   visibleToClient: boolean;
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
+  collaboratorCanSeeAllAttachments: boolean;
+  blockedBy?: ITaskBlockedBy | null;
   /** Absent on quick-add — backend applies TASK_NOTIFY_DEFAULTS (#18). */
   notify?: ITaskNotifyConfig;
-  dependsOn: string[];
 }
 
 export async function createTask(
@@ -418,11 +451,11 @@ export async function createTask(
     ...(values.status === 'done' ? { completedAt: serverTimestamp() } : {}),
     assignees: values.assignees,
     visibleToClient: values.visibleToClient,
+    collaboratorCanSeeAllAttachments: values.collaboratorCanSeeAllAttachments,
     visibleToCollaboratorIds: [],
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
     ...(values.notify !== undefined ? { notify: values.notify } : {}),
-    dependsOn: values.dependsOn,
     order,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -451,13 +484,15 @@ export async function updateTask(
     ...(nowDone && !wasDone ? { completedAt: serverTimestamp() } : {}),
     ...(!nowDone ? { completedAt: deleteField() } : {}),
     // #22 (D-d): leaving 'blocked' clears the collaborator's help reason.
-    ...(values.status !== 'blocked' ? { blockedReason: deleteField() } : {}),
+    ...(values.status !== 'blocked'
+      ? { blockedReason: deleteField(), blockedBy: deleteField() }
+      : { blockedBy: values.blockedBy ?? deleteField() }),
     assignees: values.assignees,
     visibleToClient: values.visibleToClient,
+    collaboratorCanSeeAllAttachments: values.collaboratorCanSeeAllAttachments,
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
     ...(values.notify !== undefined ? { notify: values.notify } : {}),
-    dependsOn: values.dependsOn,
     updatedAt: serverTimestamp(),
     // #23: rules require updatedBy == auth.uid so activity is attributable.
     updatedBy: uid,
@@ -510,6 +545,27 @@ export async function deletePhase(
   phaseId: string,
 ): Promise<void> {
   await deleteDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/phases/${phaseId}`));
+}
+
+/**
+ * Persists the task order for one phase/no-phase group using 1-based slots.
+ * Caller passes task ids in their desired visual order.
+ */
+export async function reorderTasks(
+  workspaceId: string,
+  projectId: string,
+  orderedTaskIds: readonly string[],
+  uid: string,
+): Promise<void> {
+  const batch = writeBatch(db);
+  for (const [index, taskId] of orderedTaskIds.entries()) {
+    batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
+      order: index + 1,
+      updatedAt: serverTimestamp(),
+      updatedBy: uid,
+    });
+  }
+  await batch.commit();
 }
 
 export interface ITaskUpdateInput {

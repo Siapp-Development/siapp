@@ -32,6 +32,7 @@ export interface ICollabTask {
   status: TTaskStatus;
   dueDate: Date | null;
   blockedReason: string;
+  collaboratorCanSeeAllAttachments: boolean;
   /** Rules force uploads to inherit these (D-029) — carried for the uploader. */
   visibleToClient: boolean;
   restrictedToDepartments: string[];
@@ -53,6 +54,10 @@ function mapTask(data: DocumentData): ICollabTask {
       status === 'in_progress' || status === 'blocked' || status === 'done' ? status : 'todo',
     dueDate: data['dueDate'] instanceof Timestamp ? data['dueDate'].toDate() : null,
     blockedReason: typeof data['blockedReason'] === 'string' ? data['blockedReason'] : '',
+    collaboratorCanSeeAllAttachments:
+      typeof data['collaboratorCanSeeAllAttachments'] === 'boolean'
+        ? data['collaboratorCanSeeAllAttachments']
+        : true,
     visibleToClient: data['visibleToClient'] === true,
     restrictedToDepartments: Array.isArray(data['restrictedToDepartments'])
       ? (data['restrictedToDepartments'] as unknown[]).filter(
@@ -177,20 +182,27 @@ export function useCollabDocuments(
   projectId: string,
   taskId: string,
   collaboratorId: string,
+  collaboratorCanSeeAllAttachments: boolean,
 ): TCollabDocumentsState {
   const [state, setState] = useState<TCollabDocumentsState>({ status: 'loading' });
 
   useEffect(() => {
     setState({ status: 'loading' });
-    // All three constraints are required by the rules prover; newest first
-    // is sorted client-side (no orderBy → no extra composite shape).
+    // Rules-proved list query:
+    // - when task flag is true/missing: scopeId + deletedAt
+    // - when task flag is false: additionally pin collaborator visibility
+    // Newest first is sorted client-side (no orderBy → no extra composite).
+    const baseQuery = [where('scopeId', '==', taskId), where('deletedAt', '==', null)] as const;
+    const snapshotQuery =
+      collaboratorCanSeeAllAttachments
+        ? query(collection(db, `workspaces/${workspaceId}/projects/${projectId}/documents`), ...baseQuery)
+        : query(
+            collection(db, `workspaces/${workspaceId}/projects/${projectId}/documents`),
+            ...baseQuery,
+            where('visibleToCollaboratorIds', 'array-contains', collaboratorId),
+          );
     return onSnapshot(
-      query(
-        collection(db, `workspaces/${workspaceId}/projects/${projectId}/documents`),
-        where('scopeId', '==', taskId),
-        where('visibleToCollaboratorIds', 'array-contains', collaboratorId),
-        where('deletedAt', '==', null),
-      ),
+      snapshotQuery,
       (snapshot) => {
         const rows = snapshot.docs.map((docSnap) => mapDocument(docSnap.id, docSnap.data()));
         rows.sort((a, b) => (b.uploadedAt?.getTime() ?? 0) - (a.uploadedAt?.getTime() ?? 0));
@@ -198,7 +210,7 @@ export function useCollabDocuments(
       },
       () => setState({ status: 'error' }),
     );
-  }, [workspaceId, projectId, taskId, collaboratorId]);
+  }, [workspaceId, projectId, taskId, collaboratorId, collaboratorCanSeeAllAttachments]);
 
   return state;
 }

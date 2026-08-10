@@ -39,6 +39,7 @@ export interface IActivityRow {
   docName: string;
   from: string | null;
   to: string | null;
+  noteText: string | null;
   wouldHaveNotified: boolean;
   restrictedToDepartments: string[];
   at: Date | null;
@@ -76,6 +77,7 @@ export function mapActivity(id: string, data: DocumentData): IActivityRow {
     docName: typeof data['docNameDenorm'] === 'string' ? data['docNameDenorm'] : '',
     from: payloadText(payload['from']),
     to: payloadText(payload['to']),
+    noteText: payloadText(payload['text']),
     wouldHaveNotified: data['wouldHaveNotified'] === true,
     restrictedToDepartments: Array.isArray(data['restrictedToDepartments'])
       ? (data['restrictedToDepartments'] as string[]).filter((d) => typeof d === 'string')

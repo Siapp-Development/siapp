@@ -7,7 +7,13 @@
  */
 
 import { Alert, Button, Input, Label, cn } from '@siapp/ui';
-import type { TMemberRole, TProjectLifecycle, TTaskAssignee, TTaskStatus } from '@siapp/shared';
+import type {
+  ITaskBlockedBy,
+  TMemberRole,
+  TProjectLifecycle,
+  TTaskAssignee,
+  TTaskStatus,
+} from '@siapp/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 
@@ -178,6 +184,9 @@ function ActivityFeed({
               </p>
               {row.action === 'comment' && (
                 <div className="prose prose-sm mt-1 max-w-none">
+                  {row.authorType === 'collaborator' && (
+                    <p className="m-0 mb-1 text-xs font-semibold text-muted-foreground">Notes:</p>
+                  )}
                   <ReactMarkdown>{highlightMentions(row.text, mentionMembers)}</ReactMarkdown>
                 </div>
               )}
@@ -226,7 +235,6 @@ export interface ITaskDetailPanelProps {
   workspaceId: string;
   projectId: string;
   task: ITaskRow;
-  allTasks: readonly ITaskRow[];
   phases: readonly IPhaseRow[];
   members: readonly IMemberRow[];
   collaborators: readonly ICollaboratorRow[];
@@ -246,7 +254,6 @@ export function TaskDetailPanel({
   workspaceId,
   projectId,
   task,
-  allTasks,
   phases,
   members,
   collaborators,
@@ -271,8 +278,10 @@ export function TaskDetailPanel({
   const [visibleToClient, setVisibleToClient] = useState(task.visibleToClient);
   const [restrictedTo, setRestrictedTo] = useState<string[]>(task.restrictedToDepartments);
   const [sendWhatsapp, setSendWhatsapp] = useState(task.sendWhatsapp);
+  const [collaboratorCanSeeAllAttachments, setCollaboratorCanSeeAllAttachments] = useState(
+    task.collaboratorCanSeeAllAttachments,
+  );
   const [notify, setNotify] = useState(task.notify);
-  const [dependsOn, setDependsOn] = useState<string[]>(task.dependsOn);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -283,7 +292,6 @@ export function TaskDetailPanel({
     role === 'owner' || role === 'admin'
       ? departments
       : departments.filter((dep) => memberDepartments.includes(dep.id));
-  const otherTasks = allTasks.filter((row) => row.id !== task.id);
   const unassignedMembers = members.filter(
     (member) => !assignees.some((entry) => entry.type === 'user' && entry.id === member.uid),
   );
@@ -298,12 +306,6 @@ export function TaskDetailPanel({
   function toggleRestrictedDept(depId: string): void {
     setRestrictedTo((prev) =>
       prev.includes(depId) ? prev.filter((id) => id !== depId) : [...prev, depId],
-    );
-  }
-
-  function toggleDependsOn(taskId: string): void {
-    setDependsOn((prev) =>
-      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
     );
   }
 
@@ -322,6 +324,10 @@ export function TaskDetailPanel({
     setError(null);
     try {
       const nextDueDate = fromDateInput(dueDate);
+      const nextBlockedBy: ITaskBlockedBy | null =
+        status === 'blocked'
+          ? (task.status === 'blocked' ? task.blockedBy : { kind: 'member', id: uid, name: userName })
+          : null;
       await updateTask(
         workspaceId,
         projectId,
@@ -335,10 +341,11 @@ export function TaskDetailPanel({
           dueDate: nextDueDate,
           assignees,
           visibleToClient,
+          collaboratorCanSeeAllAttachments,
           restrictedToDepartments: restrictedTo,
           sendWhatsapp,
+          blockedBy: nextBlockedBy,
           notify,
-          dependsOn,
         },
         task.status === 'done',
         uid,
@@ -438,9 +445,16 @@ export function TaskDetailPanel({
       </div>
       <div className="p-6">
         {/* #22 (D-d): surface the collaborator's help request to the firm. */}
-        {task.status === 'blocked' && task.blockedReason !== '' && (
-          <Alert variant="destructive" className="mb-4">
-            Blocked: {task.blockedReason}
+        {task.status === 'blocked' && (task.blockedReason !== '' || task.blockedBy !== null) && (
+          <Alert variant="destructive" className="mb-4" role="status" aria-live="polite">
+            <p className="font-medium">Task blocked</p>
+            <p className="mt-1 text-sm">
+              Blocked by:{' '}
+              {task.blockedBy !== null
+                ? `${task.blockedBy.name} (${task.blockedBy.kind})`
+                : 'A team member'}
+            </p>
+            <p className="text-sm">Reason: {task.blockedReason !== '' ? task.blockedReason : 'No reason provided.'}</p>
           </Alert>
         )}
         {tab === 'activity' ? (
@@ -680,6 +694,14 @@ export function TaskDetailPanel({
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
+                      checked={collaboratorCanSeeAllAttachments}
+                      onChange={(event) => setCollaboratorCanSeeAllAttachments(event.target.checked)}
+                    />
+                    Collaborators can see all task attachments
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
                       checked={sendWhatsapp}
                       onChange={(event) => setSendWhatsapp(event.target.checked)}
                     />
@@ -766,26 +788,6 @@ export function TaskDetailPanel({
                     </div>
                   )}
                 </fieldset>
-
-                {otherTasks.length > 0 && (
-                  <fieldset className="flex flex-col gap-1">
-                    <legend className="text-sm font-medium">Depends on</legend>
-                    <ul className="flex flex-col gap-1">
-                      {otherTasks.map((row) => (
-                        <li key={row.id}>
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={dependsOn.includes(row.id)}
-                              onChange={() => toggleDependsOn(row.id)}
-                            />
-                            {row.title}
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  </fieldset>
-                )}
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" disabled={pending} aria-busy={pending}>

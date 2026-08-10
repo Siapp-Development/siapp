@@ -434,6 +434,13 @@ export interface ITaskCollaboratorAssignee {
 
 export type TTaskAssignee = ITaskUserAssignee | ITaskCollaboratorAssignee;
 
+/** Actor metadata for who blocked a task (#93). */
+export interface ITaskBlockedBy {
+  kind: 'collaborator' | 'member';
+  id: string;
+  name: string;
+}
+
 /**
  * Per-task notification triggers + recipients (#18, D2). `sendWhatsapp: false`
  * short-circuits everything regardless of this map (D8).
@@ -458,6 +465,8 @@ export interface ITaskDoc {
   completedAt?: Date;
   assignees: TTaskAssignee[];
   visibleToClient: boolean;
+  /** Missing means true for legacy tasks (#92). */
+  collaboratorCanSeeAllAttachments?: boolean;
   /** Empty = all assigned collaborators see it. */
   visibleToCollaboratorIds: string[];
   /** Empty/missing = unrestricted; see 20-access-control-departments.md. */
@@ -467,12 +476,12 @@ export interface ITaskDoc {
    * (need-help) or firm edits; cleared when status leaves 'blocked'.
    */
   blockedReason?: string;
+  /** Who set the current blocked state (#93). */
+  blockedBy?: ITaskBlockedBy;
   /** Per-task WhatsApp toggle (D-031: copied on Duplicate). */
   sendWhatsapp: boolean;
   /** Trigger/recipient config (#18, D2). Absent = TASK_NOTIFY_DEFAULTS. */
   notify?: ITaskNotifyConfig;
-  /** Task ids this task depends on (D-031 dependency links). */
-  dependsOn: string[];
   order: number;
   createdAt: Date;
   updatedAt: Date;

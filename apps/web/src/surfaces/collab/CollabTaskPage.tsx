@@ -74,7 +74,15 @@ function CollabTaskView({ session }: { session: ICollabSession }) {
   const { workspaceId, projectId, taskId, collaboratorId, branding } = session;
   const taskState = useCollabTask(workspaceId, projectId, taskId);
   const updates = useCollabUpdates(workspaceId, projectId, taskId, collaboratorId);
-  const documents = useCollabDocuments(workspaceId, projectId, taskId, collaboratorId);
+  const collabCanSeeAllAttachments =
+    taskState.status === 'ready' ? taskState.task.collaboratorCanSeeAllAttachments : true;
+  const documents = useCollabDocuments(
+    workspaceId,
+    projectId,
+    taskId,
+    collaboratorId,
+    collabCanSeeAllAttachments,
+  );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
