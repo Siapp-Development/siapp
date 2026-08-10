@@ -64,7 +64,7 @@ interface ITaskRowItemProps {
   dragEnabled: boolean;
   dragging: boolean;
   dropTarget: boolean;
-  onDragStart: ((event: DragEvent<HTMLButtonElement>) => void) | null;
+  onDragStart: ((event: DragEvent<HTMLDivElement>) => void) | null;
   onDragEnd: (() => void) | null;
   onHandleKeyDown: ((event: KeyboardEvent<HTMLButtonElement>) => void) | null;
   onDragOver: ((event: DragEvent<HTMLLIElement>) => void) | null;
@@ -99,26 +99,28 @@ function TaskRowItem({
       )}
     >
       <div
+        draggable={dragEnabled}
+        onDragStart={onDragStart ?? undefined}
+        onDragEnd={onDragEnd ?? undefined}
         className={cn(
-          'flex items-start gap-2 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 hover:bg-muted',
+          'group flex items-start gap-2 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 hover:bg-muted',
           selected && 'bg-primary-tint',
-          dragging && 'opacity-60',
+          dragEnabled && 'cursor-grab',
+          dragging && 'cursor-grabbing opacity-60',
         )}
       >
         {showDragHandle && (
           <button
             type="button"
-            draggable={dragEnabled}
             disabled={!dragEnabled}
-            onDragStart={onDragStart ?? undefined}
-            onDragEnd={onDragEnd ?? undefined}
             onKeyDown={onHandleKeyDown ?? undefined}
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
             aria-label={`Drag to reorder ${task.title}`}
             id={`task-reorder-handle-${task.id}`}
             className={cn(
-              'mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+              'mt-0.5 inline-flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground disabled:cursor-not-allowed',
+              'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
               'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
               dragEnabled && 'cursor-grab',
               dragging && 'cursor-grabbing',
@@ -181,7 +183,7 @@ interface IActiveDrag {
 interface IDragStartPayload {
   taskId: string;
   groupKey: string;
-  event: DragEvent<HTMLButtonElement>;
+  event: DragEvent<HTMLElement>;
 }
 
 function isReadableTask(row: TTaskListRow): row is ITaskRow {
@@ -582,7 +584,6 @@ export function TasksSection({
       return;
     }
     await persistGroupOrder(groupKey, reordered);
-    setSelectedId(activeDrag.taskId);
   }
 
   async function handleKeyboardReorder(
@@ -611,7 +612,6 @@ export function TasksSection({
       return;
     }
     await persistGroupOrder(groupKey, reordered);
-    setSelectedId(taskId);
     window.requestAnimationFrame(() => {
       focusReorderHandle(taskId, view);
     });

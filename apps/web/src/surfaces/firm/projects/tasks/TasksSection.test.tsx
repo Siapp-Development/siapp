@@ -197,7 +197,7 @@ describe('TasksSection', () => {
     expect(tasksData.createPhase).toHaveBeenCalledWith('wksA', 'p1', 'Finishing', 2);
   });
 
-  it('reorders tasks within a phase from list drag handles', async () => {
+  it('reorders tasks within a phase by dragging anywhere on the row', async () => {
     tasksData.reorderTasks.mockResolvedValue(undefined);
     tasksData.tasksState = {
       status: 'ready',
@@ -208,15 +208,16 @@ describe('TasksSection', () => {
     };
     renderSection();
 
-    const sourceHandle = screen.getByRole('button', { name: /drag to reorder second/i });
+    // Drag starts from the row title, not the handle — whole row is draggable.
+    const sourceTitle = screen.getByText('Second');
     const targetRow = document.getElementById('task-row-t1');
     expect(targetRow).not.toBeNull();
     const transfer = createDragDataTransfer();
 
-    fireEvent.dragStart(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragStart(sourceTitle, { dataTransfer: transfer });
     fireEvent.dragOver(targetRow as HTMLElement, { dataTransfer: transfer });
     fireEvent.drop(targetRow as HTMLElement, { dataTransfer: transfer });
-    fireEvent.dragEnd(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragEnd(sourceTitle, { dataTransfer: transfer });
 
     await waitFor(() => {
       expect(tasksData.reorderTasks).toHaveBeenCalledWith('wksA', 'p1', ['t2', 't1'], 'u1');
@@ -311,6 +312,33 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
   });
 
+  it('does not open the task drawer after a drag-and-drop reorder with no prior selection', async () => {
+    tasksData.reorderTasks.mockResolvedValue(undefined);
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    const sourceHandle = screen.getByRole('button', { name: /drag to reorder second/i });
+    const targetRow = document.getElementById('task-row-t1');
+    expect(targetRow).not.toBeNull();
+    const transfer = createDragDataTransfer();
+
+    fireEvent.dragStart(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragOver(targetRow as HTMLElement, { dataTransfer: transfer });
+    fireEvent.drop(targetRow as HTMLElement, { dataTransfer: transfer });
+    fireEvent.dragEnd(sourceHandle, { dataTransfer: transfer });
+
+    await waitFor(() => {
+      expect(tasksData.reorderTasks).toHaveBeenCalledWith('wksA', 'p1', ['t2', 't1'], 'u1');
+    });
+    expect(screen.queryByTestId('task-detail-panel')).not.toBeInTheDocument();
+  });
+
   it('excludes restricted rows from list reorder payloads', async () => {
     tasksData.reorderTasks.mockResolvedValue(undefined);
     tasksData.tasksState = {
@@ -338,7 +366,7 @@ describe('TasksSection', () => {
     });
   });
 
-  it('reorders tasks within a phase from timeline left-side drag handles', async () => {
+  it('reorders tasks within a phase from anywhere on a timeline row', async () => {
     tasksData.reorderTasks.mockResolvedValue(undefined);
     tasksData.tasksState = {
       status: 'ready',
@@ -365,19 +393,50 @@ describe('TasksSection', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
 
-    const sourceHandle = screen.getByRole('button', { name: /drag to reorder second/i });
+    // Drag starts from the row's title label (bubbles to the row container),
+    // not the reorder handle — the whole row is draggable.
+    const sourceLabel = screen.getByRole('button', { name: /open task details for second/i });
+    const sourceRow = document.getElementById('timeline-task-row-t2');
+    expect(sourceRow).not.toBeNull();
+    expect(sourceRow).toHaveAttribute('draggable', 'true');
     const targetRow = document.getElementById('timeline-task-row-t1');
     expect(targetRow).not.toBeNull();
     const transfer = createDragDataTransfer();
 
-    fireEvent.dragStart(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragStart(sourceLabel, { dataTransfer: transfer });
     fireEvent.dragOver(targetRow as HTMLElement, { dataTransfer: transfer });
     fireEvent.drop(targetRow as HTMLElement, { dataTransfer: transfer });
-    fireEvent.dragEnd(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragEnd(sourceRow as HTMLElement, { dataTransfer: transfer });
 
     await waitFor(() => {
       expect(tasksData.reorderTasks).toHaveBeenCalledWith('wksA', 'p1', ['t2', 't1'], 'u1');
     });
+  });
+
+  it('does not make restricted timeline rows draggable', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({
+          id: 't1',
+          phaseId: 'ph1',
+          title: 'First',
+          startDate: new Date('2026-01-01T00:00:00'),
+          dueDate: new Date('2026-01-04T00:00:00'),
+          order: 1,
+        }),
+        restrictedRow({ id: 'tr1', phaseId: 'ph1', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+
+    expect(document.getElementById('timeline-task-row-t1')).toHaveAttribute('draggable', 'true');
+    expect(document.getElementById('timeline-task-row-tr1')).not.toHaveAttribute(
+      'draggable',
+      'true',
+    );
   });
 
   it('reorders timeline rows via keyboard arrows and keeps handle focus', async () => {

@@ -110,7 +110,7 @@ interface ITimelineTaskRowProps {
   dragEnabled: boolean;
   dragging: boolean;
   dropTarget: boolean;
-  onDragStart: ((event: DragEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void) | null;
+  onDragStart: ((event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void) | null;
   onHandleKeyDown:
     | ((event: KeyboardEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void)
     | null;
@@ -150,9 +150,18 @@ function TimelineTaskRow({
   return (
     <div
       id={`timeline-task-row-${row.id}`}
+      draggable={dragEnabled}
+      onDragStart={
+        dragEnabled && onDragStart !== null
+          ? (event) => onDragStart(event, row.id, groupKey)
+          : undefined
+      }
+      onDragEnd={dragEnabled ? (onDragEnd ?? undefined) : undefined}
       className={cn(
         'group/row relative flex h-9 items-center border-b border-border/60',
         dropTarget && 'bg-primary-tint/40',
+        dragEnabled && 'cursor-grab',
+        dragging && 'cursor-grabbing',
       )}
       onDragOver={
         dragEnabled && onDragOver !== null
@@ -177,14 +186,7 @@ function TimelineTaskRow({
         {showDragHandle && (
           <button
             type="button"
-            draggable={dragEnabled}
             disabled={!dragEnabled}
-            onDragStart={
-              onDragStart !== null
-                ? (event) => onDragStart(event, row.id, groupKey)
-                : undefined
-            }
-            onDragEnd={onDragEnd ?? undefined}
             onKeyDown={
               onHandleKeyDown !== null
                 ? (event) => onHandleKeyDown(event, row.id, groupKey)
@@ -195,7 +197,8 @@ function TimelineTaskRow({
             aria-label={`Drag to reorder ${row.title}`}
             id={`timeline-reorder-handle-${row.id}`}
             className={cn(
-              'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50',
+              'inline-flex h-6 w-5 shrink-0 items-center justify-center rounded-sm text-xs text-muted-foreground transition-opacity hover:text-foreground disabled:cursor-not-allowed',
+              'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100',
               'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
               dragEnabled && 'cursor-grab',
               dragging && 'cursor-grabbing',
@@ -261,7 +264,7 @@ export interface ITimelineViewProps {
   reorderPendingByGroup: ReadonlySet<string>;
   activeDrag: { taskId: string; groupKey: string } | null;
   dropTargetByGroup: Readonly<Record<string, string | null>>;
-  onDragStartTask: (event: DragEvent<HTMLButtonElement>, taskId: string, groupKey: string) => void;
+  onDragStartTask: (event: DragEvent<HTMLDivElement>, taskId: string, groupKey: string) => void;
   onHandleKeyDownTask: (
     event: KeyboardEvent<HTMLButtonElement>,
     taskId: string,
