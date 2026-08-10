@@ -557,15 +557,19 @@ export async function reorderTasks(
   orderedTaskIds: readonly string[],
   uid: string,
 ): Promise<void> {
-  const batch = writeBatch(db);
-  for (const [index, taskId] of orderedTaskIds.entries()) {
-    batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
-      order: index + 1,
-      updatedAt: serverTimestamp(),
-      updatedBy: uid,
-    });
+  const CHUNK_SIZE = 500;
+  for (let start = 0; start < orderedTaskIds.length; start += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = orderedTaskIds.slice(start, start + CHUNK_SIZE);
+    for (const [offset, taskId] of chunk.entries()) {
+      batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
+        order: start + offset + 1,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
   }
-  await batch.commit();
 }
 
 export interface ITaskUpdateInput {

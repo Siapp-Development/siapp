@@ -149,7 +149,7 @@ export function activityLine(row: IActivityRow): IActivityLine {
     case 'collaborator_note_added':
       return {
         actor,
-        text: 'added notes on',
+        text: 'added a note on',
         subject: task,
         subjectStruck: false,
         detail: row.noteText !== null && row.noteText !== '' ? `Notes: ${row.noteText}` : 'Notes:',

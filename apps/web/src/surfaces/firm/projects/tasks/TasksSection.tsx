@@ -329,13 +329,20 @@ export function TasksSection({
     });
     setSelectedId(deepLinkedTaskId);
     setHighlightId(deepLinkedTaskId);
-    window.setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       setHighlightId((current) => (current === deepLinkedTaskId ? null : current));
     }, 2500);
+    const prefersReducedMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const rowEl = document.getElementById(`task-row-${deepLinkedTaskId}`);
     if (rowEl !== null && typeof rowEl.scrollIntoView === 'function') {
-      rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      rowEl.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center' });
     }
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [deepLinkedTaskId, taskRows, phaseIds, onSelectedTaskChange, tasksState.status, phasesState.status]);
 
   if (isLoading) {

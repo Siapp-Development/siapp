@@ -504,6 +504,7 @@ service cloud.firestore {
           && d.blockedBy.name.size() > 0
           && d.blockedBy.name.size() <= 120
         ))
+        && (d.status == 'blocked' || (!('blockedReason' in d) && !('blockedBy' in d)))
         && d.order is number
         && d.createdAt is timestamp
         && d.updatedAt is timestamp
