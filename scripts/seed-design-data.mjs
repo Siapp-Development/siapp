@@ -138,7 +138,7 @@ async function main() {
   for (const [i, t] of tasks.entries()) {
     await db.doc(`workspaces/${WID}/projects/pr-bungalow/tasks/${t.id}`).set({
       description: '', visibleToCollaboratorIds: [], restrictedToDepartments: [],
-      sendWhatsapp: false, dependsOn: [], order: i,
+      sendWhatsapp: false, order: i,
       createdAt: now, updatedAt: now, createdBy: owner.uid,
       ...t,
     });
