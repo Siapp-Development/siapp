@@ -164,6 +164,43 @@ describe('ClientsListPage', () => {
     );
   });
 
+  it('filters clients by name and by company via the search box', async () => {
+    const user = userEvent.setup();
+    clientsData.state = {
+      status: 'ready',
+      rows: [
+        clientRow({ id: 'c1', name: 'Ahmad bin Ismail', companyName: 'Ahmad Holdings' }),
+        clientRow({ id: 'c2', name: 'Siti Aminah', companyName: 'Aminah Sdn Bhd' }),
+      ],
+    };
+    renderPage();
+
+    const searchBox = screen.getByLabelText('Search by name or company');
+    await user.type(searchBox, 'siti');
+    expect(screen.getByText('Siti Aminah')).toBeInTheDocument();
+    expect(screen.queryByText('Ahmad bin Ismail')).not.toBeInTheDocument();
+
+    await user.clear(searchBox);
+    await user.type(searchBox, 'holdings');
+    expect(screen.getByText('Ahmad bin Ismail')).toBeInTheDocument();
+    expect(screen.queryByText('Siti Aminah')).not.toBeInTheDocument();
+  });
+
+  it('opens the create form in a drawer dialog and submits the vertical form', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'New client' }));
+
+    expect(screen.getByRole('dialog', { name: 'New client' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Name'), 'Siti Aminah');
+    await user.type(screen.getByLabelText('Phone'), '012-345 6789');
+    await user.click(screen.getByRole('button', { name: 'Add client' }));
+
+    expect(clientsData.createClient).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the no-consent badge when a client has no consent record', () => {
     clientsData.state = {
       status: 'ready',
