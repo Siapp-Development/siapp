@@ -204,4 +204,16 @@ describe('apexRouter', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: /page not found/i })).toBeInTheDocument();
   });
+
+  it.each([
+    ['/privacy', 'Siapp Privacy Policy'],
+    ['/terms', 'Siapp Terms & Conditions'],
+    ['/legal/campaign-privacy', 'Siapp Messaging Campaign Privacy Policy'],
+    ['/legal/sms-terms', 'Siapp SMS / Messaging Program Terms & Conditions'],
+  ])('lazy-loads the legal page at %s with its h1', async (path, heading) => {
+    renderAt(path);
+
+    expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toBeInTheDocument();
+  });
 });
