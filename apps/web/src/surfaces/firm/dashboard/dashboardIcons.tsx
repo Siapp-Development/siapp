@@ -5,7 +5,14 @@
  * (e.g. `h-6 w-6`) overrides the 16px default where a larger glyph is needed.
  */
 
-import { AlarmClock, CalendarDays, ChevronRight, CircleCheckBig, Folder } from 'lucide-react';
+import {
+  AlarmClock,
+  CalendarDays,
+  ChevronRight,
+  CircleCheckBig,
+  ClipboardList,
+  Folder,
+} from 'lucide-react';
 
 const ICON_SIZE = 16;
 const ICON_STROKE = 1.8;
@@ -14,6 +21,13 @@ const ICON_STROKE = 1.8;
 export function ChevronRightIcon({ className }: { className?: string }) {
   return (
     <ChevronRight size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden className={className} />
+  );
+}
+
+/** Clipboard — "My tasks" bucket tab. */
+export function ClipboardListIcon({ className }: { className?: string }) {
+  return (
+    <ClipboardList size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden className={className} />
   );
 }
 

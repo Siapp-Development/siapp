@@ -7,6 +7,7 @@
 
 import { Button, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -14,12 +15,15 @@ import { useProjects } from '../projects/useProjects.ts';
 import { useMemberPhotoMap } from '../settings/useTeamData.ts';
 import { AttentionCard } from './AttentionCard.tsx';
 import { DashboardTaskCard } from './DashboardTaskCard.tsx';
-import { CalendarIcon, FolderIcon } from './dashboardIcons.tsx';
+import {
+  AlarmIcon,
+  CalendarIcon,
+  ClipboardListIcon,
+  FolderIcon,
+} from './dashboardIcons.tsx';
 import { bucketTasks } from './dueBuckets.ts';
 import { firstNameFrom, timeGreeting } from './greeting.ts';
-import { portfolioStats } from './portfolioStats.ts';
 import { attentionRank, needsAttention } from './projectHealth.ts';
-import { StatStrip } from './StatStrip.tsx';
 import { useDashboardTasks } from './useDashboardTasks.ts';
 
 type TBucketId = 'myOpen' | 'overdue' | 'dueThisWeek';
@@ -28,25 +32,30 @@ const BUCKETS: ReadonlyArray<{
   id: TBucketId;
   label: string;
   empty: string;
-  countClass: string;
+  /** Accent applied to both the icon and the count (color reinforces, never sole signal). */
+  accent: string;
+  icon: ReactNode;
 }> = [
   {
     id: 'myOpen',
     label: 'My tasks',
     empty: 'No other open tasks assigned to you.',
-    countClass: 'text-foreground',
+    accent: 'text-primary',
+    icon: <ClipboardListIcon />,
   },
   {
     id: 'overdue',
     label: 'Overdue',
     empty: 'Nothing overdue. Nice work.',
-    countClass: 'text-danger',
+    accent: 'text-danger',
+    icon: <AlarmIcon />,
   },
   {
     id: 'dueThisWeek',
     label: 'Due this week',
     empty: 'Nothing due in the next 7 days.',
-    countClass: 'text-warning',
+    accent: 'text-warning',
+    icon: <CalendarIcon />,
   },
 ];
 
@@ -95,8 +104,6 @@ export function DashboardPage({
     .filter(needsAttention)
     .sort((a, b) => attentionRank(a) - attentionRank(b) || a.name.localeCompare(b.name));
 
-  const stats = portfolioStats(projectRows, buckets);
-
   const loading = projects.status === 'loading' || tasks.status === 'loading';
   const errored = projects.status === 'error' || tasks.status === 'error';
 
@@ -129,8 +136,6 @@ export function DashboardPage({
 
       {!loading && !errored && (
         <>
-          <StatStrip stats={stats} />
-
           <section aria-labelledby="dashboard-tasks-heading" className="flex flex-col gap-3">
             <h2 id="dashboard-tasks-heading" className="text-lg font-semibold">
               Your tasks
@@ -147,22 +152,26 @@ export function DashboardPage({
                   aria-controls="dashboard-task-panel"
                   onClick={() => setBucket(entry.id)}
                   className={cn(
-                    'rounded-lg border bg-card px-4 py-3.5 text-left shadow-card transition-colors duration-150',
+                    'flex flex-col gap-1 rounded-lg border bg-card px-4 py-3.5 text-left shadow-card transition-colors duration-150',
+                    'focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                     bucket === entry.id
                       ? 'border-primary ring-1 ring-primary'
                       : 'border-border hover:border-primary/50',
                   )}
                 >
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                    <span className={entry.accent} aria-hidden="true">
+                      {entry.icon}
+                    </span>
+                    {entry.label}
+                  </span>
                   <span
                     className={cn(
-                      'block font-display text-3xl font-bold tabular-nums',
-                      buckets[entry.id].length > 0 ? entry.countClass : 'text-muted-foreground',
+                      'font-display text-3xl font-bold tabular-nums',
+                      entry.accent,
                     )}
                   >
                     {buckets[entry.id].length}
-                  </span>
-                  <span className="mt-0.5 block text-sm font-medium text-muted-foreground">
-                    {entry.label}
                   </span>
                 </button>
               ))}

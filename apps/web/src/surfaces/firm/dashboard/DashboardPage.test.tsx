@@ -123,9 +123,9 @@ describe('DashboardPage', () => {
     };
     renderPage();
 
-    expect(screen.getByRole('tab', { name: /2 My tasks/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /1 Overdue/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /2 Due this week/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /My tasks 2/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Overdue 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Due this week 2/i })).toBeInTheDocument();
   });
 
   it('switches the visible bucket when a KPI tab is clicked', async () => {
@@ -167,16 +167,12 @@ describe('DashboardPage', () => {
     );
   });
 
-  it('renders the personalized greeting and the three stat-strip labels', () => {
+  it('renders the personalized greeting', () => {
     renderPage();
 
     expect(
       screen.getByRole('heading', { level: 1, name: /Good (morning|afternoon|evening), Alice/ }),
     ).toBeInTheDocument();
-    // Scope to the stat strip's <dl> — "Due this week" also appears as a KPI tab.
-    const strip = screen.getByText('Active projects').closest('dl') as HTMLElement;
-    expect(within(strip).getByText('Overdue tasks')).toBeInTheDocument();
-    expect(within(strip).getByText('Due this week')).toBeInTheDocument();
   });
 
   it('greets with the email local-part when the display name is empty (wiring guard, #102)', () => {
