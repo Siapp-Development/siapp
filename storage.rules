@@ -151,5 +151,22 @@ service firebase.storage {
         && isCollabAllowedContentType();
       allow update, delete: if false;
     }
+
+    // User profile photos (#104). Objects live under a per-uid prefix, NOT a
+    // workspace prefix, so reads are signed-in-wide: any authenticated
+    // principal may render another user's avatar (accepted low-sensitivity
+    // tradeoff — avatars are not confidential and the path is per-uid). Writes
+    // and deletes are owner-only. Size/mime mirror MAX_AVATAR_SIZE_BYTES +
+    // AVATAR_ALLOWED_MIME_TYPES in @siapp/shared (parity enforced by a rules
+    // test). Delete is enabled (unlike immutable project docs) so "remove
+    // photo" actually frees bytes.
+    match /avatars/{uid}/{fileName} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/webp'];
+      allow update, delete: if isSignedIn() && request.auth.uid == uid;
+    }
   }
 }

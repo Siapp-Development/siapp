@@ -54,6 +54,34 @@
   --radius: 0.5rem;
   --shadow-card: 0 1px 2px rgb(16 19 33 / 0.05), 0 1px 3px rgb(16 19 33 / 0.06);
   --shadow-raised: 0 2px 4px rgb(16 19 33 / 0.06), 0 8px 24px rgb(16 19 33 / 0.08);
+
+  /*
+   * Deterministic avatar palette (#104, D-039). Each background pairs with a
+   * white foreground and clears WCAG 2.1 AA (>= 4.5:1) for the initials text —
+   * asserted by a unit test in avatarColor.test.ts. `avatarColorForSeed`
+   * hashes a uid into one of these 10 pairs; the colour is derived, never
+   * stored. Do not add a pair without re-running the contrast assertion.
+   */
+  --avatar-1-bg: #3e4c77;
+  --avatar-1-fg: #ffffff;
+  --avatar-2-bg: #0f766e;
+  --avatar-2-fg: #ffffff;
+  --avatar-3-bg: #15803d;
+  --avatar-3-fg: #ffffff;
+  --avatar-4-bg: #a33f2b;
+  --avatar-4-fg: #ffffff;
+  --avatar-5-bg: #92600a;
+  --avatar-5-fg: #ffffff;
+  --avatar-6-bg: #9f1239;
+  --avatar-6-fg: #ffffff;
+  --avatar-7-bg: #6b21a8;
+  --avatar-7-fg: #ffffff;
+  --avatar-8-bg: #1d4ed8;
+  --avatar-8-fg: #ffffff;
+  --avatar-9-bg: #155e75;
+  --avatar-9-fg: #ffffff;
+  --avatar-10-bg: #7c2d6b;
+  --avatar-10-fg: #ffffff;
 }
 
 [data-surface='firm'] {

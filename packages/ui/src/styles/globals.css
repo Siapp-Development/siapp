@@ -43,6 +43,29 @@
   --radius-md: var(--radius);
   --shadow-card: var(--shadow-card);
   --shadow-raised: var(--shadow-raised);
+
+  /* Avatar palette (#104) — mapped so `bg-avatar-N` / `text-avatar-N-fg`
+     utilities exist for the static AVATAR_CLASSES array in avatarColor.ts. */
+  --color-avatar-1: var(--avatar-1-bg);
+  --color-avatar-1-fg: var(--avatar-1-fg);
+  --color-avatar-2: var(--avatar-2-bg);
+  --color-avatar-2-fg: var(--avatar-2-fg);
+  --color-avatar-3: var(--avatar-3-bg);
+  --color-avatar-3-fg: var(--avatar-3-fg);
+  --color-avatar-4: var(--avatar-4-bg);
+  --color-avatar-4-fg: var(--avatar-4-fg);
+  --color-avatar-5: var(--avatar-5-bg);
+  --color-avatar-5-fg: var(--avatar-5-fg);
+  --color-avatar-6: var(--avatar-6-bg);
+  --color-avatar-6-fg: var(--avatar-6-fg);
+  --color-avatar-7: var(--avatar-7-bg);
+  --color-avatar-7-fg: var(--avatar-7-fg);
+  --color-avatar-8: var(--avatar-8-bg);
+  --color-avatar-8-fg: var(--avatar-8-fg);
+  --color-avatar-9: var(--avatar-9-bg);
+  --color-avatar-9-fg: var(--avatar-9-fg);
+  --color-avatar-10: var(--avatar-10-bg);
+  --color-avatar-10-fg: var(--avatar-10-fg);
 }
 
 @layer base {
