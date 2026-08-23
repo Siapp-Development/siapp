@@ -23,6 +23,18 @@ export interface IClaimedWorkspace {
 
 export type TClaimedWorkspaces = IClaimedWorkspace[] | 'loading' | 'error';
 
+/**
+ * Live profile fields mirrored from `users/{uid}` (#104). Surfaced separately
+ * from the Auth `User` because `updateProfile` does not re-fire
+ * `onIdTokenChanged`, so profile edits would otherwise not reflect until the
+ * next token refresh. The sidebar avatar reads these so a saved photo/name
+ * appears immediately.
+ */
+export interface ILiveProfile {
+  displayName?: string;
+  photoUrl?: string;
+}
+
 export type TAuthState =
   | { status: 'loading' }
   | { status: 'signedOut' }
@@ -32,6 +44,8 @@ export type TAuthState =
       claims: IWorkspaceClaims;
       /** Live `users/{uid}.defaultWorkspaceId`, if set. */
       defaultWorkspaceId?: string;
+      /** Live `displayName`/`photoUrl` mirrored from `users/{uid}` (#104). */
+      profile: ILiveProfile;
       /** Workspace docs for every claimed wid — cached here so guards share one fetch. */
       workspaces: TClaimedWorkspaces;
     };
@@ -86,6 +100,7 @@ export interface IAuthProviderProps {
 export function AuthProvider({ children }: IAuthProviderProps) {
   const [token, setToken] = useState<ITokenState | null | 'pending'>('pending');
   const [defaultWorkspaceId, setDefaultWorkspaceId] = useState<string | undefined>(undefined);
+  const [profile, setProfile] = useState<ILiveProfile>({});
   const [workspaces, setWorkspaces] = useState<TClaimedWorkspaces>('loading');
 
   // 1) Track the SDK token — fires on sign-in/out and on every token refresh.
@@ -116,6 +131,7 @@ export function AuthProvider({ children }: IAuthProviderProps) {
   useEffect(() => {
     if (uid === null) {
       setDefaultWorkspaceId(undefined);
+      setProfile({});
       return;
     }
     const user = auth.currentUser;
@@ -135,6 +151,14 @@ export function AuthProvider({ children }: IAuthProviderProps) {
       const stamp = stampField instanceof Timestamp ? stampField.toMillis() : null;
       const defaultWid = data?.['defaultWorkspaceId'];
       setDefaultWorkspaceId(typeof defaultWid === 'string' ? defaultWid : undefined);
+
+      // #104: surface the live mirror so profile edits reflect immediately.
+      const displayName = data?.['displayName'];
+      const photoUrl = data?.['photoUrl'];
+      setProfile({
+        displayName: typeof displayName === 'string' ? displayName : undefined,
+        photoUrl: typeof photoUrl === 'string' && photoUrl !== '' ? photoUrl : undefined,
+      });
 
       if (lastStamp !== 'unset' && stamp !== null && stamp !== lastStamp) {
         // Claims were re-stamped server-side — refresh the ID token now.
@@ -198,9 +222,10 @@ export function AuthProvider({ children }: IAuthProviderProps) {
       user: token.user,
       claims: token.claims,
       defaultWorkspaceId,
+      profile,
       workspaces,
     };
-  }, [token, defaultWorkspaceId, workspaces]);
+  }, [token, defaultWorkspaceId, profile, workspaces]);
 
   const value = useMemo<IAuthContextValue>(
     () => ({ state, signOutUser: () => signOut(auth) }),

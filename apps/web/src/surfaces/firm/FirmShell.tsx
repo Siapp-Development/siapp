@@ -1,4 +1,4 @@
-import { Button, cn } from '@siapp/ui';
+import { Avatar, Button, cn } from '@siapp/ui';
 import type { ReactNode } from 'react';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
@@ -12,9 +12,11 @@ import { DashboardPage } from './dashboard/DashboardPage.tsx';
 import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
 import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
 import { NotificationSettingsPage } from './settings/NotificationSettingsPage.tsx';
+import { ProfileSettingsPage } from './settings/ProfileSettingsPage.tsx';
 import { SettingsLayout } from './settings/SettingsLayout.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
+import { useSidebarCollapsed } from './useSidebarCollapsed.ts';
 
 /** Sidebar nav link — NavLink supplies aria-current="page" on the active route. */
 function NavItem({
@@ -22,30 +24,35 @@ function NavItem({
   end = false,
   label,
   icon,
+  collapsed,
 }: {
   to: string;
   end?: boolean;
   label: string;
   icon: ReactNode;
+  collapsed: boolean;
 }) {
   return (
     <li>
       <NavLink
         to={to}
         end={end}
+        title={collapsed ? label : undefined}
         className={({ isActive }) =>
           cn(
-            'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150',
+            'relative flex items-center rounded-md text-sm font-medium transition-colors duration-150',
+            'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none',
+            collapsed ? 'justify-center px-2 py-2' : 'gap-2.5 px-3 py-2',
             isActive
               ? 'bg-sidebar-active text-sidebar-active-foreground before:absolute before:top-1.5 before:bottom-1.5 before:-left-2 before:w-0.5 before:rounded-full before:bg-accent'
-              : 'text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-sidebar-active-foreground',
+              : 'text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-sidebar-active-foreground active:bg-sidebar-active',
           )
         }
       >
         <span aria-hidden="true" className="shrink-0 opacity-80">
           {icon}
         </span>
-        {label}
+        <span className={cn(collapsed && 'sr-only')}>{label}</span>
       </NavLink>
     </li>
   );
@@ -95,14 +102,22 @@ const NAV_ICONS = {
   ),
 } as const;
 
-function userInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((part) => part !== '')
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
+/** Double-chevron that points the way the sidebar will move when toggled. */
+function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg {...ICON_PROPS} aria-hidden="true">
+      {collapsed ? <path d="m9 6 6 6-6 6" /> : <path d="m15 6-6 6 6 6" />}
+    </svg>
+  );
 }
+
+const SIGN_OUT_ICON = (
+  <svg {...ICON_PROPS}>
+    <path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3" />
+    <path d="m16 17 5-5-5-5" />
+    <path d="M21 12H9" />
+  </svg>
+);
 
 /**
  * Firm dashboard shell at dashboard.siapp.app/:workspaceSlug/* — the URL slug
@@ -113,6 +128,7 @@ function userInitials(name: string): string {
 export function FirmShell() {
   const { workspaceSlug } = useParams<'workspaceSlug'>();
   const { state, signOutUser } = useAuth();
+  const { collapsed, toggle } = useSidebarCollapsed();
 
   // RequireAuth guarantees a signed-in user; this narrows the union for TS.
   if (state.status !== 'signedIn') {
@@ -157,61 +173,100 @@ export function FirmShell() {
   }
 
   const role = state.claims.workspaces[workspace.id]?.role ?? 'viewer';
+  const profileName = state.profile.displayName ?? state.user.displayName ?? state.user.email ?? '';
+  const profilePhoto = state.profile.photoUrl ?? state.user.photoURL ?? undefined;
 
   return (
     <div className="flex min-h-screen">
       <SkipLink />
-      <aside className="on-dark sticky top-0 flex h-screen w-60 flex-col bg-sidebar px-4 py-5">
-        <p className="flex items-center px-3">
-          <img
-            src={siappLogoSimpleReversed}
-            alt="Siapp"
-            className="h-9 w-9 object-contain"
-          />
-        </p>
-        <p className="mt-5 px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">
-          {workspace.name}
-        </p>
-        <nav aria-label="Workspace" className="mt-2">
+      <aside
+        className={cn(
+          'on-dark sticky top-0 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none',
+          collapsed ? 'w-16 px-2' : 'w-60 px-4',
+        )}
+      >
+        <div className={cn('flex items-center', collapsed ? 'flex-col gap-3' : 'justify-between px-3')}>
+          <img src={siappLogoSimpleReversed} alt="Siapp" className="h-9 w-9 object-contain" />
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar-nav"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-active hover:text-white focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none active:bg-sidebar-active"
+          >
+            <CollapseIcon collapsed={collapsed} />
+          </button>
+        </div>
+        {!collapsed && (
+          <p className="mt-5 px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">
+            {workspace.name}
+          </p>
+        )}
+        <nav id="sidebar-nav" aria-label="Workspace" className="mt-2">
           <ul className="flex flex-col gap-0.5">
-            <NavItem to={`/${workspace.slug}`} end label="Home" icon={NAV_ICONS.home} />
+            <NavItem to={`/${workspace.slug}`} end label="Home" icon={NAV_ICONS.home} collapsed={collapsed} />
             <NavItem
               to={`/${workspace.slug}/projects`}
               label="Projects"
               icon={NAV_ICONS.projects}
+              collapsed={collapsed}
             />
-            <NavItem to={`/${workspace.slug}/clients`} label="Clients" icon={NAV_ICONS.clients} />
+            <NavItem
+              to={`/${workspace.slug}/clients`}
+              label="Clients"
+              icon={NAV_ICONS.clients}
+              collapsed={collapsed}
+            />
             <NavItem
               to={`/${workspace.slug}/collaborators`}
               label="Collaborators"
               icon={NAV_ICONS.collaborators}
+              collapsed={collapsed}
             />
             <NavItem
               to={`/${workspace.slug}/settings/team`}
               label="Settings"
               icon={NAV_ICONS.settings}
+              collapsed={collapsed}
             />
           </ul>
         </nav>
-        <div className="mt-auto flex flex-col gap-3 border-t border-sidebar-border pt-4">
-          <p className="flex items-center gap-2.5 px-1">
-            <span
-              aria-hidden="true"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active text-xs font-semibold text-white"
-            >
-              {userInitials(state.user.displayName ?? state.user.email ?? '?')}
-            </span>
-            <span className="truncate text-sm text-sidebar-foreground">
-              {state.user.displayName ?? state.user.email}
-            </span>
-          </p>
+        <div className="mt-auto flex flex-col gap-2 border-t border-sidebar-border pt-4">
+          <NavLink
+            to={`/${workspace.slug}/settings/profile`}
+            aria-label="Your profile"
+            title={collapsed ? 'Your profile' : undefined}
+            className={({ isActive }) =>
+              cn(
+                'flex items-center rounded-md py-1.5 transition-colors duration-150',
+                'focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none',
+                collapsed ? 'justify-center px-1' : 'gap-2.5 px-1',
+                isActive
+                  ? 'bg-sidebar-active text-sidebar-active-foreground'
+                  : 'text-sidebar-foreground hover:bg-sidebar-active/60 hover:text-sidebar-active-foreground active:bg-sidebar-active',
+              )
+            }
+          >
+            <Avatar size="sm" name={profileName} seed={state.user.uid} photoUrl={profilePhoto} aria-hidden />
+            {!collapsed && <span className="truncate text-sm">{profileName}</span>}
+          </NavLink>
           <Button
             variant="outline"
             size="sm"
-            className="border-sidebar-border bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-active hover:text-white"
+            title={collapsed ? 'Sign out' : undefined}
+            aria-label={collapsed ? 'Sign out' : undefined}
+            className={cn(
+              'border-sidebar-border bg-transparent text-sidebar-foreground shadow-none hover:bg-sidebar-active hover:text-white',
+              collapsed && 'px-0',
+            )}
             onClick={() => void signOutUser()}
           >
-            Sign out
+            {collapsed ? (
+              <span aria-hidden="true">{SIGN_OUT_ICON}</span>
+            ) : (
+              'Sign out'
+            )}
           </Button>
         </div>
       </aside>
@@ -287,6 +342,17 @@ export function FirmShell() {
             path="settings"
             element={<SettingsLayout workspaceSlug={workspace.slug} role={role} />}
           >
+            <Route
+              path="profile"
+              element={
+                <ProfileSettingsPage
+                  uid={state.user.uid}
+                  email={state.user.email ?? ''}
+                  displayName={profileName}
+                  photoUrl={profilePhoto}
+                />
+              }
+            />
             <Route
               path="team"
               element={

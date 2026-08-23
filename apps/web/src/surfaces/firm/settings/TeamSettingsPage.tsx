@@ -9,7 +9,7 @@
  *   owner/admin only (matching rules + callable gates).
  */
 
-import { Alert, Button, Card, CardContent, CardHeader, Input, Label } from '@siapp/ui';
+import { Alert, Avatar, Button, Card, CardContent, CardHeader, Input, Label } from '@siapp/ui';
 import type { TInviteRole, TMemberRole } from '@siapp/shared';
 import { useState, type FormEvent } from 'react';
 
@@ -326,10 +326,19 @@ function MembersPanel({ workspaceId, canManage }: IMembersPanelProps) {
             {members.rows.map((member) => (
               <li key={member.uid} className="rounded-md border border-border px-3 py-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm">
-                    <span className="font-medium">{member.displayName}</span>{' '}
-                    <span className="text-muted-foreground">{member.email}</span> —{' '}
-                    {ROLE_LABELS[member.role]}
+                  <span className="flex items-center gap-2.5 text-sm">
+                    <Avatar
+                      size="sm"
+                      name={member.displayName || member.email}
+                      seed={member.uid}
+                      photoUrl={member.photoUrl}
+                      aria-hidden
+                    />
+                    <span>
+                      <span className="font-medium">{member.displayName}</span>{' '}
+                      <span className="text-muted-foreground">{member.email}</span> —{' '}
+                      {ROLE_LABELS[member.role]}
+                    </span>
                   </span>
                   {canManage && departmentsVisible && (
                     <Button

@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
 import { useProjects } from '../projects/useProjects.ts';
+import { useMemberPhotoMap } from '../settings/useTeamData.ts';
 import { AttentionCard } from './AttentionCard.tsx';
 import { DashboardTaskCard } from './DashboardTaskCard.tsx';
 import { CalendarIcon, FolderIcon } from './dashboardIcons.tsx';
@@ -73,6 +74,7 @@ export function DashboardPage({
   const projects = useProjects(workspaceId);
   const projectRows = projects.status === 'ready' ? projects.rows : [];
   const tasks = useDashboardTasks(workspaceId, role, departments, projectRows);
+  const memberPhotos = useMemberPhotoMap(workspaceId);
   const [bucket, setBucket] = useState<TBucketId>('myOpen');
   // Rolling window (D6): re-bucket once a minute so tasks cross the
   // overdue / due-this-week boundaries without needing an unrelated re-render.
@@ -191,6 +193,7 @@ export function DashboardPage({
                       task={task}
                       workspaceSlug={workspaceSlug}
                       now={now}
+                      memberPhotos={memberPhotos}
                     />
                   ))}
                 </ul>

@@ -36,6 +36,7 @@ export function SettingsLayout({ workspaceSlug, role }: ISettingsLayoutProps) {
     <div className="flex flex-col gap-6">
       <nav aria-label="Settings">
         <ul className="flex gap-2">
+          <SettingsTab to={`/${workspaceSlug}/settings/profile`} label="Profile" />
           <SettingsTab to={`/${workspaceSlug}/settings/team`} label="Team" />
           <SettingsTab to={`/${workspaceSlug}/settings/notifications`} label="Notifications" />
           {(role === 'owner' || role === 'admin') && (

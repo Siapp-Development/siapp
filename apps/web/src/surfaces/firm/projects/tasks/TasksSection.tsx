@@ -6,7 +6,7 @@
  * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Button, Drawer, Input, cn } from '@siapp/ui';
+import { Alert, Avatar, Button, Drawer, Input, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
 import {
   useEffect,
@@ -41,15 +41,6 @@ const NO_PHASE = '__none__';
 const EMPTY_PHASES: readonly IPhaseRow[] = [];
 const EMPTY_TASK_ROWS: readonly TTaskListRow[] = [];
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((part) => part !== '')
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
-}
-
 function isOverdue(task: ITaskRow): boolean {
   return task.dueDate !== null && task.status !== 'done' && task.dueDate.getTime() < Date.now();
 }
@@ -57,6 +48,8 @@ function isOverdue(task: ITaskRow): boolean {
 interface ITaskRowItemProps {
   task: ITaskRow;
   departmentNames: Map<string, string>;
+  /** uid → photoUrl for firm-member assignee avatars (#104). */
+  memberPhotos: Map<string, string>;
   selected: boolean;
   highlighted: boolean;
   onSelect: () => void;
@@ -74,6 +67,7 @@ interface ITaskRowItemProps {
 function TaskRowItem({
   task,
   departmentNames,
+  memberPhotos,
   selected,
   highlighted,
   onSelect,
@@ -141,13 +135,14 @@ function TaskRowItem({
           {task.assignees.length > 0 && (
             <span className="flex gap-1" aria-label="Assignees">
               {task.assignees.map((assignee) => (
-                <span
+                <Avatar
                   key={`${assignee.type}-${assignee.id}`}
+                  size="xs"
+                  name={assignee.name}
+                  seed={assignee.id}
+                  photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
                   title={assignee.name}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-xs font-medium text-primary-deep"
-                >
-                  {initials(assignee.name)}
-                </span>
+                />
               ))}
             </span>
           )}
@@ -380,8 +375,22 @@ export function TasksSection({
       ),
     [departmentsState],
   );
-  const members = membersState.status === 'ready' ? membersState.rows : [];
+  const members = useMemo(
+    () => (membersState.status === 'ready' ? membersState.rows : []),
+    [membersState],
+  );
   const collaborators = collaboratorsState.status === 'ready' ? collaboratorsState.rows : [];
+
+  // uid → photoUrl for joining firm-member assignees to their avatar (#104).
+  const memberPhotos = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      if (member.photoUrl !== undefined) {
+        map.set(member.uid, member.photoUrl);
+      }
+    }
+    return map;
+  }, [members]);
 
   const isLoading = tasksState.status === 'loading' || phasesState.status === 'loading';
   const hasError = tasksState.status === 'error' || phasesState.status === 'error';
@@ -661,6 +670,7 @@ export function TasksSection({
                       key={row.id}
                       task={row}
                       departmentNames={departmentNames}
+                      memberPhotos={memberPhotos}
                       selected={row.id === selectedId}
                       highlighted={row.id === highlightId}
                       onSelect={() => setSelectedId(row.id)}

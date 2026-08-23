@@ -8,7 +8,7 @@
  * (invalid HTML that breaks assistive tech).
  */
 
-import { Badge } from '@siapp/ui';
+import { Avatar, Badge } from '@siapp/ui';
 import { Link } from 'react-router';
 
 import { TaskStatusBadge } from '../projects/tasks/TaskStatusBadge.tsx';
@@ -22,28 +22,30 @@ const DUE_TONE_VARIANT: Record<TDueTone, 'danger' | 'warning' | 'neutral'> = {
   muted: 'neutral',
 };
 
-/** Up to two leading letters from an assignee name for the initials chip. */
-function initials(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join('') || '?'
-  );
-}
+/** How many assignee avatars render before collapsing the rest into a +N chip. */
+const MAX_VISIBLE_AVATARS = 3;
 
 interface IDashboardTaskCardProps {
   task: IDashboardTaskRow;
   workspaceSlug: string;
   now: Date;
+  /** uid → photoUrl for joining firm-member assignees to their avatar (#104). */
+  memberPhotos: Map<string, string>;
 }
 
-export function DashboardTaskCard({ task, workspaceSlug, now }: IDashboardTaskCardProps) {
+export function DashboardTaskCard({
+  task,
+  workspaceSlug,
+  now,
+  memberPhotos,
+}: IDashboardTaskCardProps) {
   const due = relativeDueDate(task.dueDate, now);
-  const [firstAssignee, ...restAssignees] = task.assignees;
-  const overflow = restAssignees.length;
+  const visibleAssignees = task.assignees.slice(0, MAX_VISIBLE_AVATARS);
+  const overflow = task.assignees.length - visibleAssignees.length;
+  const assigneeLabel =
+    task.assignees.length > 0
+      ? `Assigned to ${task.assignees.map((a) => a.name).join(', ')}`
+      : undefined;
 
   return (
     <li className="group relative flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-card transition-colors duration-150 hover:border-primary/50 hover:shadow-raised focus-within:ring-2 focus-within:ring-primary">
@@ -72,18 +74,27 @@ export function DashboardTaskCard({ task, workspaceSlug, now }: IDashboardTaskCa
         </div>
       </div>
 
-      {firstAssignee !== undefined && (
-        <span className="flex shrink-0 items-center gap-2">
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground"
-          >
-            {initials(firstAssignee.name)}
-          </span>
-          <span className="hidden max-w-32 truncate text-sm text-muted-foreground sm:inline">
-            {firstAssignee.name}
-            {overflow > 0 && <span className="ml-1 font-medium">+{overflow}</span>}
-          </span>
+      {task.assignees.length > 0 && (
+        <span className="flex shrink-0 items-center -space-x-1.5" aria-label={assigneeLabel}>
+          {visibleAssignees.map((assignee) => (
+            <Avatar
+              key={`${assignee.type}-${assignee.id}`}
+              size="sm"
+              name={assignee.name}
+              seed={assignee.id}
+              photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
+              className="ring-2 ring-card"
+              aria-hidden
+            />
+          ))}
+          {overflow > 0 && (
+            <span
+              aria-hidden="true"
+              className="flex h-7 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-semibold text-muted-foreground ring-2 ring-card"
+            >
+              +{overflow}
+            </span>
+          )}
         </span>
       )}
 
