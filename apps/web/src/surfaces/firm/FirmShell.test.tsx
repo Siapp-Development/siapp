@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { User } from 'firebase/auth';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import {
   AuthContext,
@@ -55,6 +55,7 @@ const signedIn: TAuthState = {
   user: { uid: 'u1', email: 'alice@firm.test', displayName: 'Alice Tan' } as unknown as User,
   claims: { workspaces: { wksA: { role: 'owner', departments: [] } } },
   workspaces: [{ id: 'wksA', name: 'Acme Builders', slug: 'acme' }],
+  profile: {},
 };
 
 function renderShell(initialEntry: string, signOutUser = vi.fn(async () => {})) {
@@ -153,5 +154,53 @@ describe('FirmShell', () => {
     await userEvent.click(screen.getByRole('button', { name: /sign out/i }));
 
     expect(signOutUser).toHaveBeenCalledOnce();
+  });
+
+  it('links the sidebar avatar to the profile settings page', () => {
+    renderShell('/acme');
+
+    expect(screen.getByRole('link', { name: 'Your profile' })).toHaveAttribute(
+      'href',
+      '/acme/settings/profile',
+    );
+  });
+
+  describe('collapsible sidebar (#104)', () => {
+    afterEach(() => {
+      window.localStorage.clear();
+    });
+
+    it('starts expanded with the collapse toggle exposing aria-expanded="true"', () => {
+      renderShell('/acme');
+
+      const toggle = screen.getByRole('button', { name: 'Collapse sidebar' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(toggle).toHaveAttribute('aria-controls', 'sidebar-nav');
+    });
+
+    it('flips aria-expanded and the accessible label when toggled', async () => {
+      renderShell('/acme');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+
+      const toggle = screen.getByRole('button', { name: 'Expand sidebar' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('keeps nav items keyboard/AT-accessible by name after collapsing (sr-only labels)', async () => {
+      renderShell('/acme');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+
+      const nav = screen.getByRole('navigation', { name: 'Workspace' });
+      // Labels visually collapse to icons, but the accessible names persist.
+      expect(within(nav).getByRole('link', { name: 'Home' })).toBeInTheDocument();
+      expect(within(nav).getByRole('link', { name: 'Projects' })).toBeInTheDocument();
+      // The avatar link keeps its accessible name too.
+      expect(screen.getByRole('link', { name: 'Your profile' })).toHaveAttribute(
+        'href',
+        '/acme/settings/profile',
+      );
+    });
   });
 });

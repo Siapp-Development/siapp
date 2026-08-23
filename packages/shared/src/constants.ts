@@ -15,6 +15,21 @@ export const WA_UTILITY_COST_MYR = 0.1;
 export const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
 
 /**
+ * Max upload size for user profile photos (#104) — enforced in storage.rules
+ * (`avatars/{uid}/…`) and client-side in `useUpdateProfile`. Keep the two in
+ * sync (parity enforced by a storage-rules test).
+ */
+export const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Content types accepted for profile-photo uploads (#104). Mirrored verbatim
+ * in storage.rules (parity enforced by a rules test). No `image/gif`
+ * (animated avatars) or `image/svg+xml` (SVGs can carry scripts and avatars
+ * render inline).
+ */
+export const AVATAR_ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+/**
  * Content types accepted for document uploads (#14). Mirrored verbatim in
  * storage.rules (parity enforced by a rules test). `image/svg+xml` is
  * deliberately excluded — SVGs can carry scripts and we preview inline.

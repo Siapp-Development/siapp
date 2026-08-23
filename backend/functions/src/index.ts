@@ -3,6 +3,8 @@
  *
  * Implemented:
  *   - onWorkspaceMemberWrite → syncMemberClaims (#9) + recountSeats (#11)
+ *   - onUserProfileWrite → syncMemberProfile (#104): fan displayName/photoUrl
+ *     to member docs.
  *   - Invite lifecycle callables + setMemberDepartments (#11)
  *   - setProjectLifecycle (#12): D-027 lifecycle transitions + publish preview.
  *   - getRestrictedTaskHeaders (#13): safe projection of restricted tasks.
@@ -44,6 +46,7 @@ import { logger } from 'firebase-functions';
 import { recountSeats } from './triggers/recountSeats.js';
 import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
+import { syncMemberProfile } from './triggers/syncMemberProfile.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
 import { removedCollaboratorIds, revokeCollabLinksForTask } from './lib/collabLinks.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
@@ -433,6 +436,19 @@ export const onWorkspaceMemberWrite = onDocumentWritten(
     }
   },
 );
+
+/**
+ * Fans a user's `displayName`/`photoUrl` out to every workspace member doc
+ * they belong to (#104) — see `triggers/syncMemberProfile.ts`. Member docs are
+ * the only member-readable source of a teammate's avatar (`users/{uid}` is
+ * owner-only readable), so this keeps the denormalised copy fresh whenever a
+ * user edits their profile.
+ *
+ * Collection path: `users/{uid}`
+ */
+export const onUserProfileWrite = onDocumentWritten('users/{uid}', async (event) => {
+  await syncMemberProfile(event);
+});
 
 /** E.164 phone off a trigger snapshot; null when absent or not a string. */
 function phoneOf(snap: { exists: boolean; get(field: string): unknown } | undefined): string | null {

@@ -319,6 +319,7 @@ describe('LoginPage', () => {
       user: { uid: 'u1' } as never,
       claims: { workspaces: {} },
       workspaces: [],
+      profile: {},
     });
 
     expect(await screen.findByText('home stub')).toBeInTheDocument();

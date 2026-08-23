@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -184,5 +184,43 @@ describe('TeamSettingsPage', () => {
     const deleteButtons = screen.getAllByRole('button', { name: /delete/i });
     expect(deleteButtons[0]).toBeDisabled();
     expect(deleteButtons[1]).toBeEnabled();
+  });
+});
+
+describe('TeamSettingsPage member avatars (#104)', () => {
+  it("renders a member's denormalised photo as an <img>", () => {
+    teamData.members = {
+      status: 'ready',
+      rows: [{ ...owner, photoUrl: 'https://cdn.test/alice.png' }],
+    };
+    renderPage();
+
+    const row = screen.getByText('Alice Tan').closest('li') as HTMLLIElement;
+    const img = row.querySelector('img');
+    expect(img).toHaveAttribute('src', 'https://cdn.test/alice.png');
+  });
+
+  it('falls back to initials for a member without a photo', () => {
+    teamData.members = { status: 'ready', rows: [pm] };
+    renderPage();
+
+    const row = screen.getByText('Bob Lee').closest('li') as HTMLLIElement;
+    expect(row.querySelector('img')).toBeNull();
+    expect(within(row).getByText('BL')).toBeInTheDocument();
+  });
+
+  it('mixes photo and initials members correctly', () => {
+    teamData.members = {
+      status: 'ready',
+      rows: [{ ...owner, photoUrl: 'https://cdn.test/alice.png' }, pm],
+    };
+    renderPage();
+
+    const aliceRow = screen.getByText('Alice Tan').closest('li') as HTMLLIElement;
+    const bobRow = screen.getByText('Bob Lee').closest('li') as HTMLLIElement;
+
+    expect(aliceRow.querySelector('img')).toHaveAttribute('src', 'https://cdn.test/alice.png');
+    expect(bobRow.querySelector('img')).toBeNull();
+    expect(within(bobRow).getByText('BL')).toBeInTheDocument();
   });
 });

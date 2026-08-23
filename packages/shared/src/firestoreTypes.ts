@@ -212,6 +212,14 @@ export interface IMemberDoc {
   uid: string;
   email: string;
   displayName: string;
+  /**
+   * Member-readable denormalised copy of the user's `users/{uid}.photoUrl`
+   * (#104). `users/{uid}` is owner-only readable, so this is the only source
+   * a teammate can read for another member's avatar. Server-written only
+   * (Admin SDK): seeded at member creation and kept fresh by the
+   * `syncMemberProfile` trigger. Absent = the member has no profile photo.
+   */
+  photoUrl?: string;
   role: TMemberRole;
   departments: string[];
   seatActive: boolean;

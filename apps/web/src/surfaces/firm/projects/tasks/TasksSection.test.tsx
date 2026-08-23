@@ -202,15 +202,40 @@ describe('TasksSection', () => {
     };
     renderSection();
 
+    // The group toggle's accessible name is the phase label plus its count chip.
+    expect(screen.getByRole('button', { name: /site prep\s*2/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /no phase\s*1/i })).toBeInTheDocument();
+    // Completion is surfaced via the progress ring's accessible name.
     expect(
-      screen.getByRole('button', { name: /site prep · 2 tasks · 1 done/i }),
+      screen.getByRole('button', { name: '1 out of 2 tasks completed' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /no phase · 1 task · 0 done/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '0 out of 1 tasks completed' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Clear debris')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: /site prep/i }));
     expect(screen.queryByText('Clear debris')).not.toBeInTheDocument();
     expect(screen.getByText('Loose task')).toBeInTheDocument();
+  });
+
+  it('shows the count chip and reveals the progress tooltip on click', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', status: 'done', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Clear debris', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    const ring = screen.getByRole('button', { name: '1 out of 2 tasks completed' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    await userEvent.click(ring);
+
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('1 out of 2 tasks completed');
   });
 
   it('quick-adds a task with order max+1 within the phase', async () => {
@@ -221,7 +246,7 @@ describe('TasksSection', () => {
     tasksData.createTask.mockResolvedValue('t-new');
     renderSection();
 
-    const addButtons = screen.getAllByRole('button', { name: '+ Add task' });
+    const addButtons = screen.getAllByRole('button', { name: /add task/i });
     await userEvent.click(addButtons[0]!);
     await userEvent.type(screen.getByLabelText('New task title'), 'Order rebar');
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
@@ -555,7 +580,7 @@ describe('TasksSection', () => {
     tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
     renderSection({ canEdit: false, role: 'viewer' });
 
-    expect(screen.queryByRole('button', { name: '+ Add task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add task/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Add phase' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /drag to reorder/i })).not.toBeInTheDocument();
   });

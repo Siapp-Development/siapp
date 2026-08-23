@@ -17,7 +17,7 @@ import {
   where,
   type DocumentData,
 } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { db } from '@/lib/firebase.ts';
 
@@ -25,6 +25,8 @@ export interface IMemberRow {
   uid: string;
   email: string;
   displayName: string;
+  /** Denormalised avatar (#104); absent when the member has no profile photo. */
+  photoUrl?: string;
   role: TMemberRole;
   departments: string[];
   seatActive: boolean;
@@ -83,6 +85,8 @@ const mapMember = (id: string, data: DocumentData): IMemberRow => ({
   uid: id,
   email: String(data['email'] ?? ''),
   displayName: String(data['displayName'] ?? ''),
+  photoUrl:
+    typeof data['photoUrl'] === 'string' && data['photoUrl'] !== '' ? data['photoUrl'] : undefined,
   role: (data['role'] ?? 'viewer') as TMemberRole,
   departments: Array.isArray(data['departments'])
     ? data['departments'].filter((d): d is string => typeof d === 'string')
@@ -105,6 +109,27 @@ const mapDepartment = (id: string, data: DocumentData): IDepartmentRow => ({
 
 export function useMembers(workspaceId: string): TCollectionState<IMemberRow> {
   return useCollection(`workspaces/${workspaceId}/members`, mapMember);
+}
+
+/**
+ * `uid → photoUrl` lookup for joining task-assignee uids to a teammate's
+ * denormalised avatar (#104). Members without a photo are simply absent from
+ * the map, so callers fall back to initials + colour. Reuses the same
+ * rules-provable members subscription as the Team settings page.
+ */
+export function useMemberPhotoMap(workspaceId: string): Map<string, string> {
+  const members = useMembers(workspaceId);
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    if (members.status === 'ready') {
+      for (const member of members.rows) {
+        if (member.photoUrl !== undefined) {
+          map.set(member.uid, member.photoUrl);
+        }
+      }
+    }
+    return map;
+  }, [members]);
 }
 
 /** Pass `enabled: false` for pm/viewer — rules deny them invite reads. */

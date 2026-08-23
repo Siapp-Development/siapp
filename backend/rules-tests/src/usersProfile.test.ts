@@ -11,6 +11,7 @@ import {
   Timestamp,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDocs,
   serverTimestamp,
@@ -151,6 +152,31 @@ describe('users/{uid} update', () => {
     await assertFails(
       updateDoc(doc(aliceDb(), 'users/grace'), { lastSeenAt: serverTimestamp() }),
     );
+  });
+
+  it('allows the owner to set displayName + photoUrl together (#104)', async () => {
+    await seedUserProfile(testEnv, 'ivy', 'ivy@firm.test');
+    const db = testEnv.authenticatedContext('ivy', { email: 'ivy@firm.test' }).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'users/ivy'), {
+        displayName: 'Ivy Chen',
+        photoUrl: 'https://cdn.example.test/ivy.png',
+      }),
+    );
+  });
+
+  it('allows the owner to remove their photoUrl via deleteField (#104)', async () => {
+    await seedUserProfile(testEnv, 'jack', 'jack@firm.test', {
+      photoUrl: 'https://cdn.example.test/jack.png',
+    });
+    const db = testEnv.authenticatedContext('jack', { email: 'jack@firm.test' }).firestore();
+    await assertSucceeds(updateDoc(doc(db, 'users/jack'), { photoUrl: deleteField() }));
+  });
+
+  it('denies a non-string photoUrl (validUserProfile guard)', async () => {
+    await seedUserProfile(testEnv, 'kara', 'kara@firm.test');
+    const db = testEnv.authenticatedContext('kara', { email: 'kara@firm.test' }).firestore();
+    await assertFails(updateDoc(doc(db, 'users/kara'), { photoUrl: 42 }));
   });
 });
 

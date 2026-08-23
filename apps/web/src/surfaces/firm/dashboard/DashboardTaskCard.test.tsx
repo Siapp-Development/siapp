@@ -37,11 +37,11 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
   };
 }
 
-function renderCard(task: IDashboardTaskRow) {
+function renderCard(task: IDashboardTaskRow, memberPhotos: Map<string, string> = new Map()) {
   return render(
     <MemoryRouter>
       <ul>
-        <DashboardTaskCard task={task} workspaceSlug="acme" now={NOW} />
+        <DashboardTaskCard task={task} workspaceSlug="acme" now={NOW} memberPhotos={memberPhotos} />
       </ul>
     </MemoryRouter>,
   );
@@ -94,17 +94,64 @@ describe('DashboardTaskCard', () => {
     expect(screen.getByText('To do')).toBeInTheDocument();
   });
 
-  it('renders the first assignee name and a "+N" overflow chip', () => {
+  it('shows assignees as avatars only — the assignee name is not rendered as text (#104)', () => {
+    renderCard(taskRow({ assignees: [{ type: 'user', id: 'u1', name: 'Alice Tan' }] as TTaskAssignee[] }));
+
+    // Avatars-only cluster: the name drives the initials + accessible label,
+    // but the full name never appears as visible body text on the card.
+    expect(screen.queryByText('Alice Tan')).not.toBeInTheDocument();
+    // Initials fallback (no member photo) is shown instead.
+    expect(screen.getByText('AT')).toBeInTheDocument();
+  });
+
+  it('collapses assignees beyond the first three into a "+N" avatar-count chip (no names)', () => {
     renderCard(
       taskRow({
         assignees: [
           { type: 'user', id: 'u1', name: 'Alice Tan' },
           { type: 'user', id: 'u2', name: 'Bob Lee' },
           { type: 'user', id: 'u3', name: 'Cara Ng' },
+          { type: 'user', id: 'u4', name: 'Dan Poh' },
+          { type: 'user', id: 'u5', name: 'Eve Sim' },
         ] as TTaskAssignee[],
       }),
     );
-    expect(screen.getByText('Alice Tan')).toBeInTheDocument();
+
+    // Three avatars render; the remaining two collapse into "+2".
     expect(screen.getByText('+2')).toBeInTheDocument();
+    expect(screen.queryByText('Alice Tan')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dan Poh')).not.toBeInTheDocument();
+  });
+
+  it('renders a firm-member assignee photo as an <img> when the member map has it (#104)', () => {
+    const { container } = renderCard(
+      taskRow({ assignees: [{ type: 'user', id: 'u1', name: 'Alice Tan' }] as TTaskAssignee[] }),
+      new Map([['u1', 'https://cdn.test/alice.png']]),
+    );
+
+    const img = container.querySelector('img');
+    expect(img).toHaveAttribute('src', 'https://cdn.test/alice.png');
+    // The decorative avatar exposes no accessible name (the surrounding link labels the row).
+    expect(img).toHaveAttribute('alt', '');
+  });
+
+  it('falls back to initials for a collaborator assignee even if a uid collides in the photo map', () => {
+    const { container } = renderCard(
+      taskRow({ assignees: [{ type: 'collaborator', id: 'u1', name: 'Cody Rivera' }] as TTaskAssignee[] }),
+      new Map([['u1', 'https://cdn.test/should-not-be-used.png']]),
+    );
+
+    // Collaborators have no firm member doc, so their photo is never joined.
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('CR')).toBeInTheDocument();
+  });
+
+  it('falls back to initials for a firm member with no photo in the map', () => {
+    const { container } = renderCard(
+      taskRow({ assignees: [{ type: 'user', id: 'u9', name: 'Priya Rao' }] as TTaskAssignee[] }),
+    );
+
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('PR')).toBeInTheDocument();
   });
 });

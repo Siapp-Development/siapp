@@ -6,8 +6,9 @@
  * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Button, Drawer, Input, cn } from '@siapp/ui';
+import { Alert, Avatar, Badge, Button, Drawer, Input, cn } from '@siapp/ui';
 import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
+import { ChevronRight, Columns3, List, Plus } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -22,6 +23,7 @@ import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
 import { useMilestones } from '../milestones/useMilestones.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
+import { TaskProgressRing } from './TaskProgressRing.tsx';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import { TaskStatusBadge } from './TaskStatusBadge.tsx';
 import { TimelineView } from './TimelineView.tsx';
@@ -41,15 +43,6 @@ const NO_PHASE = '__none__';
 const EMPTY_PHASES: readonly IPhaseRow[] = [];
 const EMPTY_TASK_ROWS: readonly TTaskListRow[] = [];
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter((part) => part !== '')
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
-}
-
 function isOverdue(task: ITaskRow): boolean {
   return task.dueDate !== null && task.status !== 'done' && task.dueDate.getTime() < Date.now();
 }
@@ -57,6 +50,8 @@ function isOverdue(task: ITaskRow): boolean {
 interface ITaskRowItemProps {
   task: ITaskRow;
   departmentNames: Map<string, string>;
+  /** uid → photoUrl for firm-member assignee avatars (#104). */
+  memberPhotos: Map<string, string>;
   selected: boolean;
   highlighted: boolean;
   onSelect: () => void;
@@ -74,6 +69,7 @@ interface ITaskRowItemProps {
 function TaskRowItem({
   task,
   departmentNames,
+  memberPhotos,
   selected,
   highlighted,
   onSelect,
@@ -141,13 +137,14 @@ function TaskRowItem({
           {task.assignees.length > 0 && (
             <span className="flex gap-1" aria-label="Assignees">
               {task.assignees.map((assignee) => (
-                <span
+                <Avatar
                   key={`${assignee.type}-${assignee.id}`}
+                  size="xs"
+                  name={assignee.name}
+                  seed={assignee.id}
+                  photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
                   title={assignee.name}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-tint text-xs font-medium text-primary-deep"
-                >
-                  {initials(assignee.name)}
-                </span>
+                />
               ))}
             </span>
           )}
@@ -292,13 +289,18 @@ function QuickAddTask({ onAdd }: IQuickAddTaskProps) {
 
   if (!open) {
     return (
-      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        + Add task
-      </Button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset focus-visible:outline-none"
+      >
+        <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+        Add task…
+      </button>
     );
   }
   return (
-    <form onSubmit={(event) => void handleSubmit(event)} className="flex gap-2 px-3 py-1">
+    <form onSubmit={(event) => void handleSubmit(event)} className="flex gap-2 px-3 py-2">
       <Input
         aria-label="New task title"
         value={title}
@@ -380,8 +382,22 @@ export function TasksSection({
       ),
     [departmentsState],
   );
-  const members = membersState.status === 'ready' ? membersState.rows : [];
+  const members = useMemo(
+    () => (membersState.status === 'ready' ? membersState.rows : []),
+    [membersState],
+  );
   const collaborators = collaboratorsState.status === 'ready' ? collaboratorsState.rows : [];
+
+  // uid → photoUrl for joining firm-member assignees to their avatar (#104).
+  const memberPhotos = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) {
+      if (member.photoUrl !== undefined) {
+        map.set(member.uid, member.photoUrl);
+      }
+    }
+    return map;
+  }, [members]);
 
   const isLoading = tasksState.status === 'loading' || phasesState.status === 'loading';
   const hasError = tasksState.status === 'error' || phasesState.status === 'error';
@@ -629,23 +645,32 @@ export function TasksSection({
     const isCollapsed = collapsed.has(key);
     const label = phase !== null ? phase.name : 'No phase';
     return (
-      <section key={key} aria-label={label}>
-        <div className="flex items-center gap-2">
+      <section
+        key={key}
+        aria-label={label}
+        className="rounded-lg border border-border bg-card shadow-card"
+      >
+        <div className="flex items-center gap-2 px-3">
           <button
             type="button"
             onClick={() => toggleGroup(key)}
             aria-expanded={!isCollapsed}
-            className="flex items-center gap-2 py-1 text-sm font-semibold hover:text-primary"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-3 text-sm font-semibold hover:text-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
           >
-            <span aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
-            {label}
-            <span className="font-normal text-muted-foreground">
-              · {rows.length} {rows.length === 1 ? 'task' : 'tasks'} · {doneCount} done
-            </span>
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none',
+                !isCollapsed && 'rotate-90',
+              )}
+            />
+            <span className="truncate">{label}</span>
+            <Badge variant="neutral">{rows.length}</Badge>
           </button>
+          {rows.length > 0 && <TaskProgressRing completed={doneCount} total={rows.length} />}
         </div>
         {!isCollapsed && (
-          <>
+          <div className="border-t border-border">
             {rows.length > 0 && (
               <ul className="flex flex-col">
                 {rows.map((row) =>
@@ -661,6 +686,7 @@ export function TasksSection({
                       key={row.id}
                       task={row}
                       departmentNames={departmentNames}
+                      memberPhotos={memberPhotos}
                       selected={row.id === selectedId}
                       highlighted={row.id === highlightId}
                       onSelect={() => setSelectedId(row.id)}
@@ -708,7 +734,7 @@ export function TasksSection({
             {canEdit && (
               <QuickAddTask onAdd={(title) => handleAddTask(phase?.id ?? null, title)} />
             )}
-          </>
+          </div>
         )}
       </section>
     );
@@ -724,8 +750,8 @@ export function TasksSection({
         >
           {(
             [
-              { id: 'list', label: 'List' },
-              { id: 'timeline', label: 'Timeline' },
+              { id: 'list', label: 'List', Icon: List },
+              { id: 'timeline', label: 'Timeline', Icon: Columns3 },
             ] as const
           ).map((entry) => (
             <button
@@ -734,12 +760,13 @@ export function TasksSection({
               aria-pressed={view === entry.id}
               onClick={() => setView(entry.id)}
               className={cn(
-                'rounded px-3 py-1 text-sm transition-colors duration-150',
+                'flex items-center gap-1.5 rounded px-3 py-1 text-sm transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                 view === entry.id
                   ? 'bg-primary-tint font-medium text-primary-deep'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              <entry.Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               {entry.label}
             </button>
           ))}
