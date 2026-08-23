@@ -80,36 +80,10 @@ describe('portfolioStats', () => {
     expect(portfolioStats(projects, buckets(0, 0)).activeProjects).toBe(2);
   });
 
-  it('returns onTrackPct = null when there are no active projects', () => {
+  it('returns zero active projects when none are in the working lifecycle', () => {
     const projects = [projectRow({ lifecycle: 'archived' })];
     const stats = portfolioStats(projects, buckets(0, 0));
     expect(stats.activeProjects).toBe(0);
-    expect(stats.onTrackPct).toBeNull();
-  });
-
-  it('computes onTrackPct over active projects, rounding to the nearest percent', () => {
-    // 2 of 3 active projects on-track = 66.666% -> rounds to 67.
-    const projects = [
-      projectRow({ id: 'a', lifecycle: 'published', overdueTasks: 0, blockedTasks: 0 }),
-      projectRow({ id: 'b', lifecycle: 'draft', overdueTasks: 0, blockedTasks: 0 }),
-      projectRow({ id: 'c', lifecycle: 'published', overdueTasks: 1 }), // overdue -> not on track
-      // Archived projects are excluded from the denominator entirely.
-      projectRow({ id: 'd', lifecycle: 'archived', overdueTasks: 0, blockedTasks: 0 }),
-    ];
-    expect(portfolioStats(projects, buckets(0, 0)).onTrackPct).toBe(67);
-  });
-
-  it('reports 100% when every active project is on-track', () => {
-    const projects = [
-      projectRow({ id: 'a', overdueTasks: 0, blockedTasks: 0 }),
-      projectRow({ id: 'b', overdueTasks: 0, blockedTasks: 0 }),
-    ];
-    expect(portfolioStats(projects, buckets(0, 0)).onTrackPct).toBe(100);
-  });
-
-  it('counts a blocked (non-overdue) active project as not on-track', () => {
-    const projects = [projectRow({ blockedTasks: 2 })];
-    expect(portfolioStats(projects, buckets(0, 0)).onTrackPct).toBe(0);
   });
 
   it('passes overdue and due-this-week counts straight through from the buckets', () => {

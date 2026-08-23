@@ -1,6 +1,6 @@
 /**
  * "Portfolio at a glance" strip for the #102 Home page. Presentational: it
- * consumes the pure `portfolioStats` output and renders four labeled tiles.
+ * consumes the pure `portfolioStats` output and renders three labeled tiles.
  * Color reinforces meaning but is never the sole signal — every tile pairs its
  * accent with an icon and a text label.
  */
@@ -11,7 +11,6 @@ import {
   AlarmIcon,
   CalendarIcon,
   FolderIcon,
-  TargetCheckIcon,
 } from './dashboardIcons.tsx';
 import type { IPortfolioStats } from './portfolioStats.ts';
 
@@ -33,13 +32,6 @@ export function StatStrip({ stats }: { stats: IPortfolioStats }) {
       icon: <FolderIcon />,
     },
     {
-      key: 'onTrack',
-      label: 'On track',
-      value: stats.onTrackPct === null ? '—' : `${stats.onTrackPct}%`,
-      accent: 'text-success',
-      icon: <TargetCheckIcon />,
-    },
-    {
       key: 'overdue',
       label: 'Overdue tasks',
       value: String(stats.overdueTasks),
@@ -56,7 +48,7 @@ export function StatStrip({ stats }: { stats: IPortfolioStats }) {
   ];
 
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {tiles.map((tile) => (
         <div
           key={tile.key}

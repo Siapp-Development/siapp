@@ -167,7 +167,7 @@ describe('DashboardPage', () => {
     );
   });
 
-  it('renders the personalized greeting and the four stat-strip labels', () => {
+  it('renders the personalized greeting and the three stat-strip labels', () => {
     renderPage();
 
     expect(
@@ -175,7 +175,6 @@ describe('DashboardPage', () => {
     ).toBeInTheDocument();
     // Scope to the stat strip's <dl> — "Due this week" also appears as a KPI tab.
     const strip = screen.getByText('Active projects').closest('dl') as HTMLElement;
-    expect(within(strip).getByText('On track')).toBeInTheDocument();
     expect(within(strip).getByText('Overdue tasks')).toBeInTheDocument();
     expect(within(strip).getByText('Due this week')).toBeInTheDocument();
   });
