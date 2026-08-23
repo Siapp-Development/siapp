@@ -229,6 +229,8 @@ export function FirmShell() {
                 role={role}
                 departments={state.claims.workspaces[workspace.id]?.departments ?? []}
                 uid={state.user.uid}
+                displayName={state.user.displayName ?? ''}
+                email={state.user.email ?? ''}
               />
             }
           />
