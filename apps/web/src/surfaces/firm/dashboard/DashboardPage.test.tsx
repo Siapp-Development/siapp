@@ -80,7 +80,11 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
   };
 }
 
-function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
+function renderPage(
+  role: 'owner' | 'pm' | 'viewer' = 'owner',
+  identity: { displayName?: string; email?: string } = {},
+) {
+  const { displayName = 'Alice Tan', email = 'alice@acme.com' } = identity;
   return render(
     <MemoryRouter>
       <DashboardPage
@@ -90,6 +94,8 @@ function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
         role={role}
         departments={[]}
         uid={UID}
+        displayName={displayName}
+        email={email}
       />
     </MemoryRouter>,
   );
@@ -143,16 +149,49 @@ describe('DashboardPage', () => {
   });
 
   it('links each task row to its project', () => {
+    // Redesign splits this into two links — the card's primary link
+    // (aria-label "Open task … in …") carries the `?task=` deep-link, and a
+    // separate project-name link points at the project root.
     tasksData.state = {
       status: 'ready',
       rows: [taskRow({ projectId: 'p9', projectName: 'Office fit-out' })],
     };
     renderPage();
 
+    expect(
+      screen.getByRole('link', { name: 'Open task Pour foundation in Office fit-out' }),
+    ).toHaveAttribute('href', '/acme/projects/p9?task=t1');
     expect(screen.getByRole('link', { name: 'Office fit-out' })).toHaveAttribute(
       'href',
-      '/acme/projects/p9?task=t1',
+      '/acme/projects/p9',
     );
+  });
+
+  it('renders the personalized greeting and the four stat-strip labels', () => {
+    renderPage();
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: /Good (morning|afternoon|evening), Alice/ }),
+    ).toBeInTheDocument();
+    // Scope to the stat strip's <dl> — "Due this week" also appears as a KPI tab.
+    const strip = screen.getByText('Active projects').closest('dl') as HTMLElement;
+    expect(within(strip).getByText('On track')).toBeInTheDocument();
+    expect(within(strip).getByText('Overdue tasks')).toBeInTheDocument();
+    expect(within(strip).getByText('Due this week')).toBeInTheDocument();
+  });
+
+  it('greets with the email local-part when the display name is empty (wiring guard, #102)', () => {
+    // Regression guard: the page must forward `email` into firstNameFrom so the
+    // local-part fallback works in production. If email were dropped (the old
+    // bug), the heading would fall back to "there" instead of "jane.doe".
+    renderPage('owner', { displayName: '', email: 'jane.doe@acme.com' });
+
+    const heading = screen.getByRole('heading', {
+      level: 1,
+      name: /Good (morning|afternoon|evening), jane\.doe/,
+    });
+    expect(heading).toBeInTheDocument();
+    expect(heading).not.toHaveTextContent('jane.doe@acme.com');
   });
 
   it('never renders tasks the fan-out could not fetch (D7 contract)', () => {
@@ -166,6 +205,10 @@ describe('DashboardPage', () => {
   });
 
   it('lists attention projects worst-first with health and lifecycle badges', () => {
+    // Each attention row is now a single whole-card <AttentionCard> link whose
+    // accessible name is "name — health"; the metric line duplicates the
+    // HealthBadge's "N overdue"/"N blocked" text, so order is asserted via the
+    // link aria-labels and count assertions are scoped per-listitem.
     projectsData.state = {
       status: 'ready',
       rows: [
@@ -181,13 +224,15 @@ describe('DashboardPage', () => {
     const section = screen.getByRole('heading', { name: 'Needs your attention' })
       .closest('section') as HTMLElement;
     const items = within(section).getAllByRole('listitem');
-    expect(items.map((li) => within(li).getByRole('link').textContent)).toEqual([
-      'Overdue project',
-      'Blocked project',
-      'Draft with tasks',
+    expect(items.map((li) => within(li).getByRole('link').getAttribute('aria-label'))).toEqual([
+      'Overdue project — overdue',
+      'Blocked project — blocked',
+      'Draft with tasks — on track',
     ]);
-    expect(within(items[0] as HTMLElement).getByText('4 overdue')).toBeInTheDocument();
-    expect(within(items[1] as HTMLElement).getByText('2 blocked')).toBeInTheDocument();
+    // Count text appears on both the HealthBadge and the metric line; assert
+    // presence within the correct row without demanding a single match.
+    expect(within(items[0] as HTMLElement).getAllByText('4 overdue').length).toBeGreaterThan(0);
+    expect(within(items[1] as HTMLElement).getAllByText('2 blocked').length).toBeGreaterThan(0);
     expect(screen.queryByText('Healthy project')).not.toBeInTheDocument();
     expect(screen.queryByText('Archived project')).not.toBeInTheDocument();
   });
