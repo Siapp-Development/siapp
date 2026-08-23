@@ -47,7 +47,7 @@ function makeUser(overrides: Record<string, unknown> = {}): User {
 }
 
 function signedIn(user = makeUser()): TAuthState {
-  return { status: 'signedIn', user, claims: { workspaces: {} }, workspaces: [] };
+  return { status: 'signedIn', user, claims: { workspaces: {} }, workspaces: [], profile: {} };
 }
 
 function renderPage(state: TAuthState, signOutUser = vi.fn(async () => {})) {

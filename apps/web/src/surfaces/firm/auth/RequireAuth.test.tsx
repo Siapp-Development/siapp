@@ -47,6 +47,7 @@ const signedIn: TAuthState = {
   user: { uid: 'u1', email: 'a@firm.test', displayName: 'Alice' } as unknown as User,
   claims: { workspaces: { wksA: { role: 'owner', departments: [] } } },
   workspaces: [{ id: 'wksA', name: 'Acme', slug: 'acme' }],
+  profile: {},
 };
 
 describe('RequireAuth', () => {

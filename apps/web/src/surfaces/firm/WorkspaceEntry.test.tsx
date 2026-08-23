@@ -29,6 +29,7 @@ function signedIn(overrides: Partial<Extract<TAuthState, { status: 'signedIn' }>
     user,
     claims: { workspaces: {} },
     workspaces: [],
+    profile: {},
     ...overrides,
   };
 }
