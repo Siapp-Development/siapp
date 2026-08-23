@@ -1,4 +1,14 @@
 import { Avatar, Button, cn } from '@siapp/ui';
+import {
+  FolderKanban,
+  Handshake,
+  Home,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  Users,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router';
 
@@ -58,66 +68,25 @@ function NavItem({
   );
 }
 
-const ICON_PROPS = {
-  width: 16,
-  height: 16,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 1.8,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round',
-} as const;
+/** Shared sizing for sidebar lucide icons — matches the prior 16px hand-drawn set. */
+const ICON_SIZE = 16;
+const ICON_STROKE = 1.8;
 
 const NAV_ICONS = {
-  home: (
-    <svg {...ICON_PROPS}>
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V21h14V9.5" />
-    </svg>
-  ),
-  projects: (
-    <svg {...ICON_PROPS}>
-      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-    </svg>
-  ),
-  clients: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 20c.8-3.2 3.6-5 7-5s6.2 1.8 7 5" />
-    </svg>
-  ),
-  collaborators: (
-    <svg {...ICON_PROPS}>
-      <circle cx="9" cy="8.5" r="3" />
-      <path d="M3.5 19.5c.7-2.8 3-4.5 5.5-4.5s4.8 1.7 5.5 4.5" />
-      <path d="M16 5.7a3 3 0 0 1 0 5.6M18.5 15.6c1.2.8 2 2 2.3 3.9" />
-    </svg>
-  ),
-  settings: (
-    <svg {...ICON_PROPS}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09c0 .68.4 1.3 1.03 1.56a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.26.63.88 1.03 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z" />
-    </svg>
-  ),
+  home: <Home size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+  projects: <FolderKanban size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+  clients: <Users size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+  collaborators: <Handshake size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+  settings: <Settings size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
 } as const;
 
-/** Double-chevron that points the way the sidebar will move when toggled. */
+/** Panel icon that reflects the direction the sidebar will move when toggled. */
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
-  return (
-    <svg {...ICON_PROPS} aria-hidden="true">
-      {collapsed ? <path d="m9 6 6 6-6 6" /> : <path d="m15 6-6 6 6 6" />}
-    </svg>
-  );
+  const Icon = collapsed ? PanelLeftOpen : PanelLeftClose;
+  return <Icon size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />;
 }
 
-const SIGN_OUT_ICON = (
-  <svg {...ICON_PROPS}>
-    <path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3" />
-    <path d="m16 17 5-5-5-5" />
-    <path d="M21 12H9" />
-  </svg>
-);
+const SIGN_OUT_ICON = <LogOut size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
 
 /**
  * Firm dashboard shell at dashboard.siapp.app/:workspaceSlug/* — the URL slug
