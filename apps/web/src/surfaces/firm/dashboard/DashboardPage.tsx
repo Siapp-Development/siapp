@@ -5,18 +5,21 @@
  * arrives via useProjects + useDashboardTasks; this page performs no writes.
  */
 
-import { Button, Progress, cn } from '@siapp/ui';
+import { Button, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
-import { LifecycleBadge } from '../projects/LifecycleBadge.tsx';
-import { TaskStatusBadge } from '../projects/tasks/TaskStatusBadge.tsx';
 import { useProjects } from '../projects/useProjects.ts';
+import { AttentionCard } from './AttentionCard.tsx';
+import { DashboardTaskCard } from './DashboardTaskCard.tsx';
+import { CalendarIcon, FolderIcon } from './dashboardIcons.tsx';
 import { bucketTasks } from './dueBuckets.ts';
-import { HealthBadge } from './HealthBadge.tsx';
+import { firstNameFrom, timeGreeting } from './greeting.ts';
+import { portfolioStats } from './portfolioStats.ts';
 import { attentionRank, needsAttention } from './projectHealth.ts';
-import { useDashboardTasks, type IDashboardTaskRow } from './useDashboardTasks.ts';
+import { StatStrip } from './StatStrip.tsx';
+import { useDashboardTasks } from './useDashboardTasks.ts';
 
 type TBucketId = 'myOpen' | 'overdue' | 'dueThisWeek';
 
@@ -46,31 +49,6 @@ const BUCKETS: ReadonlyArray<{
   },
 ];
 
-interface ITaskListItemProps {
-  task: IDashboardTaskRow;
-  workspaceSlug: string;
-}
-
-function TaskListItem({ task, workspaceSlug }: ITaskListItemProps) {
-  return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3 shadow-card">
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate font-medium">{task.title}</span>
-        <Link
-          to={`/${workspaceSlug}/projects/${task.projectId}?task=${task.id}`}
-          className="truncate text-sm text-muted-foreground hover:text-primary"
-        >
-          {task.projectName}
-        </Link>
-      </span>
-      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-        <TaskStatusBadge status={task.status} />
-        {task.dueDate !== null && <span>due {task.dueDate.toLocaleDateString()}</span>}
-      </span>
-    </li>
-  );
-}
-
 export interface IDashboardPageProps {
   workspaceId: string;
   workspaceSlug: string;
@@ -78,6 +56,8 @@ export interface IDashboardPageProps {
   role: TMemberRole;
   departments: string[];
   uid: string;
+  displayName: string;
+  email: string;
 }
 
 export function DashboardPage({
@@ -87,6 +67,8 @@ export function DashboardPage({
   role,
   departments,
   uid,
+  displayName,
+  email,
 }: IDashboardPageProps) {
   const projects = useProjects(workspaceId);
   const projectRows = projects.status === 'ready' ? projects.rows : [];
@@ -111,6 +93,8 @@ export function DashboardPage({
     .filter(needsAttention)
     .sort((a, b) => attentionRank(a) - attentionRank(b) || a.name.localeCompare(b.name));
 
+  const stats = portfolioStats(projectRows, buckets);
+
   const loading = projects.status === 'loading' || tasks.status === 'loading';
   const errored = projects.status === 'error' || tasks.status === 'error';
 
@@ -119,9 +103,17 @@ export function DashboardPage({
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-5">
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {now.toLocaleDateString(undefined, {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            })}
+            {' · '}
             {workspaceName}
           </p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">Home</h1>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">
+            {timeGreeting(now)}, {firstNameFrom(displayName, email)}
+          </h1>
         </div>
         {canCreate && (
           <Button asChild>
@@ -135,6 +127,8 @@ export function DashboardPage({
 
       {!loading && !errored && (
         <>
+          <StatStrip stats={stats} />
+
           <section aria-labelledby="dashboard-tasks-heading" className="flex flex-col gap-3">
             <h2 id="dashboard-tasks-heading" className="text-lg font-semibold">
               Your tasks
@@ -177,16 +171,26 @@ export function DashboardPage({
               aria-labelledby={`dashboard-tab-${bucket}`}
             >
               {buckets[bucket].length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                  {BUCKETS.find((b) => b.id === bucket)?.empty}
-                </p>
+                <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center">
+                  <CalendarIcon className="h-6 w-6 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {BUCKETS.find((b) => b.id === bucket)?.empty}
+                  </p>
+                  <Link
+                    to={`/${workspaceSlug}/projects`}
+                    className="text-sm font-medium text-primary underline hover:text-primary/80"
+                  >
+                    Browse projects
+                  </Link>
+                </div>
               ) : (
                 <ul className="flex flex-col gap-2">
                   {buckets[bucket].map((task) => (
-                    <TaskListItem
+                    <DashboardTaskCard
                       key={`${task.projectId}-${task.id}`}
                       task={task}
                       workspaceSlug={workspaceSlug}
+                      now={now}
                     />
                   ))}
                 </ul>
@@ -211,37 +215,18 @@ export function DashboardPage({
               </p>
             </div>
             {attention.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                All projects are on track.
-              </p>
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center">
+                <FolderIcon className="h-6 w-6 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">All projects are on track.</p>
+              </div>
             ) : (
               <ul className="flex flex-col gap-2">
                 {attention.map((project) => (
-                  <li
+                  <AttentionCard
                     key={project.id}
-                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-border bg-card px-4 py-3 shadow-card"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Link
-                        to={`/${workspaceSlug}/projects/${project.id}`}
-                        className="truncate font-medium text-foreground hover:text-primary"
-                      >
-                        {project.name}
-                      </Link>
-                      <LifecycleBadge lifecycle={project.lifecycle} />
-                      <HealthBadge project={project} />
-                    </span>
-                    <span className="flex w-44 items-center gap-2">
-                      <Progress
-                        value={project.progressPct}
-                        label={`${project.name} progress`}
-                        className="flex-1"
-                      />
-                      <span className="text-sm font-medium text-muted-foreground tabular-nums">
-                        {project.progressPct}%
-                      </span>
-                    </span>
-                  </li>
+                    project={project}
+                    workspaceSlug={workspaceSlug}
+                  />
                 ))}
               </ul>
             )}

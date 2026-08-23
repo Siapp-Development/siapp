@@ -360,7 +360,7 @@ export function TasksSection({
 
   const [view, setView] = useState<'list' | 'timeline'>('list');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(deepLinkedTaskId);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [reorderPendingByGroup, setReorderPendingByGroup] = useState<ReadonlySet<string>>(new Set());
   const [activeDrag, setActiveDrag] = useState<IActiveDrag | null>(null);
