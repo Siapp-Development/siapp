@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useCallback } from 'react';
+import { MemoryRouter, useSearchParams } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
 
@@ -140,6 +142,53 @@ beforeEach(() => {
   };
   tasksData.tasksState = { status: 'ready', rows: [] };
 });
+
+/**
+ * Mirrors the wiring in ProjectDetailPage: the `?task=` URL param feeds
+ * `deepLinkedTaskId`, and `onSelectedTaskChange(null)` DELETES that param.
+ * Used by the #102 regression test to exercise the REAL round-trip that the
+ * no-op-callback unit test (#90) cannot.
+ */
+function DeepLinkHarness() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedTaskId = searchParams.get('task');
+  const handleSelectedTaskChange = useCallback(
+    (taskId: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (taskId !== null) {
+            next.set('task', taskId);
+          } else {
+            next.delete('task');
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  return (
+    <>
+      <div data-testid="current-task-param">{deepLinkedTaskId ?? ''}</div>
+      <TasksSection
+        workspaceId="wksA"
+        projectId="p1"
+        role="pm"
+        departments={[]}
+        uid="u1"
+        userName="Alice Tan"
+        canEdit
+        lifecycle="published"
+        projectStartDate={null}
+        projectTargetDate={null}
+        deepLinkedTaskId={deepLinkedTaskId}
+        onSelectedTaskChange={handleSelectedTaskChange}
+      />
+    </>
+  );
+}
 
 describe('TasksSection', () => {
   it('groups tasks by phase with counts and supports collapsing', async () => {
@@ -621,6 +670,54 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
     expect(screen.getByRole('button', { name: /deep linked task to do/i })).toBeInTheDocument();
     expect(onSelectedTaskChange).toHaveBeenCalledWith('t2');
+  });
+
+  it('opens the deep-linked task drawer even when tasks load after mount (#102 regression)', async () => {
+    // Reproduces the Home → task-click bug: on a REAL navigation the project's
+    // useTasks/usePhases start in `loading`, and ProjectDetailPage's
+    // onSelectedTaskChange DELETES the `?task=` param when called with null.
+    // If selectedId inits to null (the old bug), the mount-time sync effect
+    // fires onSelectedTaskChange(null) → strips ?task= before tasks resolve, so
+    // the deep-link effect early-returns and the drawer never opens. The fix
+    // seeds selectedId from deepLinkedTaskId. Unlike the #90 unit test, this
+    // uses a REAL router param round-trip AND a real loading→ready transition.
+    tasksData.tasksState = { status: 'loading' };
+    tasksData.phasesState = { status: 'loading' };
+
+    // The MemoryRouter history is created once (from a ref), so it PERSISTS
+    // across rerenders even though fresh element instances are passed — any
+    // mount-time param strip survives, which is exactly what makes the old bug
+    // fail here. (Fresh instances are required: reusing one element reference
+    // triggers React's same-element bailout and skips the re-render.)
+    const harnessTree = () => (
+      <MemoryRouter initialEntries={['/acme/projects/p1?task=t2']}>
+        <DeepLinkHarness />
+      </MemoryRouter>
+    );
+    const view = render(harnessTree());
+
+    // Still loading — the mount-time sync effect must NOT have wiped ?task=t2.
+    expect(screen.getByText(/loading tasks/i)).toBeInTheDocument();
+    expect(screen.getByTestId('current-task-param')).toHaveTextContent('t2');
+
+    // Firestore resolves: phases + the deep-linked task row (t2) arrive.
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't2', phaseId: 'ph1', title: 'Deep linked task', order: 2 })],
+    };
+    tasksData.phasesState = {
+      status: 'ready',
+      rows: [
+        { id: 'ph1', name: 'Site prep', order: 1, startDate: null, endDate: null, status: 'todo' },
+      ],
+    };
+    view.rerender(harnessTree());
+
+    // Drawer opens for t2 AND the deep link is still present (not stripped).
+    await waitFor(() => {
+      expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
+    });
+    expect(screen.getByTestId('current-task-param')).toHaveTextContent('t2');
   });
 
   it('switches to the timeline view with bars, milestones and a today line', async () => {
