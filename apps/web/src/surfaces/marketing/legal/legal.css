@@ -105,3 +105,21 @@
   background: var(--muted);
   font-weight: 600;
 }
+
+/*
+ * Opt-in Call-to-Action disclosure (issue #107). Rendered as a bordered
+ * callout so a carrier/reviewer can clearly perceive the exact consent copy
+ * shown to recipients at the point of opt-in. Tokens only; no hardcoded color.
+ */
+.legal-prose .legal-callout {
+  margin-top: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 0.5rem;
+  background: var(--muted);
+}
+
+.legal-prose .legal-callout > :first-child {
+  margin-top: 0;
+}

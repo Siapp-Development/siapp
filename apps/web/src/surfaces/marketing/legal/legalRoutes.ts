@@ -8,6 +8,7 @@ export const LEGAL_PATHS = {
   terms: '/terms',
   campaignPrivacy: '/legal/campaign-privacy',
   smsTerms: '/legal/sms-terms',
+  messagingConsent: '/legal/messaging-consent',
 } as const;
 
 export interface ILegalLink {
@@ -21,4 +22,5 @@ export const LEGAL_LINKS: ILegalLink[] = [
   { label: 'Terms & Conditions', path: LEGAL_PATHS.terms },
   { label: 'Campaign Privacy Policy', path: LEGAL_PATHS.campaignPrivacy },
   { label: 'SMS / Messaging Terms', path: LEGAL_PATHS.smsTerms },
+  { label: 'Messaging Consent & Opt-In', path: LEGAL_PATHS.messagingConsent },
 ];

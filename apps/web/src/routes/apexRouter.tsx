@@ -102,6 +102,17 @@ export const apexRoutes: RouteObject[] = [
       return { Component: SmsTermsPage };
     },
   },
+  {
+    path: '/legal/messaging-consent',
+    HydrateFallback: LoadingFallback,
+    errorElement: <RouteErrorFallback surface="apex" />,
+    lazy: async () => {
+      const { MessagingConsentPage } = await import(
+        '@/surfaces/marketing/legal/MessagingConsentPage.tsx'
+      );
+      return { Component: MessagingConsentPage };
+    },
+  },
   // Apex has no layout route, so unknown paths would otherwise fall through
   // to React Router's default error screen (a blank page in production).
   { path: '*', Component: NotFoundScreen },

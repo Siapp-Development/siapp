@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { CampaignPrivacyPage } from './CampaignPrivacyPage.tsx';
+import { MessagingConsentPage } from './MessagingConsentPage.tsx';
 import { PrivacyPolicyPage } from './PrivacyPolicyPage.tsx';
 import { SmsTermsPage } from './SmsTermsPage.tsx';
 import { TermsPage } from './TermsPage.tsx';
@@ -12,19 +13,21 @@ function renderPage(ui: React.ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
 
-/** All four public legal pages, keyed by their rendered <h1>. */
+/** All five public legal pages, keyed by their rendered <h1>. */
 const ALL_PAGES: [name: string, ui: React.ReactElement][] = [
   ['PrivacyPolicyPage', <PrivacyPolicyPage />],
   ['TermsPage', <TermsPage />],
   ['CampaignPrivacyPage', <CampaignPrivacyPage />],
   ['SmsTermsPage', <SmsTermsPage />],
+  ['MessagingConsentPage', <MessagingConsentPage />],
 ];
 
-/** The three messaging pages carrying the Twilio A2P carrier disclosures. */
+/** The four messaging pages carrying the Twilio A2P carrier disclosures. */
 const MESSAGING_PAGES: [name: string, ui: React.ReactElement][] = [
   ['PrivacyPolicyPage', <PrivacyPolicyPage />],
   ['CampaignPrivacyPage', <CampaignPrivacyPage />],
   ['SmsTermsPage', <SmsTermsPage />],
+  ['MessagingConsentPage', <MessagingConsentPage />],
 ];
 
 describe('legal pages — structure & a11y', () => {
@@ -33,6 +36,7 @@ describe('legal pages — structure & a11y', () => {
     ['TermsPage', <TermsPage />, 'Siapp Terms & Conditions'],
     ['CampaignPrivacyPage', <CampaignPrivacyPage />, 'Siapp Messaging Campaign Privacy Policy'],
     ['SmsTermsPage', <SmsTermsPage />, 'Siapp SMS / Messaging Program Terms & Conditions'],
+    ['MessagingConsentPage', <MessagingConsentPage />, 'Siapp Messaging Consent & Opt-In'],
   ])('%s renders a single h1, a main landmark, and a home link', (_name, ui, title) => {
     renderPage(ui);
 
@@ -49,6 +53,7 @@ describe('legal pages — Twilio-mandated disclosures', () => {
     ['CampaignPrivacyPage', <CampaignPrivacyPage />],
     ['SmsTermsPage', <SmsTermsPage />],
     ['PrivacyPolicyPage', <PrivacyPolicyPage />],
+    ['MessagingConsentPage', <MessagingConsentPage />],
   ])('%s preserves the carrier-required clauses verbatim', (_name, ui) => {
     const { container } = renderPage(ui);
     const text = container.textContent ?? '';
@@ -149,6 +154,7 @@ describe('legal pages — STOP/HELP opt-out instructions (A2P)', () => {
   it.each([
     ['CampaignPrivacyPage', <CampaignPrivacyPage />],
     ['SmsTermsPage', <SmsTermsPage />],
+    ['MessagingConsentPage', <MessagingConsentPage />],
   ])('%s tells recipients to reply STOP and HELP', (_name, ui) => {
     const { container } = renderPage(ui);
     const text = container.textContent ?? '';
@@ -172,6 +178,7 @@ describe('legal pages — entity name simplified to "Siapp"', () => {
     ['TermsPage', <TermsPage />],
     ['CampaignPrivacyPage', <CampaignPrivacyPage />],
     ['SmsTermsPage', <SmsTermsPage />],
+    ['MessagingConsentPage', <MessagingConsentPage />],
   ])('%s no longer references "Sdn Bhd"', (_name, ui) => {
     const { container } = renderPage(ui);
 
@@ -210,5 +217,49 @@ describe('legal pages — every cross-link uses an in-app router path', () => {
     for (const link of main.getAllByRole('link', { name: 'SMS / Messaging Terms' })) {
       expect(link).toHaveAttribute('href', '/legal/sms-terms');
     }
+  });
+
+  it('MessagingConsentPage cross-links resolve to the legal routes', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const main = within(screen.getByRole('main'));
+    for (const link of main.getAllByRole('link', { name: 'Privacy Policy' })) {
+      expect(link).toHaveAttribute('href', '/privacy');
+    }
+    for (const link of main.getAllByRole('link', { name: 'SMS / Messaging Terms' })) {
+      expect(link).toHaveAttribute('href', '/legal/sms-terms');
+    }
+  });
+});
+
+describe('MessagingConsentPage — opt-in Call to Action disclosure', () => {
+  it('renders the exact opt-in CTA consent copy as a perceivable callout', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const main = within(screen.getByRole('main'));
+    // The ☐ checkbox consent line is shown verbatim.
+    expect(
+      main.getByText(
+        /I agree to receive project update messages from \[Firm Name\] via Siapp by SMS and\/or WhatsApp\./i,
+      ),
+    ).toBeInTheDocument();
+
+    // The disclosure is exposed as a distinct, labelled callout region.
+    const callout = screen.getByLabelText(/opt-in disclosure/i);
+    expect(callout).toBeInTheDocument();
+    expect(callout.textContent ?? '').toMatch(/Message frequency varies\./);
+    expect(callout.textContent ?? '').toMatch(/Message and data rates may apply\./);
+    expect(callout.textContent ?? '').toMatch(/Reply STOP to unsubscribe, HELP for help\./);
+  });
+
+  it('carries the four carrier-mandated phrases verbatim', () => {
+    const { container } = renderPage(<MessagingConsentPage />);
+    const text = container.textContent ?? '';
+
+    expect(text).toMatch(/do not share, sell, or rent mobile numbers or messaging consent/i);
+    expect(text).toMatch(/message frequency varies/i);
+    expect(text).toMatch(/Message and data rates may apply/);
+    expect(text).toMatch(/\bSTOP\b/);
+    expect(text).toMatch(/\bHELP\b/);
   });
 });

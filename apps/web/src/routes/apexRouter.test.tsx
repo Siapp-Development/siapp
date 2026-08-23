@@ -210,6 +210,7 @@ describe('apexRouter', () => {
     ['/terms', 'Siapp Terms & Conditions'],
     ['/legal/campaign-privacy', 'Siapp Messaging Campaign Privacy Policy'],
     ['/legal/sms-terms', 'Siapp SMS / Messaging Program Terms & Conditions'],
+    ['/legal/messaging-consent', 'Siapp Messaging Consent & Opt-In'],
   ])('lazy-loads the legal page at %s with its h1', async (path, heading) => {
     renderAt(path);
 
