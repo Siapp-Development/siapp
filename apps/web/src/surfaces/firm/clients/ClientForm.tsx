@@ -8,6 +8,7 @@
 
 import { Alert, Button, Input, Label } from '@siapp/ui';
 import type { TLocale } from '@siapp/shared';
+import { Building2, Globe, Mail, Phone, StickyNote, User } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ConsentCheckbox } from '../pdpa/ConsentCheckbox.tsx';
@@ -78,57 +79,71 @@ export function ClientForm({ client, firmName, onSubmit, onCancel, submitLabel }
   return (
     <form onSubmit={(event) => void handleSubmit(event)} noValidate className="flex flex-col gap-4">
       {error !== null && <Alert variant="destructive">{error}</Alert>}
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-          <Label htmlFor="client-name">Name</Label>
-          <Input id="client-name" value={name} onChange={(event) => setName(event.target.value)} />
-        </div>
-        <div className="flex min-w-48 flex-col gap-1.5">
-          <Label htmlFor="client-phone">Phone</Label>
-          <Input
-            id="client-phone"
-            type="tel"
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-          />
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-          <Label htmlFor="client-email">Email (optional)</Label>
-          <Input
-            id="client-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </div>
-        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
-          <Label htmlFor="client-company">Company (optional)</Label>
-          <Input
-            id="client-company"
-            value={companyName}
-            onChange={(event) => setCompanyName(event.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="client-language">Preferred language</Label>
-          <select
-            id="client-language"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            value={language}
-            onChange={(event) => setLanguage(event.target.value as TLocale)}
-          >
-            {LANGUAGES.map((option) => (
-              <option key={option} value={option}>
-                {LANGUAGE_LABELS[option]}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="client-name" className="flex items-center gap-1.5">
+          <User className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Name
+        </Label>
+        <Input id="client-name" value={name} onChange={(event) => setName(event.target.value)} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="client-notes">Notes (optional)</Label>
+        <Label htmlFor="client-phone" className="flex items-center gap-1.5">
+          <Phone className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Phone
+        </Label>
+        <Input
+          id="client-phone"
+          type="tel"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="client-email" className="flex items-center gap-1.5">
+          <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Email (optional)
+        </Label>
+        <Input
+          id="client-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="client-company" className="flex items-center gap-1.5">
+          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Company (optional)
+        </Label>
+        <Input
+          id="client-company"
+          value={companyName}
+          onChange={(event) => setCompanyName(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="client-language" className="flex items-center gap-1.5">
+          <Globe className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Preferred language
+        </Label>
+        <select
+          id="client-language"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          value={language}
+          onChange={(event) => setLanguage(event.target.value as TLocale)}
+        >
+          {LANGUAGES.map((option) => (
+            <option key={option} value={option}>
+              {LANGUAGE_LABELS[option]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="client-notes" className="flex items-center gap-1.5">
+          <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Notes (optional)
+        </Label>
         <textarea
           id="client-notes"
           className="min-h-20 rounded-md border border-border bg-background px-3 py-2 text-sm"

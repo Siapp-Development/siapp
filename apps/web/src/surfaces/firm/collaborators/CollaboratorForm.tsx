@@ -7,6 +7,7 @@
 
 import { Alert, Button, Input, Label } from '@siapp/ui';
 import type { TCollaboratorType } from '@siapp/shared';
+import { Briefcase, Building2, Mail, Phone, User, Users } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { normalizePhone } from '../clients/normalizePhone.ts';
@@ -81,66 +82,80 @@ export function CollaboratorForm({
   return (
     <form onSubmit={(event) => void handleSubmit(event)} noValidate className="flex flex-col gap-4">
       {error !== null && <Alert variant="destructive">{error}</Alert>}
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-          <Label htmlFor="collaborator-name">Name</Label>
-          <Input
-            id="collaborator-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </div>
-        <div className="flex min-w-48 flex-col gap-1.5">
-          <Label htmlFor="collaborator-phone">Phone</Label>
-          <Input
-            id="collaborator-phone"
-            type="tel"
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="collaborator-type">Type</Label>
-          <select
-            id="collaborator-type"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            value={type}
-            onChange={(event) => setType(event.target.value as TCollaboratorType)}
-          >
-            {TYPES.map((option) => (
-              <option key={option} value={option}>
-                {TYPE_LABELS[option]}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-name" className="flex items-center gap-1.5">
+          <User className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Name
+        </Label>
+        <Input
+          id="collaborator-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
       </div>
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
-          <Label htmlFor="collaborator-trade">Trade (optional)</Label>
-          <Input
-            id="collaborator-trade"
-            value={trade}
-            onChange={(event) => setTrade(event.target.value)}
-          />
-        </div>
-        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
-          <Label htmlFor="collaborator-company">Company (optional)</Label>
-          <Input
-            id="collaborator-company"
-            value={company}
-            onChange={(event) => setCompany(event.target.value)}
-          />
-        </div>
-        <div className="flex min-w-64 flex-1 flex-col gap-1.5">
-          <Label htmlFor="collaborator-email">Email (optional)</Label>
-          <Input
-            id="collaborator-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-phone" className="flex items-center gap-1.5">
+          <Phone className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Phone
+        </Label>
+        <Input
+          id="collaborator-phone"
+          type="tel"
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-type" className="flex items-center gap-1.5">
+          <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Type
+        </Label>
+        <select
+          id="collaborator-type"
+          className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+          value={type}
+          onChange={(event) => setType(event.target.value as TCollaboratorType)}
+        >
+          {TYPES.map((option) => (
+            <option key={option} value={option}>
+              {TYPE_LABELS[option]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-trade" className="flex items-center gap-1.5">
+          <Briefcase className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Trade (optional)
+        </Label>
+        <Input
+          id="collaborator-trade"
+          value={trade}
+          onChange={(event) => setTrade(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-company" className="flex items-center gap-1.5">
+          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Company (optional)
+        </Label>
+        <Input
+          id="collaborator-company"
+          value={company}
+          onChange={(event) => setCompany(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="collaborator-email" className="flex items-center gap-1.5">
+          <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Email (optional)
+        </Label>
+        <Input
+          id="collaborator-email"
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
       </div>
       <ConsentCheckbox
         firmName={firmName}

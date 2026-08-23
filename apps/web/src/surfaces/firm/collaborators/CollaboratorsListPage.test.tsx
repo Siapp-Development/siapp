@@ -118,7 +118,9 @@ describe('CollaboratorsListPage', () => {
     renderPage('viewer');
     expect(screen.queryByRole('button', { name: 'New collaborator' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Archive/ })).not.toBeInTheDocument();
+    // Management archive actions are "Archive {name}"; the "Archived (N)"
+    // filter chip stays available to viewers, so match the action form only.
+    expect(screen.queryByRole('button', { name: /^Archive \S/ })).not.toBeInTheDocument();
   });
 
   it('creates a collaborator with a normalized phone number', async () => {
@@ -147,7 +149,7 @@ describe('CollaboratorsListPage', () => {
     );
   });
 
-  it('archives a collaborator and hides it behind the archived toggle', async () => {
+  it('archives a collaborator and hides it behind the archived filter', async () => {
     const user = userEvent.setup();
     collaboratorsData.state = {
       status: 'ready',
@@ -166,9 +168,33 @@ describe('CollaboratorsListPage', () => {
       'archived',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Archived (1)' }));
     expect(screen.getByText('Old Sub')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Unarchive Old Sub' })).toBeInTheDocument();
+    // Active-only "Lim Electrical" is hidden while the Archived filter is on.
+    expect(screen.queryByText('Lim Electrical')).not.toBeInTheDocument();
+  });
+
+  it('filters collaborators by name and by company via the search box', async () => {
+    const user = userEvent.setup();
+    collaboratorsData.state = {
+      status: 'ready',
+      rows: [
+        collaboratorRow({ id: 'col1', name: 'Lim Electrical', company: 'Lim Sdn Bhd' }),
+        collaboratorRow({ id: 'col2', name: 'Tan Plumbing', company: 'Tan Works' }),
+      ],
+    };
+    renderPage();
+
+    const searchBox = screen.getByLabelText('Search by name or company');
+    await user.type(searchBox, 'plumb');
+    expect(screen.getByText('Tan Plumbing')).toBeInTheDocument();
+    expect(screen.queryByText('Lim Electrical')).not.toBeInTheDocument();
+
+    await user.clear(searchBox);
+    await user.type(searchBox, 'lim sdn');
+    expect(screen.getByText('Lim Electrical')).toBeInTheDocument();
+    expect(screen.queryByText('Tan Plumbing')).not.toBeInTheDocument();
   });
 
   it('edits an existing collaborator', async () => {
@@ -200,6 +226,22 @@ describe('CollaboratorsListPage', () => {
     );
   });
 
+  it('opens the create form in a drawer dialog and submits the vertical form', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'New collaborator' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'New collaborator' });
+    expect(dialog).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Name'), 'Wong Roofing');
+    await user.type(screen.getByLabelText('Phone'), '012-345 6789');
+    await user.click(screen.getByRole('button', { name: 'Add collaborator' }));
+
+    expect(collaboratorsData.createCollaborator).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the no-consent badge when a collaborator has no consent record', () => {
     collaboratorsData.state = {
       status: 'ready',
@@ -225,8 +267,8 @@ describe('CollaboratorsListPage', () => {
     };
     renderPage();
 
-    // The callable archives erased collaborators; reveal via the toggle.
-    await user.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+    // The callable archives erased collaborators; reveal via the filter.
+    await user.click(screen.getByRole('button', { name: 'Archived (1)' }));
     expect(screen.getByText('Personal data deleted')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Edit/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Unarchive/ })).not.toBeInTheDocument();
