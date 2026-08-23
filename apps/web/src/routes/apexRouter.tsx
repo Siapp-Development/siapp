@@ -59,6 +59,49 @@ export const apexRoutes: RouteObject[] = [
       return { Component: CollabTaskPage };
     },
   },
+  // Public legal pages (#100). Grouped so Vite emits one shared `legal` chunk;
+  // apex-only modules, no firm/admin imports (D-036/D-037). Placed before the
+  // catch-all so they resolve to their pages, not NotFoundScreen.
+  {
+    path: '/privacy',
+    HydrateFallback: LoadingFallback,
+    errorElement: <RouteErrorFallback surface="apex" />,
+    lazy: async () => {
+      const { PrivacyPolicyPage } = await import(
+        '@/surfaces/marketing/legal/PrivacyPolicyPage.tsx'
+      );
+      return { Component: PrivacyPolicyPage };
+    },
+  },
+  {
+    path: '/terms',
+    HydrateFallback: LoadingFallback,
+    errorElement: <RouteErrorFallback surface="apex" />,
+    lazy: async () => {
+      const { TermsPage } = await import('@/surfaces/marketing/legal/TermsPage.tsx');
+      return { Component: TermsPage };
+    },
+  },
+  {
+    path: '/legal/campaign-privacy',
+    HydrateFallback: LoadingFallback,
+    errorElement: <RouteErrorFallback surface="apex" />,
+    lazy: async () => {
+      const { CampaignPrivacyPage } = await import(
+        '@/surfaces/marketing/legal/CampaignPrivacyPage.tsx'
+      );
+      return { Component: CampaignPrivacyPage };
+    },
+  },
+  {
+    path: '/legal/sms-terms',
+    HydrateFallback: LoadingFallback,
+    errorElement: <RouteErrorFallback surface="apex" />,
+    lazy: async () => {
+      const { SmsTermsPage } = await import('@/surfaces/marketing/legal/SmsTermsPage.tsx');
+      return { Component: SmsTermsPage };
+    },
+  },
   // Apex has no layout route, so unknown paths would otherwise fall through
   // to React Router's default error screen (a blank page in production).
   { path: '*', Component: NotFoundScreen },

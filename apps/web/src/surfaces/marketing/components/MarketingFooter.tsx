@@ -1,4 +1,8 @@
+import { Link } from 'react-router';
+
 import siappLogoFull from '@/assets/siapp-logo-full.png';
+
+import { LEGAL_PATHS } from '../legal/legalRoutes.ts';
 
 const FORM_URL = import.meta.env.VITE_EARLY_ACCESS_FORM_URL;
 
@@ -44,6 +48,19 @@ export function MarketingFooter() {
                 <a href="#faq" className="text-muted-foreground hover:text-foreground">
                   FAQ
                 </a>
+              </li>
+              <li>
+                <Link
+                  to={LEGAL_PATHS.privacy}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Privacy
+                </Link>
+              </li>
+              <li>
+                <Link to={LEGAL_PATHS.terms} className="text-muted-foreground hover:text-foreground">
+                  Terms
+                </Link>
               </li>
               <li>
                 <a
