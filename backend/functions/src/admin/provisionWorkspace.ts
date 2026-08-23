@@ -125,10 +125,12 @@ export async function provisionWorkspace(
   // Resolve or create the owner's Firebase Auth user.
   let ownerUid: string;
   let ownerName: string;
+  let ownerPhotoUrl: string | undefined;
   try {
     const existingUser = await auth.getUserByEmail(input.ownerEmail);
     ownerUid = existingUser.uid;
     ownerName = existingUser.displayName ?? input.ownerEmail;
+    ownerPhotoUrl = existingUser.photoURL ?? undefined;
   } catch (err: unknown) {
     const isNotFound =
       typeof err === 'object' &&
@@ -178,6 +180,10 @@ export async function provisionWorkspace(
     uid: ownerUid,
     email: input.ownerEmail,
     displayName: ownerName,
+    // #104: seed the member-readable avatar denorm when the owner already has
+    // a photo (omitted otherwise; the syncMemberProfile trigger fills it in on
+    // the owner's first profile edit).
+    ...(ownerPhotoUrl !== undefined ? { photoUrl: ownerPhotoUrl } : {}),
     role: 'owner',
     departments: [],
     seatActive: true,

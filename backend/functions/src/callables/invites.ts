@@ -262,6 +262,13 @@ export const acceptInvite = onCall(async (request) => {
 
   const displayName =
     (typeof request.auth?.token['name'] === 'string' && request.auth.token['name']) || callerEmail;
+  // #104: seed the member-readable avatar denorm from the accepting user's
+  // token picture (Google SSO) if present; the syncMemberProfile trigger keeps
+  // it fresh after any later profile edit.
+  const photoUrl =
+    typeof request.auth?.token['picture'] === 'string' && request.auth.token['picture'] !== ''
+      ? request.auth.token['picture']
+      : undefined;
 
   const accepted = await db.runTransaction(async (txn) => {
     const [inviteSnap, memberSnap, workspaceSnap] = await Promise.all([
@@ -310,6 +317,7 @@ export const acceptInvite = onCall(async (request) => {
       uid,
       email: callerEmail,
       displayName,
+      ...(photoUrl !== undefined ? { photoUrl } : {}),
       role,
       departments: [],
       seatActive: true,
