@@ -65,6 +65,8 @@ export interface ITaskRow {
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
   notify: ITaskNotifyConfig;
+  /** taskTags ids (D-041); missing → []. */
+  tags: string[];
   /** Missing means true for legacy tasks (#92). */
   collaboratorCanSeeAllAttachments: boolean;
   order: number;
@@ -193,6 +195,7 @@ export function mapTask(id: string, data: DocumentData): ITaskRow {
     restrictedToDepartments: asStringArray(data['restrictedToDepartments']),
     sendWhatsapp: data['sendWhatsapp'] === true,
     notify: mapNotify(data['notify']),
+    tags: asStringArray(data['tags']),
     collaboratorCanSeeAllAttachments:
       typeof data['collaboratorCanSeeAllAttachments'] === 'boolean'
         ? data['collaboratorCanSeeAllAttachments']
@@ -427,6 +430,8 @@ export interface ITaskFormValues {
   restrictedToDepartments: string[];
   sendWhatsapp: boolean;
   collaboratorCanSeeAllAttachments: boolean;
+  /** taskTags ids (D-041). */
+  tags: string[];
   blockedBy?: ITaskBlockedBy | null;
   /** Absent on quick-add — backend applies TASK_NOTIFY_DEFAULTS (#18). */
   notify?: ITaskNotifyConfig;
@@ -456,6 +461,7 @@ export async function createTask(
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
     ...(values.notify !== undefined ? { notify: values.notify } : {}),
+    ...(values.tags.length > 0 ? { tags: values.tags } : {}),
     order,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -493,6 +499,7 @@ export async function updateTask(
     restrictedToDepartments: values.restrictedToDepartments,
     sendWhatsapp: values.sendWhatsapp,
     ...(values.notify !== undefined ? { notify: values.notify } : {}),
+    tags: values.tags.length > 0 ? values.tags : deleteField(),
     updatedAt: serverTimestamp(),
     // #23: rules require updatedBy == auth.uid so activity is attributable.
     updatedBy: uid,

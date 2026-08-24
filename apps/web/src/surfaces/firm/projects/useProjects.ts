@@ -32,6 +32,8 @@ export interface IProjectRow {
   ownerNameDenorm: string;
   startDate: Date | null;
   targetEndDate: Date | null;
+  /** Server `updatedAt`; drives the projects-list "last updated" sort. */
+  updatedAt: Date | null;
   progressPct: number;
   totalTasks: number;
   doneTasks: number;
@@ -39,6 +41,8 @@ export interface IProjectRow {
   blockedTasks: number;
   clientCanSee: boolean;
   collaboratorsCount: number;
+  /** projectTags ids (D-041); missing → []. */
+  tags: string[];
 }
 
 export type TProjectsState =
@@ -56,6 +60,10 @@ function asDate(value: unknown): Date | null {
   return value instanceof Timestamp ? value.toDate() : null;
 }
 
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
 function mapProject(id: string, data: DocumentData): IProjectRow {
   const summary = (data['summary'] ?? {}) as Record<string, unknown>;
   const visibility = (data['visibility'] ?? {}) as Record<string, unknown>;
@@ -71,6 +79,7 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
     ownerNameDenorm: String(data['ownerNameDenorm'] ?? ''),
     startDate: asDate(data['startDate']),
     targetEndDate: asDate(data['targetEndDate']),
+    updatedAt: asDate(data['updatedAt']),
     progressPct: typeof summary['progressPct'] === 'number' ? summary['progressPct'] : 0,
     totalTasks: typeof summary['totalTasks'] === 'number' ? summary['totalTasks'] : 0,
     doneTasks: typeof summary['doneTasks'] === 'number' ? summary['doneTasks'] : 0,
@@ -80,6 +89,7 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
     clientCanSee: visibility['clientCanSee'] === true,
     collaboratorsCount:
       typeof visibility['collaboratorsCount'] === 'number' ? visibility['collaboratorsCount'] : 0,
+    tags: asStringArray(data['tags']),
   };
 }
 
@@ -193,6 +203,22 @@ export async function updateProject(
     targetEndDate:
       values.targetEndDate !== null ? Timestamp.fromDate(values.targetEndDate) : deleteField(),
     visibility: { clientCanSee: values.clientCanSee, collaboratorsCount },
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Persists only a project's `tags` (projectTags ids) + `updatedAt`. Tags are
+ * edited inline via `TagSelect`, not through `ProjectForm`; the update rule
+ * allowlists `tags` for owner/admin/pm on draft/published projects.
+ */
+export async function updateProjectTags(
+  workspaceId: string,
+  projectId: string,
+  tags: string[],
+): Promise<void> {
+  await updateDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}`), {
+    tags,
     updatedAt: serverTimestamp(),
   });
 }

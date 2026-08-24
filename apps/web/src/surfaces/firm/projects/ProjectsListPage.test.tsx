@@ -41,6 +41,16 @@ vi.mock('../clients/useClients.ts', () => ({
   useClients: () => clientsData.state,
 }));
 
+const tagsData = vi.hoisted(() => ({
+  state: { status: 'ready', tags: new Map() } as {
+    status: 'ready';
+    tags: ReadonlyMap<string, { name: string; color: string }>;
+  },
+}));
+vi.mock('./tags/useTags.ts', () => ({
+  useTags: () => tagsData.state,
+}));
+
 import { ProjectsListPage } from './ProjectsListPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
@@ -63,6 +73,8 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
+    updatedAt: null,
+    tags: [],
     ...overrides,
   };
 }
@@ -87,6 +99,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   projectsData.state = { status: 'ready', rows: [] };
   clientsData.state = { status: 'ready', rows: [] };
+  tagsData.state = { status: 'ready', tags: new Map() };
 });
 
 describe('ProjectsListPage', () => {
@@ -122,7 +135,7 @@ describe('ProjectsListPage', () => {
     expect(screen.getByText(/Ahmad Corp/)).toBeInTheDocument();
   });
 
-  it('hides deleted projects and tucks archived behind a toggle', async () => {
+  it('hides deleted and archived projects by default, revealing archived via the Filters pill', async () => {
     projectsData.state = {
       status: 'ready',
       rows: [
@@ -136,9 +149,54 @@ describe('ProjectsListPage', () => {
     expect(screen.queryByText('Old kitchen job')).not.toBeInTheDocument();
     expect(screen.queryByText('Ghost project')).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /show archived \(1\)/i }));
+    // Selecting the Archived lifecycle in the Filters pill surfaces archived
+    // projects; deleted projects remain hidden regardless.
+    await userEvent.click(screen.getByRole('button', { name: /^filters/i }));
+    const lifecycle = within(screen.getByRole('group', { name: 'Lifecycle' }));
+    await userEvent.click(lifecycle.getByRole('checkbox', { name: 'Archived' }));
+
     expect(screen.getByText('Old kitchen job')).toBeInTheDocument();
     expect(screen.queryByText('Ghost project')).not.toBeInTheDocument();
+  });
+
+  it('filters the visible rows by the title search box', async () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [
+        projectRow({ id: 'p1', name: 'Riverside Villa' }),
+        projectRow({ id: 'p2', name: 'City Office' }),
+      ],
+    };
+    renderPage();
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /search projects by title/i }),
+      'villa',
+    );
+
+    expect(screen.getByRole('link', { name: 'Riverside Villa' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'City Office' })).not.toBeInTheDocument();
+  });
+
+  it('shows a no-matches message when filters exclude every project', async () => {
+    projectsData.state = { status: 'ready', rows: [projectRow({ name: 'Riverside Villa' })] };
+    renderPage();
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /search projects by title/i }),
+      'zzz-no-match',
+    );
+
+    expect(screen.getByText('No projects match your filters.')).toBeInTheDocument();
+  });
+
+  it('renders the New-project button with a leading + icon and an accessible name', () => {
+    renderPage('pm');
+
+    const button = screen.getByRole('button', { name: /new project/i });
+    expect(button).toBeInTheDocument();
+    // The lucide + icon is decorative (aria-hidden) but present in the button.
+    expect(button.querySelector('svg')).not.toBeNull();
   });
 
   it('hides the New project button from viewers', () => {

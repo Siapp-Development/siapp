@@ -31,6 +31,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     createdBy: 'u1',
     blockedReason: '',
     blockedBy: null,
+    tags: [],
     projectId: 'p9',
     projectName: 'Office fit-out',
     ...overrides,

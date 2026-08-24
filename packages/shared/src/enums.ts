@@ -6,6 +6,29 @@ export type TProjectStatus = 'planning' | 'active' | 'on_hold' | 'completed' | '
 
 export type TProjectVertical = 'construction' | 'legal' | 'other';
 
+// Tag registry colour keys (D-041). The two workspace tag registries
+// (projectTags + taskTags) share this palette; each key resolves to a
+// WCAG-safe (>= 4.5:1) class pair via `tagColorClasses` in @siapp/ui. Keep
+// this union in lockstep with `TAG_COLOR_KEYS` in @siapp/ui/lib/tagColor.ts.
+export type TTagColor = 'slate' | 'red' | 'amber' | 'green' | 'blue' | 'violet' | 'pink' | 'teal';
+
+// Ordered palette list — used for round-robin colour assignment on inline
+// tag create. Mirrors the `TTagColor` union above.
+export const TAG_COLORS: readonly TTagColor[] = [
+  'slate',
+  'red',
+  'amber',
+  'green',
+  'blue',
+  'violet',
+  'pink',
+  'teal',
+] as const;
+
+// Which registry a tag belongs to. Project tags and task tags are
+// independent pools (D-041); the shared TagSelect/useTags take this scope.
+export type TTagScope = 'project' | 'task';
+
 // Task status values
 export type TTaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
 

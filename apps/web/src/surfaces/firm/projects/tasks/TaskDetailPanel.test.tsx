@@ -72,6 +72,7 @@ function taskRow(overrides: Partial<ITaskRow> = {}): ITaskRow {
     createdBy: 'u1',
     blockedReason: '',
     blockedBy: null,
+    tags: [],
     ...overrides,
   };
 }

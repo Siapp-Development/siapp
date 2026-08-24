@@ -20,6 +20,8 @@ import ReactMarkdown from 'react-markdown';
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
 import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import { TaskAttachments } from '../documents/DocumentsSection.tsx';
+import { TagSelect } from '../tags/TagSelect.tsx';
+import { createTag, deleteTag, useTags } from '../tags/useTags.ts';
 import { CollabLinkButton } from './CollabLinkButton.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
@@ -282,9 +284,11 @@ export function TaskDetailPanel({
     task.collaboratorCanSeeAllAttachments,
   );
   const [notify, setNotify] = useState(task.notify);
+  const [tags, setTags] = useState<string[]>(task.tags);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const taskTags = useTags(workspaceId, 'task');
 
   // A pm can only pick departments they belong to — rules deny restricting a
   // task into invisibility (owner/admin bypass the restriction entirely).
@@ -346,6 +350,7 @@ export function TaskDetailPanel({
           sendWhatsapp,
           blockedBy: nextBlockedBy,
           notify,
+          tags,
         },
         task.status === 'done',
         uid,
@@ -512,6 +517,22 @@ export function TaskDetailPanel({
                     <dd className="whitespace-pre-wrap">{task.description}</dd>
                   </div>
                 )}
+                {task.tags.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Tags</dt>
+                    <dd className="mt-1">
+                      <TagSelect
+                        label="Task tags"
+                        allTags={taskTags.tags}
+                        value={task.tags}
+                        canEdit={false}
+                        onChange={() => undefined}
+                        onCreateTag={() => Promise.resolve('')}
+                        onDeleteTag={() => Promise.resolve()}
+                      />
+                    </dd>
+                  </div>
+                )}
               </dl>
             ) : (
               <form
@@ -553,6 +574,18 @@ export function TaskDetailPanel({
                     onChange={(event) => setDescription(event.target.value)}
                     rows={3}
                     className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium">Tags</span>
+                  <TagSelect
+                    label="Task tags"
+                    allTags={taskTags.tags}
+                    value={tags}
+                    canEdit
+                    onChange={setTags}
+                    onCreateTag={(name, color) => createTag(workspaceId, 'task', name, color, uid)}
+                    onDeleteTag={(tagId) => deleteTag(workspaceId, 'task', tagId)}
                   />
                 </div>
                 <div className="flex flex-wrap gap-4">

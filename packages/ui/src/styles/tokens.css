@@ -82,6 +82,30 @@
   --avatar-9-fg: #ffffff;
   --avatar-10-bg: #7c2d6b;
   --avatar-10-fg: #ffffff;
+
+  /*
+   * Tag palette (D-041). Each background pairs with white text and clears
+   * WCAG 2.1 AA (>= 4.5:1) — asserted by tagColor.test.ts. The two tag
+   * registries (projectTags/taskTags) share this palette; the `TTagColor`
+   * key selects a pair. Do not add a pair without re-running the contrast
+   * assertion, and keep keys in sync with TAG_COLOR_KEYS in tagColor.ts.
+   */
+  --tag-slate-bg: #475569;
+  --tag-slate-fg: #ffffff;
+  --tag-red-bg: #b3372f;
+  --tag-red-fg: #ffffff;
+  --tag-amber-bg: #92600a;
+  --tag-amber-fg: #ffffff;
+  --tag-green-bg: #15803d;
+  --tag-green-fg: #ffffff;
+  --tag-blue-bg: #1d4ed8;
+  --tag-blue-fg: #ffffff;
+  --tag-violet-bg: #6b21a8;
+  --tag-violet-fg: #ffffff;
+  --tag-pink-bg: #9f1239;
+  --tag-pink-fg: #ffffff;
+  --tag-teal-bg: #0f766e;
+  --tag-teal-fg: #ffffff;
 }
 
 [data-surface='firm'] {
