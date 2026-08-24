@@ -48,6 +48,8 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: false,
     collaboratorsCount: 0,
+    updatedAt: null,
+    tags: [],
     ...overrides,
   };
 }
@@ -74,6 +76,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     createdBy: UID,
     blockedReason: '',
     blockedBy: null,
+    tags: [],
     projectId: 'p1',
     projectName: 'Bungalow build',
     ...overrides,

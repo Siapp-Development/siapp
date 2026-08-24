@@ -70,6 +70,8 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
+    updatedAt: null,
+    tags: [],
     ...overrides,
   };
 }
@@ -275,10 +277,14 @@ describe('ProjectDetailPage', () => {
     const err = new Error('boom');
     mockCallables.setProjectLifecycle.mockRejectedValue(err);
     mockCallables.projectErrorCode.mockReturnValue('project/forbidden-transition');
-    renderPage('pm');
+    renderPage('owner');
     await openDetailsTab();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    // A lifecycle action (delete) routes through ProjectDetailPage's own error
+    // map; the publish-specific copy is covered in PublishProjectDialog.test.
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(screen.getByRole('button', { name: /delete project/i }));
+
     expect(await screen.findByText(/your role cannot perform this action/i)).toBeInTheDocument();
   });
 });

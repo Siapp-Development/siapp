@@ -30,6 +30,7 @@ function taskRow(overrides: Partial<IDashboardTaskRow> = {}): IDashboardTaskRow 
     createdBy: UID,
     blockedReason: '',
     blockedBy: null,
+    tags: [],
     projectId: 'p1',
     projectName: 'Bungalow build',
     ...overrides,

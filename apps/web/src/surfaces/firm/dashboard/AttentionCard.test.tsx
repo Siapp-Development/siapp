@@ -25,6 +25,8 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: false,
     collaboratorsCount: 0,
+    updatedAt: null,
+    tags: [],
     ...overrides,
   };
 }
