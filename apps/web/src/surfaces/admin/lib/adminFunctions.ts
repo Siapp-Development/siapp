@@ -71,3 +71,28 @@ export const impersonateUserFn = httpsCallable<IImpersonateInput, IImpersonateRe
   functions,
   'adminImpersonateUser',
 );
+
+// ── Workspace owner (#113) ────────────────────────────────────────────────────
+
+export interface IGetWorkspaceOwnerInput {
+  wid: string;
+}
+
+/**
+ * Server projection of a workspace owner (#113, D-025). `source` reports which
+ * source resolved the owner; `unresolved` means neither the owner member doc
+ * nor the Firebase Auth record yielded details (see `authUserDeleted`).
+ */
+export interface IWorkspaceOwner {
+  /** = workspace.ownerId (always returned; '' when the workspace has no owner). */
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  source: 'member' | 'auth' | 'unresolved';
+  authUserDeleted: boolean;
+}
+
+export const getWorkspaceOwnerFn = httpsCallable<IGetWorkspaceOwnerInput, IWorkspaceOwner>(
+  functions,
+  'adminGetWorkspaceOwner',
+);

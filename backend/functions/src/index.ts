@@ -72,6 +72,7 @@ import { recordMessageUsage } from './triggers/messageUsage.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
 import { impersonateUser } from './admin/impersonateUser.js';
+import { getWorkspaceOwner } from './admin/getWorkspaceOwner.js';
 
 initializeApp();
 
@@ -119,6 +120,9 @@ export const adminAdjustWorkspace = onCall(adjustWorkspace);
 
 /** Mints a Firebase custom token for support impersonation. */
 export const adminImpersonateUser = onCall(impersonateUser);
+
+/** Resolves a workspace owner's name/email/UID for the admin detail page (#113). */
+export const adminGetWorkspaceOwner = onCall(getWorkspaceOwner);
 
 // ── Firestore triggers ──────────────────────────────────────────────────────
 
