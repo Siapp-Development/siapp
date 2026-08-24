@@ -28,7 +28,8 @@ import {
   type IProjectsListParams,
 } from './projectsListFilter.ts';
 import { STATUS_LABELS } from './projectLabels.ts';
-import { useTags } from './tags/useTags.ts';
+import { TagChipList } from './tags/TagChipList.tsx';
+import { useTags, type ITagEntry } from './tags/useTags.ts';
 import { createProject, useProjects, type IProjectRow } from './useProjects.ts';
 
 function duplicateErrorMessage(error: unknown): string {
@@ -44,9 +45,10 @@ function duplicateErrorMessage(error: unknown): string {
 interface IProjectListItemProps {
   project: IProjectRow;
   workspaceSlug: string;
+  tags: ReadonlyMap<string, ITagEntry>;
 }
 
-function ProjectListItem({ project, workspaceSlug }: IProjectListItemProps) {
+function ProjectListItem({ project, workspaceSlug, tags }: IProjectListItemProps) {
   return (
     <li className="rounded-lg border border-border bg-card px-4 py-3.5 shadow-card transition-colors duration-150 hover:border-primary/40">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -81,6 +83,7 @@ function ProjectListItem({ project, workspaceSlug }: IProjectListItemProps) {
         {project.startDate !== null && ` · starts ${project.startDate.toLocaleDateString()}`}
         {project.targetEndDate !== null && ` · due ${project.targetEndDate.toLocaleDateString()}`}
       </p>
+      <TagChipList tagIds={project.tags} tags={tags} label={project.name} className="mt-2" />
     </li>
   );
 }
@@ -291,7 +294,12 @@ export function ProjectsListPage({
       {projects.status === 'ready' && visible.length > 0 && (
         <ul className="flex flex-col gap-2">
           {visible.map((project) => (
-            <ProjectListItem key={project.id} project={project} workspaceSlug={workspaceSlug} />
+            <ProjectListItem
+              key={project.id}
+              project={project}
+              workspaceSlug={workspaceSlug}
+              tags={projectTags.tags}
+            />
           ))}
         </ul>
       )}

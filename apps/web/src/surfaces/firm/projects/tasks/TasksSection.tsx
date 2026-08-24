@@ -24,8 +24,10 @@ import { useCollaborators } from '../../collaborators/useCollaborators.ts';
 import { useMilestones } from '../milestones/useMilestones.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TaskProgressRing } from './TaskProgressRing.tsx';
+import { TagChipList } from '../tags/TagChipList.tsx';
+import { useTags, type ITagEntry } from '../tags/useTags.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
-import { TaskStatusBadge } from './TaskStatusBadge.tsx';
+import { TaskStatusRing } from './TaskStatusRing.tsx';
 import { TimelineView } from './TimelineView.tsx';
 import {
   createPhase,
@@ -64,6 +66,7 @@ interface ITaskRowItemProps {
   onHandleKeyDown: ((event: KeyboardEvent<HTMLButtonElement>) => void) | null;
   onDragOver: ((event: DragEvent<HTMLLIElement>) => void) | null;
   onDrop: ((event: DragEvent<HTMLLIElement>) => void) | null;
+  tags: ReadonlyMap<string, ITagEntry>;
 }
 
 function TaskRowItem({
@@ -82,6 +85,7 @@ function TaskRowItem({
   onHandleKeyDown,
   onDragOver,
   onDrop,
+  tags,
 }: ITaskRowItemProps) {
   return (
     <li
@@ -127,46 +131,55 @@ function TaskRowItem({
             </span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-left"
-        >
-          <span className="min-w-40 flex-1 font-medium">{task.title}</span>
-          <TaskStatusBadge status={task.status} />
-          {task.assignees.length > 0 && (
-            <span className="flex gap-1" aria-label="Assignees">
-              {task.assignees.map((assignee) => (
-                <Avatar
-                  key={`${assignee.type}-${assignee.id}`}
-                  size="xs"
-                  name={assignee.name}
-                  seed={assignee.id}
-                  photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
-                  title={assignee.name}
-                />
-              ))}
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+          <button
+            type="button"
+            onClick={onSelect}
+            className="flex w-full items-start gap-2 text-left"
+          >
+            <span className="mt-0.5 shrink-0">
+              <TaskStatusRing status={task.status} />
             </span>
-          )}
-          {task.dueDate !== null && (
-            <span
-              className={cn(
-                'text-xs',
-                isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+            <span className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="min-w-40 flex-1 font-medium">{task.title}</span>
+              {task.assignees.length > 0 && (
+                <span className="flex gap-1" aria-label="Assignees">
+                  {task.assignees.map((assignee) => (
+                    <Avatar
+                      key={`${assignee.type}-${assignee.id}`}
+                      size="xs"
+                      name={assignee.name}
+                      seed={assignee.id}
+                      photoUrl={
+                        assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined
+                      }
+                      title={assignee.name}
+                    />
+                  ))}
+                </span>
               )}
-            >
-              Due {task.dueDate.toLocaleDateString()}
+              {task.dueDate !== null && (
+                <span
+                  className={cn(
+                    'text-xs',
+                    isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+                  )}
+                >
+                  Due {task.dueDate.toLocaleDateString()}
+                </span>
+              )}
+              {task.restrictedToDepartments.length > 0 && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  Restricted ·{' '}
+                  {task.restrictedToDepartments
+                    .map((dep) => departmentNames.get(dep) ?? dep)
+                    .join(', ')}
+                </span>
+              )}
             </span>
-          )}
-          {task.restrictedToDepartments.length > 0 && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-              Restricted ·{' '}
-              {task.restrictedToDepartments
-                .map((dep) => departmentNames.get(dep) ?? dep)
-                .join(', ')}
-            </span>
-          )}
-        </button>
+          </button>
+          <TagChipList tagIds={task.tags} tags={tags} label={task.title} />
+        </div>
       </div>
     </li>
   );
@@ -359,6 +372,7 @@ export function TasksSection({
   const departmentsState = useDepartments(workspaceId);
   const collaboratorsState = useCollaborators(workspaceId);
   const milestonesState = useMilestones(workspaceId, projectId);
+  const taskTags = useTags(workspaceId, 'task');
 
   const [view, setView] = useState<'list' | 'timeline'>('list');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -727,6 +741,7 @@ export function TasksSection({
                             }
                           : null
                       }
+                      tags={taskTags.tags}
                     />
                   ),
                 )}

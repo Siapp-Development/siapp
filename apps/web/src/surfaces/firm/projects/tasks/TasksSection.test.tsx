@@ -367,7 +367,7 @@ describe('TasksSection', () => {
     };
     renderSection();
 
-    await userEvent.click(screen.getByRole('button', { name: /second to do/i }));
+    await userEvent.click(screen.getByRole('button', { name: /to do second/i }));
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
 
     const sourceHandle = screen.getByRole('button', { name: /drag to reorder second/i });
@@ -668,7 +668,7 @@ describe('TasksSection', () => {
     tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
     renderSection();
 
-    await userEvent.click(screen.getByRole('button', { name: /pour foundation to do/i }));
+    await userEvent.click(screen.getByRole('button', { name: /to do pour foundation/i }));
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
   });
 
@@ -676,7 +676,7 @@ describe('TasksSection', () => {
     tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
     renderSection();
 
-    await userEvent.click(screen.getByRole('button', { name: /pour foundation to do/i }));
+    await userEvent.click(screen.getByRole('button', { name: /to do pour foundation/i }));
     const dialog = screen.getByRole('dialog', { name: 'Task: Pour foundation' });
     expect(dialog).toContainElement(screen.getByTestId('task-detail-panel'));
 
@@ -694,7 +694,7 @@ describe('TasksSection', () => {
     renderSection({ deepLinkedTaskId: 't2', onSelectedTaskChange });
 
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
-    expect(screen.getByRole('button', { name: /deep linked task to do/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /to do deep linked task/i })).toBeInTheDocument();
     expect(onSelectedTaskChange).toHaveBeenCalledWith('t2');
   });
 
