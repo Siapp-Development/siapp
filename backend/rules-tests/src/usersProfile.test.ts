@@ -72,6 +72,23 @@ describe('users/{uid} create', () => {
     );
   });
 
+  it('allows creating a profile whose email differs from the token only by case (#104 fix)', async () => {
+    // Mirror of the update-path casing regression: create must also tolerate
+    // casing so a freshly written profile does not re-introduce the drift bug.
+    // Uses a fresh uid (no existing doc) so this is a clean create, and a
+    // mixed-case TOKEN email against a lowercased payload email.
+    const zoeDb = testEnv
+      .authenticatedContext('zoe', { email: 'Zoe@Firm.Test' })
+      .firestore();
+    await assertSucceeds(
+      setDoc(doc(zoeDb, 'users/zoe'), {
+        ...validProfilePayload('zoe', 'zoe@firm.test'),
+        createdAt: serverTimestamp(),
+        lastSeenAt: serverTimestamp(),
+      }),
+    );
+  });
+
   it('denies extra fields outside the whitelist', async () => {
     await assertFails(
       setDoc(doc(aliceDb(), `users/${ALICE}`), {
@@ -177,6 +194,30 @@ describe('users/{uid} update', () => {
     await seedUserProfile(testEnv, 'kara', 'kara@firm.test');
     const db = testEnv.authenticatedContext('kara', { email: 'kara@firm.test' }).firestore();
     await assertFails(updateDoc(doc(db, 'users/kara'), { photoUrl: 42 }));
+  });
+
+  it('allows a partial save when the stored email casing drifted from the token (#104 fix)', async () => {
+    // Regression for the DD Development bug: a stored email that differs from the
+    // token ONLY by case (e.g. `Lara@Firm.Test` vs `lara@firm.test`) used to fail
+    // validUserProfile's exact `==` compare on every partial update, permanently
+    // blocking profile saves. With the case-insensitive `.lower()` compare it now
+    // succeeds. Before this fix this update would have been DENIED.
+    await seedUserProfile(testEnv, 'lara', 'Lara@Firm.Test');
+    const db = testEnv.authenticatedContext('lara', { email: 'lara@firm.test' }).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, 'users/lara'), {
+        displayName: 'Lara Q',
+        photoUrl: 'https://cdn.example.test/lara.png',
+      }),
+    );
+  });
+
+  it('still denies rewriting the email to a genuinely different address (casing tolerance is scoped)', async () => {
+    // Confirms the `.lower()` loosening only tolerates casing, never a different
+    // identity: the owner cannot repoint their profile email at another address.
+    await seedUserProfile(testEnv, 'nora', 'nora@firm.test');
+    const db = testEnv.authenticatedContext('nora', { email: 'nora@firm.test' }).firestore();
+    await assertFails(updateDoc(doc(db, 'users/nora'), { email: 'attacker@firm.test' }));
   });
 });
 

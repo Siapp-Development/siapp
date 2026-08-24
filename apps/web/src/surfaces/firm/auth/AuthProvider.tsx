@@ -1,6 +1,7 @@
 import type { IWorkspaceClaims } from '@siapp/shared';
 import { onIdTokenChanged, signOut, type User } from 'firebase/auth';
 import {
+  type FieldValue,
   Timestamp,
   doc,
   getDoc,
@@ -68,13 +69,36 @@ interface ITokenState {
  * by firestore.rules. A doc that only carries the server-side
  * `claimsUpdatedAt` stamp counts as missing and gets the full profile merged.
  */
-async function upsertOwnProfile(user: User): Promise<void> {
+export async function upsertOwnProfile(user: User): Promise<void> {
   const ref = doc(db, 'users', user.uid);
   const snapshot = await getDoc(ref);
-  const hasProfile = snapshot.exists() && typeof snapshot.data()['email'] === 'string';
+  const data = snapshot.data();
+  const hasProfile = snapshot.exists() && typeof data?.['email'] === 'string';
 
   if (hasProfile) {
-    await updateDoc(ref, { lastSeenAt: serverTimestamp() });
+    // Self-heal drift so partial profile saves keep passing validUserProfile:
+    // the merged doc must still match the token email (case-insensitively) and
+    // carry a non-empty displayName. Stay within the whitelist — never touch
+    // createdAt/claimsUpdatedAt.
+    const patch: Record<string, FieldValue | string> = { lastSeenAt: serverTimestamp() };
+    const storedEmail = data?.['email'];
+    const storedDisplayName = data?.['displayName'];
+    const authEmail = user.email ?? '';
+
+    if (authEmail !== '' && String(storedEmail).toLowerCase() !== authEmail.toLowerCase()) {
+      patch['email'] = authEmail;
+    }
+
+    const desiredDisplayName = user.displayName ?? (authEmail === '' ? 'Member' : authEmail);
+    if (
+      typeof desiredDisplayName === 'string' &&
+      desiredDisplayName !== '' &&
+      desiredDisplayName !== storedDisplayName
+    ) {
+      patch['displayName'] = desiredDisplayName;
+    }
+
+    await updateDoc(ref, patch);
     return;
   }
 
