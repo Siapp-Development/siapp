@@ -12,6 +12,20 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-08-24 — Project & task tags use two independent workspace-level registries (D-041)
+
+**Decision:** Project tags live in `workspaces/{wid}/projectTags`, task tags in `workspaces/{wid}/taskTags`; project/task docs store arrays of tagIds (`tags?: string[]`, ≤20) that resolve name+color against the live registry on read. Deleting a registry doc removes the tag from options everywhere for free (orphan ids are filtered on read). Owner/admin/pm may create/rename/delete tags. Closes the tag-model question for #111.
+
+**Why:** "Delete a tag from the options entirely" requires a shared canonical option list + colors; per-doc free strings can't express that. Two registries keep project and task tag pools independent per the product decision. Ids-with-read-join avoids any rename/delete fan-out sweep.
+
+**Consequences:** Two new collections + rules match blocks; a deleted tag silently disappears from docs (acceptable, orphans harmless); no uniqueness enforced in rules (client-side dedupe only).
+
+**Reversal cost:** Low-moderate (merging the two registries or switching to denormalized names would need a migration).
+
+**Revisit when:** Tag volume needs search/pagination, or cross-scope (shared project+task) tags are requested.
+
+---
+
 ## 2026-07-15 — Firebase Auth built-in emails for MVP; Postmark deferred to team invites (D-040)
 
 **Decision:** Use **Firebase Auth's built-in email delivery** (password reset, email verification) for all MVP auth emails — no third-party email provider in M0/M1 auth (#8, #9). Customize the sender domain in Firebase console (Authentication → Templates) so mail doesn't come from `@siapp-prod.firebaseapp.com`. **Postmark adoption is deferred to ticket #11 (team invites)** — the first feature that must deliver an email Firebase won't send itself (Admin SDK generates the invite link; we deliver it). Founder billing emails (#24) also ride Postmark when it lands.
