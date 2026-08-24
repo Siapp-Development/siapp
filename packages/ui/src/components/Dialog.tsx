@@ -15,9 +15,28 @@ import { cn } from '../lib/cn.ts';
 export interface IDialogProps extends HTMLAttributes<HTMLDialogElement> {
   open: boolean;
   onClose: () => void;
+  /**
+   * Shell sizing. `'sm'` (default) keeps the compact `max-w-md` used by
+   * `ConfirmDialog` and other simple prompts. `'lg'` yields a wide,
+   * height-capped shell for two-column / form modals that manage their own
+   * internal scrolling.
+   */
+  size?: 'sm' | 'lg';
 }
 
-export function Dialog({ open, onClose, className, children, ...props }: IDialogProps) {
+const DIALOG_SIZE_CLASSES: Record<'sm' | 'lg', string> = {
+  sm: 'max-w-md p-6',
+  lg: 'max-w-4xl max-h-[90vh] overflow-hidden p-0',
+};
+
+export function Dialog({
+  open,
+  onClose,
+  size = 'sm',
+  className,
+  children,
+  ...props
+}: IDialogProps) {
   const ref = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
@@ -69,8 +88,9 @@ export function Dialog({ open, onClose, className, children, ...props }: IDialog
       onClose={handleNativeClose}
       onClick={handleBackdropClick}
       className={cn(
-        'm-auto w-full max-w-md rounded-lg border border-border bg-card p-6 text-foreground shadow-raised',
+        'm-auto w-full rounded-lg border border-border bg-card text-foreground shadow-raised',
         'motion-safe:duration-150 backdrop:bg-slate-950/40',
+        DIALOG_SIZE_CLASSES[size],
         className,
       )}
       {...props}
