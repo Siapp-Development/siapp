@@ -509,6 +509,7 @@ export function TasksSection({
         restrictedToDepartments: [],
         sendWhatsapp: false,
         collaboratorCanSeeAllAttachments: true,
+        tags: [],
       },
       order,
       uid,

@@ -7,7 +7,6 @@
 
 import { Alert, Button, Card, CardContent, CardHeader, cn } from '@siapp/ui';
 import type {
-  IPublishPreview,
   TMemberRole,
   TProjectLifecycle,
   TProjectLifecycleAction,
@@ -24,19 +23,19 @@ import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { MilestonesEditor } from './milestones/MilestonesEditor.tsx';
 import { PortalLinkCard } from './PortalLinkCard.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
+import { PublishProjectDialog } from './PublishProjectDialog.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
+import { TagSelect } from './tags/TagSelect.tsx';
+import { createTag, deleteTag, useTags } from './tags/useTags.ts';
 import { TasksSection } from './tasks/TasksSection.tsx';
-import { updateProject, useProject, type IProjectRow } from './useProjects.ts';
+import { updateProject, updateProjectTags, useProject, type IProjectRow } from './useProjects.ts';
 
 /** D-027 action availability by lifecycle and role (mirrors the callable). */
 const LIFECYCLE_ACTIONS: Record<
   TProjectLifecycle,
   Array<{ action: TProjectLifecycleAction; roles: TMemberRole[]; label: string }>
 > = {
-  draft: [
-    { action: 'publish', roles: ['owner', 'admin', 'pm'], label: 'Publish' },
-    { action: 'delete', roles: ['owner'], label: 'Delete' },
-  ],
+  draft: [{ action: 'delete', roles: ['owner'], label: 'Delete' }],
   published: [
     { action: 'complete', roles: ['owner', 'admin', 'pm'], label: 'Mark completed' },
     { action: 'archive', roles: ['owner', 'admin'], label: 'Archive' },
@@ -65,36 +64,6 @@ function lifecycleErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Could not update the project.';
 }
 
-interface IPublishConfirmProps {
-  preview: IPublishPreview;
-  pending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-function PublishConfirm({ preview, pending, onConfirm, onCancel }: IPublishConfirmProps) {
-  return (
-    <Alert className="mt-3">
-      <p className="text-sm font-medium">Publish this project?</p>
-      <p className="mt-1 text-sm">
-        {preview.waCount === 0
-          ? 'No WhatsApp messages will be sent.'
-          : `${preview.waCount} WhatsApp ${
-              preview.waCount === 1 ? 'message' : 'messages'
-            } will be sent — est. RM ${preview.estimatedCostMyr.toFixed(2)}.`}
-      </p>
-      <div className="mt-3 flex gap-2">
-        <Button type="button" size="sm" disabled={pending} onClick={onConfirm}>
-          {pending ? 'Publishing…' : 'Publish'}
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </Alert>
-  );
-}
-
 interface ILifecycleActionsProps {
   workspaceId: string;
   project: IProjectRow;
@@ -104,7 +73,6 @@ interface ILifecycleActionsProps {
 function LifecycleActions({ workspaceId, project, role }: ILifecycleActionsProps) {
   const [pendingAction, setPendingAction] = useState<TProjectLifecycleAction | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [publishPreview, setPublishPreview] = useState<IPublishPreview | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const actions = LIFECYCLE_ACTIONS[project.lifecycle].filter((entry) =>
@@ -114,22 +82,12 @@ function LifecycleActions({ workspaceId, project, role }: ILifecycleActionsProps
     return null;
   }
 
-  async function run(action: TProjectLifecycleAction, dryRun = false): Promise<void> {
+  async function run(action: TProjectLifecycleAction): Promise<void> {
     setPendingAction(action);
     setError(null);
     try {
-      const result = await setProjectLifecycle({
-        workspaceId,
-        projectId: project.id,
-        action,
-        ...(dryRun ? { dryRun: true } : {}),
-      });
-      if (dryRun) {
-        setPublishPreview(result.publishPreview ?? { waCount: 0, estimatedCostMyr: 0 });
-      } else {
-        setPublishPreview(null);
-        setConfirmingDelete(false);
-      }
+      await setProjectLifecycle({ workspaceId, projectId: project.id, action });
+      setConfirmingDelete(false);
     } catch (err) {
       setError(lifecycleErrorMessage(err));
     } finally {
@@ -139,10 +97,6 @@ function LifecycleActions({ workspaceId, project, role }: ILifecycleActionsProps
 
   function handleClick(action: TProjectLifecycleAction): void {
     setError(null);
-    if (action === 'publish') {
-      void run('publish', true);
-      return;
-    }
     if (action === 'delete') {
       setConfirmingDelete(true);
       return;
@@ -171,14 +125,6 @@ function LifecycleActions({ workspaceId, project, role }: ILifecycleActionsProps
           </Button>
         ))}
       </div>
-      {publishPreview !== null && (
-        <PublishConfirm
-          preview={publishPreview}
-          pending={pendingAction === 'publish'}
-          onConfirm={() => void run('publish')}
-          onCancel={() => setPublishPreview(null)}
-        />
-      )}
       {confirmingDelete && (
         <Alert variant="destructive" className="mt-3">
           <p className="text-sm font-medium">Delete this project?</p>
@@ -232,6 +178,7 @@ export function ProjectDetailPage({
   const [searchParams, setSearchParams] = useSearchParams();
   const state = useProject(workspaceId, projectId);
   const clients = useClients(workspaceId);
+  const projectTags = useTags(workspaceId, 'project');
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState<'tasks' | 'documents' | 'activity' | 'details'>('tasks');
   const deepLinkedTaskId = searchParams.get('task');
@@ -277,6 +224,8 @@ export function ProjectDetailPage({
   const canEdit =
     (role === 'owner' || role === 'admin' || role === 'pm') &&
     (project.lifecycle === 'draft' || project.lifecycle === 'published');
+  const canPublish =
+    project.lifecycle === 'draft' && (role === 'owner' || role === 'admin' || role === 'pm');
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -290,7 +239,23 @@ export function ProjectDetailPage({
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
           <LifecycleBadge lifecycle={project.lifecycle} />
+          {canPublish && (
+            <PublishProjectDialog workspaceId={workspaceId} projectId={project.id} />
+          )}
         </div>
+        {(canEdit || project.tags.length > 0) && (
+          <div className="mt-3">
+            <TagSelect
+              label="Project tags"
+              allTags={projectTags.tags}
+              value={project.tags}
+              canEdit={canEdit}
+              onChange={(tags) => void updateProjectTags(workspaceId, project.id, tags)}
+              onCreateTag={(name, color) => createTag(workspaceId, 'project', name, color, uid)}
+              onDeleteTag={(tagId) => deleteTag(workspaceId, 'project', tagId)}
+            />
+          </div>
+        )}
         {project.lifecycle === 'completed' && (
           <p className="mt-1 text-sm text-muted-foreground">
             Completed projects are read-only — reopen to make changes.

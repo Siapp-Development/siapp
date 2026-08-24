@@ -213,6 +213,33 @@ service cloud.firestore {
         && d.memberCount is int;
     }
 
+    // Tag registry doc shape (D-041), shared by BOTH the projectTags and
+    // taskTags collections — only the collection path differs. No uniqueness
+    // constraint: duplicate-name prevention is client-side via normalizedName.
+    function validTag(tagId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'normalizedName', 'color',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && d.keys().hasAll([
+          'id', 'name', 'normalizedName', 'color',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+        ])
+        && d.id == tagId
+        && d.name is string
+        && d.name.size() >= 1
+        && d.name.size() <= 40
+        && d.normalizedName is string
+        && d.normalizedName.size() >= 1
+        && d.normalizedName.size() <= 40
+        && d.color in ['slate', 'red', 'amber', 'green', 'blue', 'violet', 'pink', 'teal']
+        && d.createdBy is string
+        && d.updatedBy is string
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp;
+    }
+
     // Field validation shared by client create/update (#16). Only the
     // firm-editable keys — notificationsOptOut is validated nowhere on
     // purpose: it is server-only (STOP webhook, D-035).
@@ -281,6 +308,7 @@ service cloud.firestore {
         && d.startDate is timestamp
         && (!('targetEndDate' in d) || d.targetEndDate is timestamp)
         && (!('actualEndDate' in d) || d.actualEndDate is timestamp)
+        && (!('tags' in d) || (d.tags is list && d.tags.size() <= 20))
         && d.updatedAt is timestamp;
     }
 
@@ -460,7 +488,7 @@ service cloud.firestore {
           'visibleToClient', 'collaboratorCanSeeAllAttachments',
           'visibleToCollaboratorIds', 'restrictedToDepartments',
           'sendWhatsapp', 'notify', 'blockedReason', 'blockedBy',
-          'order', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'
+          'tags', 'order', 'createdAt', 'updatedAt', 'createdBy', 'updatedBy'
         ])
         && d.id == tid
         && d.title is string
@@ -483,6 +511,7 @@ service cloud.firestore {
         && d.visibleToCollaboratorIds is list
         && d.restrictedToDepartments is list
         && d.restrictedToDepartments.size() <= 10
+        && (!('tags' in d) || (d.tags is list && d.tags.size() <= 20))
         && d.sendWhatsapp is bool
         && (!('notify' in d) || (
           d.notify is map
@@ -589,6 +618,47 @@ service cloud.firestore {
           && resource.data.memberCount == 0;
       }
 
+      // Project tag registry (D-041): the option pool for project chips.
+      // owner/admin/pm CRUD (matches project edit roles); pm is explicitly
+      // included. No uniqueness/in-use guard — orphaned ids are filtered on
+      // read, so a delete simply removes the tag everywhere.
+      match /projectTags/{tagId} {
+        allow read: if isFirmMember(wid);
+        allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
+          && validTag(tagId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
+          && validTag(tagId)
+          && !request.resource.data.diff(resource.data)
+            .affectedKeys().hasAny(['id', 'createdAt', 'createdBy'])
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid);
+      }
+
+      // Task tag registry (D-041): the option pool for task chips. Same rules
+      // as projectTags; the two pools are independent (a project tag is not
+      // selectable on a task and vice-versa).
+      match /taskTags/{tagId} {
+        allow read: if isFirmMember(wid);
+        allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
+          && validTag(tagId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
+          && validTag(tagId)
+          && !request.resource.data.diff(resource.data)
+            .affectedKeys().hasAny(['id', 'createdAt', 'createdBy'])
+          && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid);
+      }
+
       // Clients (#16): workspace-visible; owner/admin/pm manage them. No
       // hard delete (project.clientId denorms would orphan) and no archive
       // field at MVP — clients are edit-only. notificationsOptOut is
@@ -688,7 +758,7 @@ service cloud.firestore {
             'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
             'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
             'startDate', 'targetEndDate', 'actualEndDate',
-            'summary', 'visibility', 'createdAt', 'updatedAt', 'createdBy',
+            'summary', 'visibility', 'tags', 'createdAt', 'updatedAt', 'createdBy',
             'duplicatedFromProjectId'
           ])
           && validProjectFields()
@@ -724,7 +794,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name', 'code', 'clientId', 'clientNameDenorm', 'status',
             'startDate', 'targetEndDate', 'actualEndDate', 'visibility',
-            'updatedAt'
+            'tags', 'updatedAt'
           ])
           && validProjectFields()
           && collabCountOf(request.resource.data) == collabCountOf(resource.data)

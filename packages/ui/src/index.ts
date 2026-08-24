@@ -3,9 +3,12 @@ export { Avatar, avatarInitials, avatarVariants, type IAvatarProps } from './com
 export { Badge, badgeVariants, type IBadgeProps } from './components/Badge.tsx';
 export { Button, buttonVariants, type IButtonProps } from './components/Button.tsx';
 export { Card, CardContent, CardFooter, CardHeader, type TCardProps } from './components/Card.tsx';
+export { ConfirmDialog, type IConfirmDialogProps } from './components/ConfirmDialog.tsx';
+export { Dialog, type IDialogProps } from './components/Dialog.tsx';
 export { Drawer, type IDrawerProps } from './components/Drawer.tsx';
 export { Input, type TInputProps } from './components/Input.tsx';
 export { Label, type TLabelProps } from './components/Label.tsx';
+export { Popover, type IPopoverProps } from './components/Popover.tsx';
 export { Progress, type IProgressProps } from './components/Progress.tsx';
 export { Separator, type ISeparatorProps } from './components/Separator.tsx';
 export { cn } from './lib/cn.ts';
@@ -15,3 +18,10 @@ export {
   avatarColorForSeed,
   type IAvatarColor,
 } from './lib/avatarColor.ts';
+export {
+  TAG_COLOR_KEYS,
+  isTagColorKey,
+  tagColorClasses,
+  type ITagColorClasses,
+  type TTagColorKey,
+} from './lib/tagColor.ts';

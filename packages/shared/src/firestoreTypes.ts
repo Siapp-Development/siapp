@@ -37,6 +37,7 @@ import type {
   TProjectVertical,
   TScanStatus,
   TSuppressedReason,
+  TTagColor,
   TTaskStatus,
   TTaskUpdateAction,
   TTaskUpdateAuthorType,
@@ -239,6 +240,26 @@ export interface IDepartmentDoc {
 }
 
 /**
+ * A tag registry doc — the SAME shape backs BOTH `/workspaces/{wid}/projectTags/{tagId}`
+ * and `/workspaces/{wid}/taskTags/{tagId}` (D-041). The two registries are
+ * independent option pools; only the collection path differs. Project/task
+ * docs store arrays of these ids in their `tags` field and resolve
+ * name + colour on read (orphaned ids are filtered out).
+ */
+export interface ITagDoc {
+  id: string;
+  /** Display string, <= 40 chars. */
+  name: string;
+  /** Lower-cased/trimmed `name`; client-side duplicate-prevention only. */
+  normalizedName: string;
+  color: TTagColor;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt: Date;
+  updatedBy: string;
+}
+
+/**
  * `/workspaces/{wid}/invites/{inviteId}` — pending team invitations (#11).
  * The raw token is only ever emailed / returned to the inviter; Firestore
  * stores its SHA-256 hash. Client writes are denied — all mutations go
@@ -400,6 +421,8 @@ export interface IProjectDoc {
   actualEndDate?: Date;
   summary: IProjectSummary;
   visibility: IProjectVisibility;
+  /** projectTags ids (D-041). Optional; absent/legacy → no tags. */
+  tags?: string[];
   createdAt: Date;
   updatedAt: Date;
   createdBy: string;
@@ -490,6 +513,8 @@ export interface ITaskDoc {
   sendWhatsapp: boolean;
   /** Trigger/recipient config (#18, D2). Absent = TASK_NOTIFY_DEFAULTS. */
   notify?: ITaskNotifyConfig;
+  /** taskTags ids (D-041). Optional; absent/legacy → no tags. */
+  tags?: string[];
   order: number;
   createdAt: Date;
   updatedAt: Date;
