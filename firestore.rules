@@ -806,6 +806,22 @@ service cloud.firestore {
               ])
               && request.resource.data.visibility.clientCanSee is bool)
             : !('visibility' in resource.data));
+        // Tags-only inline edit (TagSelect, D-041): a separate, narrower branch
+        // so tagging never re-validates the whole doc. Admin-seeded starter
+        // projects predate `startDate`/`visibility.clientCanSee`, which
+        // validProjectFields() requires — without this they could never be
+        // tagged. Scoped to `tags` + `updatedAt`; every other field must be
+        // unchanged, so this cannot escalate or edit anything else.
+        allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
+          && workspaceActive(wid)
+          && resource.data.lifecycle in ['draft', 'published']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'tags', 'updatedAt'
+          ])
+          && (!('tags' in request.resource.data)
+            || (request.resource.data.tags is list
+              && request.resource.data.tags.size() <= 20))
+          && request.resource.data.updatedAt is timestamp;
         // Soft delete only — `delete` action on the lifecycle callable.
         allow delete: if false;
 
