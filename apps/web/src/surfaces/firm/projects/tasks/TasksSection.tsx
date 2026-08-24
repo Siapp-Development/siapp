@@ -27,7 +27,7 @@ import { TaskProgressRing } from './TaskProgressRing.tsx';
 import { TagChipList } from '../tags/TagChipList.tsx';
 import { useTags, type ITagEntry } from '../tags/useTags.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
-import { TaskStatusBadge } from './TaskStatusBadge.tsx';
+import { TaskStatusRing } from './TaskStatusRing.tsx';
 import { TimelineView } from './TimelineView.tsx';
 import {
   createPhase,
@@ -135,42 +135,48 @@ function TaskRowItem({
           <button
             type="button"
             onClick={onSelect}
-            className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left"
+            className="flex w-full items-start gap-2 text-left"
           >
-            <span className="min-w-40 flex-1 font-medium">{task.title}</span>
-            <TaskStatusBadge status={task.status} />
-            {task.assignees.length > 0 && (
-              <span className="flex gap-1" aria-label="Assignees">
-                {task.assignees.map((assignee) => (
-                  <Avatar
-                    key={`${assignee.type}-${assignee.id}`}
-                    size="xs"
-                    name={assignee.name}
-                    seed={assignee.id}
-                    photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
-                    title={assignee.name}
-                  />
-                ))}
-              </span>
-            )}
-            {task.dueDate !== null && (
-              <span
-                className={cn(
-                  'text-xs',
-                  isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
-                )}
-              >
-                Due {task.dueDate.toLocaleDateString()}
-              </span>
-            )}
-            {task.restrictedToDepartments.length > 0 && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                Restricted ·{' '}
-                {task.restrictedToDepartments
-                  .map((dep) => departmentNames.get(dep) ?? dep)
-                  .join(', ')}
-              </span>
-            )}
+            <span className="mt-0.5 shrink-0">
+              <TaskStatusRing status={task.status} />
+            </span>
+            <span className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="min-w-40 flex-1 font-medium">{task.title}</span>
+              {task.assignees.length > 0 && (
+                <span className="flex gap-1" aria-label="Assignees">
+                  {task.assignees.map((assignee) => (
+                    <Avatar
+                      key={`${assignee.type}-${assignee.id}`}
+                      size="xs"
+                      name={assignee.name}
+                      seed={assignee.id}
+                      photoUrl={
+                        assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined
+                      }
+                      title={assignee.name}
+                    />
+                  ))}
+                </span>
+              )}
+              {task.dueDate !== null && (
+                <span
+                  className={cn(
+                    'text-xs',
+                    isOverdue(task) ? 'font-medium text-danger' : 'text-muted-foreground',
+                  )}
+                >
+                  Due {task.dueDate.toLocaleDateString()}
+                </span>
+              )}
+              {task.restrictedToDepartments.length > 0 && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  Restricted ·{' '}
+                  {task.restrictedToDepartments
+                    .map((dep) => departmentNames.get(dep) ?? dep)
+                    .join(', ')}
+                </span>
+              )}
+            </span>
           </button>
           <TagChipList tagIds={task.tags} tags={tags} label={task.title} />
         </div>
