@@ -9,8 +9,11 @@ import { LEGAL_PATHS } from './legalRoutes.ts';
  * verifying the Call to Action (CTA)". Transcribed verbatim from
  * plans/legal/messaging-consent.md and mirrors the issue #100 legal-page
  * pattern. The opt-in disclosure is rendered as a bordered callout so a
- * carrier reviewer can clearly perceive the exact consent copy. Preserves the
- * four carrier-mandated phrases word for word: the non-sharing statement,
+ * carrier reviewer can clearly perceive the exact consent copy. It also renders
+ * a visible, illustrative "Sample opt-in consent form" (issue #109) — with an
+ * unchecked-by-default consent checkbox — so a Twilio A2P reviewer can see the
+ * actual consent experience (resolving error 30909; guarding 30924/30925).
+ * Preserves the four carrier-mandated phrases word for word: the non-sharing statement,
  * "message frequency varies", "Message and data rates may apply", and the
  * STOP/HELP opt-out instructions.
  */
@@ -48,10 +51,24 @@ export function MessagingConsentPage() {
 
       <h2>How you opt in (Call to Action)</h2>
       <p>
-        When a firm adds you to a project, it confirms your agreement to receive notifications and
-        records your opt-in in Siapp (with a timestamp, source, and language). Consent is{' '}
-        <strong>not</strong> a condition of any purchase. At the point of opt-in you are shown the
-        following disclosure:
+        Your consent is collected by the firm <strong>before any message is sent</strong>, through
+        one of two paths:
+      </p>
+      <ol>
+        <li>
+          <strong>Written intake / engagement form.</strong> When you engage the firm, you provide
+          your mobile number and check a consent box — <strong>unchecked by default</strong> — on
+          the firm&rsquo;s client intake or engagement form, agreeing to receive recurring
+          project-update messages from the firm via Siapp.
+        </li>
+        <li>
+          <strong>Verbal agreement during onboarding.</strong> You confirm your agreement verbally,
+          and the firm records your opt-in in Siapp with a timestamp, source, and language.
+        </li>
+      </ol>
+      <p>
+        Consent is <strong>not</strong> a condition of any purchase. At the point of opt-in you are
+        shown the following disclosure:
       </p>
       <blockquote className="legal-callout" aria-label="Opt-in disclosure shown at the point of consent">
         <p>
@@ -68,6 +85,49 @@ export function MessagingConsentPage() {
         The first message you receive is a branded welcome confirming your enrollment and repeating
         the STOP/HELP instructions.
       </p>
+
+      <h2>Sample opt-in consent form</h2>
+      <p>
+        The following is a representative sample of the opt-in consent experience an end-user sees on
+        the firm&rsquo;s intake/engagement form. The consent checkbox is{' '}
+        <strong>unchecked by default</strong> and requires the end-user&rsquo;s active agreement.
+      </p>
+      <form
+        className="legal-sample-form"
+        aria-label="Sample opt-in consent form"
+        onSubmit={(e) => e.preventDefault()}
+      >
+        <fieldset>
+          <legend>Sample: Project update messages</legend>
+          <p className="legal-sample-note">
+            Representative sample only — this form is illustrative and does not submit.
+          </p>
+          <div className="legal-sample-field">
+            <label htmlFor="sample-mobile-number">Mobile number</label>
+            <input
+              id="sample-mobile-number"
+              type="tel"
+              placeholder="+60 ..."
+              disabled
+            />
+          </div>
+          <div className="legal-sample-field">
+            <input id="sample-consent" type="checkbox" disabled />
+            <label htmlFor="sample-consent">
+              I agree to receive recurring project-update text messages (SMS/WhatsApp) from [Firm
+              Name] via Siapp.
+            </label>
+          </div>
+          <p className="legal-sample-disclosure">
+            Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe,
+            HELP for help. See the <Link to={LEGAL_PATHS.smsTerms}>Terms &amp; Conditions</Link> and{' '}
+            <Link to={LEGAL_PATHS.privacy}>Privacy Policy</Link>.
+          </p>
+          <button type="submit" disabled>
+            Submit
+          </button>
+        </fieldset>
+      </form>
 
       <h2>Message frequency</h2>
       <p>
