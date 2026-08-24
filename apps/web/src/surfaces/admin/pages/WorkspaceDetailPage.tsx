@@ -1,15 +1,17 @@
 import { PLAN_PRICES_MYR, includedForPlan, type IWorkspaceDoc } from '@siapp/shared';
 import { Button, Input, Label } from '@siapp/ui';
 import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router';
 
 import { db } from '@/lib/firebase.ts';
 import { SkipLink } from '@/components/SkipLink.tsx';
 import {
   adjustWorkspaceFn,
+  getWorkspaceOwnerFn,
   impersonateUserFn,
   type IAdjustInput,
+  type IWorkspaceOwner,
 } from '../lib/adminFunctions.ts';
 
 type TWorkspacePlan = 'trial' | 'standard' | 'business';
@@ -58,6 +60,55 @@ export function WorkspaceDetailPage() {
   const [impersonateReason, setImpersonateReason] = useState('');
   const [impersonating, setImpersonating] = useState(false);
   const [impersonateMsg, setImpersonateMsg] = useState<string | null>(null);
+  const targetUidRef = useRef<HTMLInputElement>(null);
+
+  // Owner detail (#113): resolved server-side via adminGetWorkspaceOwner.
+  const [owner, setOwner] = useState<IWorkspaceOwner | null>(null);
+  const [ownerLoading, setOwnerLoading] = useState(true);
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (wid === undefined) return;
+    let cancelled = false;
+    setOwnerLoading(true);
+    setOwnerError(null);
+    getWorkspaceOwnerFn({ wid })
+      .then((result) => {
+        if (cancelled) return;
+        setOwner(result.data);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOwnerError(err instanceof Error ? err.message : 'Failed to load owner.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setOwnerLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wid]);
+
+  async function copyOwnerUid(uid: string): Promise<void> {
+    setCopyMsg(null);
+    try {
+      if (typeof navigator === 'undefined' || navigator.clipboard === undefined) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(uid);
+      setCopyMsg('UID copied.');
+    } catch {
+      setCopyMsg('Copy failed — select and copy the UID manually.');
+    }
+  }
+
+  function fillImpersonateFromOwner(uid: string): void {
+    setTargetUid(uid);
+    targetUidRef.current?.focus();
+  }
+
 
   useEffect(() => {
     if (wid === undefined) return;
@@ -246,6 +297,77 @@ export function WorkspaceDetailPage() {
           </dl>
         </div>
 
+        {/* Workspace owner (#113): read-only support projection resolved
+            server-side (D-025) — name/email/UID + copy + impersonate handoff */}
+        <section aria-labelledby="owner-heading" className="rounded-lg border p-4">
+          <h2 id="owner-heading" className="font-medium">Workspace owner</h2>
+          {ownerLoading ? (
+            <p role="status" aria-live="polite" className="mt-2 text-sm text-muted-foreground">
+              Loading owner…
+            </p>
+          ) : ownerError !== null ? (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {ownerError}
+            </p>
+          ) : owner === null ? null : (
+            <>
+              {owner.source === 'unresolved' && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {owner.authUserDeleted
+                    ? `Owner's Firebase Auth account no longer exists${owner.uid !== '' ? ` (UID ${owner.uid})` : ''}.`
+                    : 'Owner details are unavailable.'}
+                </p>
+              )}
+              <dl className="mt-3 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted-foreground">Owner</dt>
+                  <dd className="font-medium">{owner.displayName ?? 'Unknown'}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Email</dt>
+                  <dd className="font-medium">
+                    {owner.email !== null ? (
+                      <a href={`mailto:${owner.email}`} className="underline">
+                        {owner.email}
+                      </a>
+                    ) : (
+                      '—'
+                    )}
+                  </dd>
+                </div>
+                {owner.uid !== '' && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-muted-foreground">Firebase UID</dt>
+                    <dd className="mt-1 flex flex-wrap items-center gap-2">
+                      <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{owner.uid}</code>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        aria-label="Copy owner UID"
+                        onClick={() => void copyOwnerUid(owner.uid)}
+                      >
+                        Copy UID
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => fillImpersonateFromOwner(owner.uid)}
+                      >
+                        Use in Impersonate
+                      </Button>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </>
+          )}
+          <p className="mt-2 text-xs" role="status" aria-live="polite">
+            {copyMsg ?? ''}
+          </p>
+        </section>
+
         {/* Billing status (#24): the founder's manual read-only lever */}
         <section aria-labelledby="status-heading" className="rounded-lg border p-4">
           <h2 id="status-heading" className="font-medium">Billing status</h2>
@@ -353,6 +475,7 @@ export function WorkspaceDetailPage() {
               <Label htmlFor="targetUid">Target Firebase UID</Label>
               <Input
                 id="targetUid"
+                ref={targetUidRef}
                 value={targetUid}
                 onChange={(e) => setTargetUid(e.target.value)}
                 placeholder="uid from Firebase Auth"
