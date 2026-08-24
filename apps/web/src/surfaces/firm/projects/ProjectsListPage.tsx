@@ -8,7 +8,8 @@
 
 import { Badge, Button, Card, CardContent, CardHeader, Label, Progress } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
-import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { useClients } from '../clients/useClients.ts';
@@ -19,7 +20,15 @@ import {
 } from './duplicateProject.ts';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
+import { ProjectsListControls } from './ProjectsListControls.tsx';
+import {
+  filterAndSortProjects,
+  parseProjectsListParams,
+  writeProjectsListParams,
+  type IProjectsListParams,
+} from './projectsListFilter.ts';
 import { STATUS_LABELS } from './projectLabels.ts';
+import { useTags } from './tags/useTags.ts';
 import { createProject, useProjects, type IProjectRow } from './useProjects.ts';
 
 function duplicateErrorMessage(error: unknown): string {
@@ -97,21 +106,23 @@ export function ProjectsListPage({
 }: IProjectsListPageProps) {
   const projects = useProjects(workspaceId);
   const clients = useClients(workspaceId);
-  const [searchParams] = useSearchParams();
+  const projectTags = useTags(workspaceId, 'project');
+  const [searchParams, setSearchParams] = useSearchParams();
   const canCreate = role === 'owner' || role === 'admin' || role === 'pm';
   // ?new=1 opens the chooser on arrival (the Home "New project" CTA, #17).
   const [creating, setCreating] = useState(canCreate && searchParams.get('new') === '1');
   const [createMode, setCreateMode] = useState<'blank' | 'duplicate'>('blank');
   const [sourceId, setSourceId] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
+
+  const listParams = useMemo(() => parseProjectsListParams(searchParams), [searchParams]);
+
+  function updateListParams(next: IProjectsListParams): void {
+    setSearchParams(writeProjectsListParams(next, searchParams), { replace: true });
+  }
 
   const rows = projects.status === 'ready' ? projects.rows : [];
   const clientOptions = clients.status === 'ready' ? clients.rows : [];
-  const visible = rows.filter(
-    (project) =>
-      project.lifecycle !== 'deleted' && (showArchived || project.lifecycle !== 'archived'),
-  );
-  const archivedCount = rows.filter((project) => project.lifecycle === 'archived').length;
+  const visible = filterAndSortProjects(rows, listParams, projectTags.tags);
   const duplicatable = rows.filter((project) => project.lifecycle !== 'deleted');
   const source = duplicatable.find((project) => project.id === sourceId);
 
@@ -132,6 +143,7 @@ export function ProjectsListPage({
         </div>
         {canCreate && !creating && (
           <Button type="button" onClick={openCreateCard}>
+            <Plus className="h-4 w-4" aria-hidden />
             New project
           </Button>
         )}
@@ -259,10 +271,22 @@ export function ProjectsListPage({
         </Card>
       )}
 
+      {projects.status === 'ready' && rows.length > 0 && (
+        <ProjectsListControls
+          params={listParams}
+          onChange={updateListParams}
+          projectTags={projectTags.tags}
+          clients={clientOptions}
+        />
+      )}
+
       {projects.status === 'loading' && <p className="text-sm">Loading projects…</p>}
       {projects.status === 'error' && <p className="text-sm">Projects could not be loaded.</p>}
-      {projects.status === 'ready' && visible.length === 0 && (
+      {projects.status === 'ready' && rows.length === 0 && (
         <p className="text-sm">No projects yet.</p>
+      )}
+      {projects.status === 'ready' && rows.length > 0 && visible.length === 0 && (
+        <p className="text-sm">No projects match your filters.</p>
       )}
       {projects.status === 'ready' && visible.length > 0 && (
         <ul className="flex flex-col gap-2">
@@ -270,19 +294,6 @@ export function ProjectsListPage({
             <ProjectListItem key={project.id} project={project} workspaceSlug={workspaceSlug} />
           ))}
         </ul>
-      )}
-      {archivedCount > 0 && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="self-start"
-          onClick={() => setShowArchived((current) => !current)}
-        >
-          {showArchived
-            ? 'Hide archived'
-            : `Show archived (${archivedCount})`}
-        </Button>
       )}
     </div>
   );
