@@ -29,7 +29,7 @@ export function TagChip({ name, color, onRemove }: ITagChipProps) {
           type="button"
           aria-label={`Remove ${name}`}
           onClick={onRemove}
-          className="-mr-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full leading-none hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current"
+          className="-mr-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full leading-none hover:bg-black/10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current"
         >
           <span aria-hidden>×</span>
         </button>
