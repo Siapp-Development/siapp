@@ -262,4 +262,74 @@ describe('MessagingConsentPage — opt-in Call to Action disclosure', () => {
     expect(text).toMatch(/\bSTOP\b/);
     expect(text).toMatch(/\bHELP\b/);
   });
+
+  it('enumerates the two opt-in paths (written form + verbal agreement)', () => {
+    const { container } = renderPage(<MessagingConsentPage />);
+    const text = container.textContent ?? '';
+
+    expect(text).toMatch(/Written intake \/ engagement form\./);
+    expect(text).toMatch(/unchecked by default/i);
+    expect(text).toMatch(/Verbal agreement during onboarding\./);
+    expect(text).toMatch(/timestamp, source, and language/i);
+  });
+});
+
+describe('MessagingConsentPage — visible sample opt-in consent form', () => {
+  it('renders a form labelled as the sample opt-in consent form', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const form = screen.getByRole('form', { name: /sample opt-in consent form/i });
+    expect(form).toBeInTheDocument();
+  });
+
+  it('renders a labelled mobile-number field that is illustrative (disabled)', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const mobile = screen.getByLabelText('Mobile number');
+    expect(mobile).toBeInTheDocument();
+    expect(mobile).toHaveAttribute('type', 'tel');
+    // The field is illustrative / non-functional.
+    expect(mobile).toBeDisabled();
+  });
+
+  it('renders the consent checkbox unchecked by default (30925 compliance)', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: /I agree to receive recurring project-update text messages \(SMS\/WhatsApp\) from \[Firm Name\] via Siapp\./i,
+    });
+    expect(checkbox).toBeInTheDocument();
+    // Critical: consent must never be pre-checked.
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it('renders an illustrative, non-functional submit button (disabled)', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const form = within(screen.getByRole('form', { name: /sample opt-in consent form/i }));
+    const submit = form.getByRole('button', { name: /submit/i });
+    expect(submit).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+  });
+
+  it('carries the disclosure line inside the sample form', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const form = screen.getByRole('form', { name: /sample opt-in consent form/i });
+    const text = form.textContent ?? '';
+    expect(text).toMatch(/Message frequency varies\./);
+    expect(text).toMatch(/Message and data rates may apply\./);
+    expect(text).toMatch(/Reply STOP to unsubscribe, HELP for help\./);
+  });
+
+  it('cross-links inside the sample form use in-app router paths', () => {
+    renderPage(<MessagingConsentPage />);
+
+    const form = within(screen.getByRole('form', { name: /sample opt-in consent form/i }));
+    expect(form.getByRole('link', { name: 'Terms & Conditions' })).toHaveAttribute(
+      'href',
+      '/legal/sms-terms',
+    );
+    expect(form.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy');
+  });
 });

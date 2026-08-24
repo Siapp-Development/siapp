@@ -30,10 +30,18 @@ marketing or promotional messages.
 
 ## How you opt in (Call to Action)
 
-When a firm adds you to a project, it confirms your agreement to receive notifications
-and records your opt-in in Siapp (with a timestamp, source, and language). Consent is
-**not** a condition of any purchase. At the point of opt-in you are shown the following
-disclosure:
+Your consent is collected by the firm **before any message is sent**, through one of two
+paths:
+
+1. **Written intake / engagement form.** When you engage the firm, you provide your
+   mobile number and check a consent box — **unchecked by default** — on the firm's
+   client intake or engagement form, agreeing to receive recurring project-update
+   messages from the firm via Siapp.
+2. **Verbal agreement during onboarding.** You confirm your agreement verbally, and the
+   firm records your opt-in in Siapp with a timestamp, source, and language.
+
+Consent is **not** a condition of any purchase. At the point of opt-in you are shown the
+following disclosure:
 
 > **☐ I agree to receive project update messages from [Firm Name] via Siapp by SMS
 > and/or WhatsApp.** Message frequency varies. Message and data rates may apply.
@@ -42,6 +50,25 @@ disclosure:
 
 The first message you receive is a branded welcome confirming your enrollment and
 repeating the STOP/HELP instructions.
+
+## Sample opt-in consent form
+
+The following is a representative sample of the opt-in consent experience an end-user
+sees on the firm's intake/engagement form. The consent checkbox is **unchecked by
+default** and requires the end-user's active agreement.
+
+> **Project update messages**
+>
+> Mobile number: `[ +60 __________ ]`
+>
+> **☐ I agree to receive recurring project-update text messages (SMS/WhatsApp) from
+> [Firm Name] via Siapp.**
+>
+> Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe,
+> HELP for help. See the [Terms & Conditions](./sms-messaging-terms.md) and
+> [Privacy Policy](./privacy-policy.md).
+>
+> `[ Submit ]`
 
 ## Message frequency
 
