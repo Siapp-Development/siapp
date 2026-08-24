@@ -85,27 +85,28 @@
 
   /*
    * Tag palette (D-041). Each background pairs with white text and clears
-   * WCAG 2.1 AA (>= 4.5:1) — asserted by tagColor.test.ts. The two tag
-   * registries (projectTags/taskTags) share this palette; the `TTagColor`
-   * key selects a pair. Do not add a pair without re-running the contrast
-   * assertion, and keep keys in sync with TAG_COLOR_KEYS in tagColor.ts.
+   * WCAG 2.1 AA (>= 4.5:1). The two tag registries (projectTags/taskTags)
+   * share this palette; the `TTagColor` key selects a pair. Soft pastel
+   * tints (light bg + same-hue dark text) so chips recede and don't compete
+   * with primary content. Do not add a pair without checking contrast, and
+   * keep keys in sync with TAG_COLOR_KEYS in tagColor.ts.
    */
-  --tag-slate-bg: #475569;
-  --tag-slate-fg: #ffffff;
-  --tag-red-bg: #b3372f;
-  --tag-red-fg: #ffffff;
-  --tag-amber-bg: #92600a;
-  --tag-amber-fg: #ffffff;
-  --tag-green-bg: #15803d;
-  --tag-green-fg: #ffffff;
-  --tag-blue-bg: #1d4ed8;
-  --tag-blue-fg: #ffffff;
-  --tag-violet-bg: #6b21a8;
-  --tag-violet-fg: #ffffff;
-  --tag-pink-bg: #9f1239;
-  --tag-pink-fg: #ffffff;
-  --tag-teal-bg: #0f766e;
-  --tag-teal-fg: #ffffff;
+  --tag-slate-bg: #eef1f5;
+  --tag-slate-fg: #334155;
+  --tag-red-bg: #fdeceb;
+  --tag-red-fg: #b42318;
+  --tag-amber-bg: #fdf1d6;
+  --tag-amber-fg: #835407;
+  --tag-green-bg: #e3f5ea;
+  --tag-green-fg: #166534;
+  --tag-blue-bg: #e6eefb;
+  --tag-blue-fg: #1d4ed8;
+  --tag-violet-bg: #f0eafb;
+  --tag-violet-fg: #6b21a8;
+  --tag-pink-bg: #fbe8f0;
+  --tag-pink-fg: #9f1239;
+  --tag-teal-bg: #dbf5f0;
+  --tag-teal-fg: #0d6a62;
 }
 
 [data-surface='firm'] {
