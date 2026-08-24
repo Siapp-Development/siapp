@@ -184,7 +184,7 @@ service cloud.firestore {
     function validUserProfile(uid) {
       let d = request.resource.data;
       return d.uid == uid
-        && d.email == request.auth.token.email
+        && d.email.lower() == request.auth.token.email.lower()
         && d.displayName is string
         && d.displayName.size() > 0
         && d.locale in ['en']
