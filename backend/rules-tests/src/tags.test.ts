@@ -360,7 +360,84 @@ describe('project.tags array', () => {
   });
 });
 
+// Admin-seeded starter projects predate `startDate` and a well-formed
+// `visibility` map, so validProjectFields() rejects them. The narrow
+// tags-only update branch must still let them be tagged (regression for the
+// prod "Missing or insufficient permissions" on seeded projects).
+describe('project.tags on a legacy/seed project (no startDate, empty visibility)', () => {
+  const SEED_PATH = `workspaces/${WKS_A}/projects/proj-seed`;
+
+  beforeEach(async () => {
+    await seedDoc(testEnv, SEED_PATH, {
+      id: 'proj-seed',
+      name: 'Residential Build Starter',
+      vertical: 'construction',
+      lifecycle: 'published',
+      status: 'planning',
+      clientId: '',
+      clientNameDenorm: '',
+      ownerUid: 'user-owner',
+      ownerNameDenorm: 'Test Owner',
+      summary: { totalTasks: 0, doneTasks: 0, overdueTasks: 0, progressPct: 0 },
+      // No startDate; visibility deliberately empty — the seed shape that
+      // used to brick tagging.
+      visibility: {},
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  });
+
+  it('lets owner/admin/pm set tags despite the missing startDate/visibility', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), SEED_PATH), { tags: ['t1', 't2'], updatedAt: Timestamp.now() }),
+    );
+  });
+
+  it('lets tags be cleared to an empty array', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('admin'), SEED_PATH), { tags: [], updatedAt: Timestamp.now() }),
+    );
+  });
+
+  it('still denies a >20 tags array via the narrow branch', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), SEED_PATH), {
+        tags: Array.from({ length: 21 }, (_, i) => `t${i}`),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('does not let the tags-only branch change any other field', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), SEED_PATH), {
+        status: 'active',
+        tags: ['t1'],
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies a viewer tagging the seed project', async () => {
+    await assertFails(
+      updateDoc(doc(dbAs('viewer'), SEED_PATH), { tags: ['t1'], updatedAt: Timestamp.now() }),
+    );
+  });
+});
+
 describe('task.tags array', () => {
+  it('allows owner/admin/pm to update an existing task tags array', async () => {
+    const path = `workspaces/${WKS_A}/projects/proj-site/tasks/task-upd`;
+    await seedDoc(testEnv, path, validTask('task-upd', {}, 'user-pm'));
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), path), {
+        tags: ['t1', 't2'],
+        updatedAt: Timestamp.now(),
+        updatedBy: 'user-pm',
+      }),
+    );
+  });
+
   it('allows owner/admin/pm to create a task carrying a tags array', async () => {
     await assertSucceeds(
       setDoc(doc(dbAs('pm'), TASK_PATH), validTask('task1', { tags: ['t1', 't2'] }, 'user-pm')),
