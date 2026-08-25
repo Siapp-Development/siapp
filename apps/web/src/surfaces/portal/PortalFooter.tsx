@@ -10,7 +10,7 @@ import { PrivacyNotice } from '@/components/PrivacyNotice.tsx';
  */
 export function PortalFooter({ tier, firmName }: { tier: TWorkspacePlan; firmName: string }) {
   return (
-    <footer className="mt-auto flex flex-col gap-2 border-t border-border px-6 py-4 text-center text-xs text-muted-foreground">
+    <footer className="mt-auto flex flex-col gap-2 border-t border-border px-6 py-4 text-center text-xs text-muted-foreground print:hidden">
       <PrivacyNotice firmName={firmName} />
       {tier === 'business' ? (
         <p>{firmName}</p>
