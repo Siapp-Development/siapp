@@ -3,6 +3,10 @@ export { Avatar, avatarInitials, avatarVariants, type IAvatarProps } from './com
 export { Badge, badgeVariants, type IBadgeProps } from './components/Badge.tsx';
 export { Button, buttonVariants, type IButtonProps } from './components/Button.tsx';
 export { Card, CardContent, CardFooter, CardHeader, type TCardProps } from './components/Card.tsx';
+export {
+  CircularProgress,
+  type ICircularProgressProps,
+} from './components/CircularProgress.tsx';
 export { ConfirmDialog, type IConfirmDialogProps } from './components/ConfirmDialog.tsx';
 export { Dialog, type IDialogProps } from './components/Dialog.tsx';
 export { Drawer, type IDrawerProps } from './components/Drawer.tsx';
