@@ -173,14 +173,15 @@ describe('apexRouter', () => {
     },
   );
 
-  it('applies the portal surface theme once the /p tree mounts', async () => {
+  it('applies the firm surface theme once the /p tree mounts', async () => {
     renderAt('/p/abc');
 
     await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' });
 
     // useSurfaceTheme sets the attribute in an effect — wait for the flush.
+    // The client portal adopts the firm cool-neutral surface (#126, D-042).
     await waitFor(() => {
-      expect(document.documentElement.dataset.surface).toBe('portal');
+      expect(document.documentElement.dataset.surface).toBe('firm');
     });
   });
 
