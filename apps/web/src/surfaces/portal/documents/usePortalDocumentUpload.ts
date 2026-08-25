@@ -52,7 +52,7 @@ export function usePortalDocumentUpload({
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function startUpload(file: File): Promise<void> {
-    const invalid = validateClientFile({ name: file.name, size: file.size, type: file.type });
+    const invalid = validateClientFile(file);
     if (invalid !== null) {
       setState({ status: 'invalid', reason: invalid });
       return;
