@@ -473,6 +473,12 @@ describe('collab document create (D-f)', () => {
         validCollabDocPayload('cnew-mime', { mimeType: 'application/zip' }),
       ),
     );
+    await assertSucceeds(
+      setDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-dwg`),
+        validCollabDocPayload('cnew-dwg', { mimeType: 'image/vnd.dwg' }),
+      ),
+    );
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size`),

@@ -103,6 +103,12 @@ describe('collab-upload creates', () => {
     }
   });
 
+  it('explicitly allows image/vnd.dwg (.dwg) collab uploads (#129)', async () => {
+    await assertSucceeds(
+      put(storageAsCollab(), `${PROJECT_PREFIX}/collab-uploads/uuid-dwg`, PNG_BYTES, 'image/vnd.dwg'),
+    );
+  });
+
   it('denies firm-only mime types (spreadsheets) for collab uploads', async () => {
     await assertFails(
       put(

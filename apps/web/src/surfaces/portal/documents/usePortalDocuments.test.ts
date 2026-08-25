@@ -26,19 +26,34 @@ import { validateClientFile } from './usePortalDocuments.ts';
 
 describe('validateClientFile', () => {
   it('accepts an allowed mime type under the size cap', () => {
-    expect(validateClientFile({ size: 1024, type: 'application/pdf' })).toBeNull();
-    expect(validateClientFile({ size: 1024, type: 'image/png' })).toBeNull();
+    expect(validateClientFile({ name: 'file', size: 1024, type: 'application/pdf' })).toBeNull();
+    expect(validateClientFile({ name: 'file', size: 1024, type: 'image/png' })).toBeNull();
   });
 
   it('rejects files over 10 MB', () => {
     expect(
-      validateClientFile({ size: MAX_CLIENT_DOCUMENT_SIZE_BYTES + 1, type: 'application/pdf' }),
+      validateClientFile({ name: 'file', size: MAX_CLIENT_DOCUMENT_SIZE_BYTES + 1, type: 'application/pdf' }),
     ).toBe('too-large');
+  });
+
+  it('accepts a .dwg file the browser reports with an empty type (#129)', () => {
+    expect(validateClientFile({ name: 'plan.dwg', size: 1024, type: '' })).toBeNull();
+    expect(
+      validateClientFile({ name: 'plan.dwg', size: 1024, type: 'application/octet-stream' }),
+    ).toBeNull();
+  });
+
+  it('accepts zip archives (#129)', () => {
+    expect(validateClientFile({ name: 'bundle.zip', size: 1024, type: 'application/zip' })).toBeNull();
+    expect(
+      validateClientFile({ name: 'bundle.zip', size: 1024, type: 'application/x-zip-compressed' }),
+    ).toBeNull();
   });
 
   it('rejects mime types outside the client allowlist', () => {
     expect(
       validateClientFile({
+        name: 'file',
         size: 1024,
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),

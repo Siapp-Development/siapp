@@ -140,6 +140,28 @@ describe('DocumentsSection list', () => {
     expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(2);
   });
 
+  it('exposes a Preview action for zip rows (#129 isPreviewable includes zip)', () => {
+    docsData.state = {
+      status: 'ready',
+      rows: [
+        docRow({ id: 'z1', name: 'bundle.zip', mimeType: 'application/zip' }),
+        docRow({ id: 'z2', name: 'bundle2.zip', mimeType: 'application/x-zip-compressed' }),
+      ],
+    };
+    renderSection();
+    expect(screen.getAllByRole('button', { name: 'Preview' })).toHaveLength(2);
+  });
+
+  it('advertises .dwg on the file input accept, alongside the firm mime allowlist (#129)', () => {
+    docsData.state = { status: 'ready', rows: [] };
+    renderSection();
+    const accept = screen.getByTestId('document-file-input').getAttribute('accept');
+    expect(accept).toContain('.dwg');
+    expect(accept).toContain('image/vnd.dwg');
+    expect(accept).toContain('application/zip');
+    expect(accept).toContain('application/pdf');
+  });
+
   it('hides upload and delete when canEdit is false', () => {
     docsData.state = { status: 'ready', rows: [docRow()] };
     renderSection({ role: 'viewer', canEdit: false });
