@@ -15,11 +15,14 @@ rules_version = '2';
 // Client-visibility of individual files is enforced at the Firestore metadata
 // layer (documents/{did} rules) — same unguessable-uuid tradeoff as reads.
 //
-// #22: collaborator principals (custom-token claims collab.{wid,pid,tid,colid})
-// may upload to collab-uploads/ (≤25MB, collab mime allowlist, D-f) and read
-// project files; the portal client may also read collab-uploads/ because
-// collaborator uploads inherit the task's visibleToClient (D-029) — per-file
-// visibility is enforced at the Firestore metadata layer.
+// #127: collaborator principals (workspace-scoped custom-token claims
+// collab.{wid,colid,linkId} — no pid/tid; a collaborator can be assigned
+// tasks across projects) may upload to collab-uploads/ (≤25MB, collab mime
+// allowlist, D-f) and read project files; the portal client may also read
+// collab-uploads/ because collaborator uploads inherit the task's
+// visibleToClient (D-029). Per-file assignee-membership + task visibility is
+// enforced at the Firestore metadata layer (validCollabDocumentCreate for
+// writes, documents/{did} rules for reads).
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -53,13 +56,20 @@ service firebase.storage {
         && request.auth.token.portal.cid.size() > 0;
     }
 
-    // Collaborator principal (#22) — same shape as firestore.rules.
-    // Lifecycle + visibility re-checks live in the Firestore metadata rules.
-    function isCollabPrincipal(wid, pid) {
+    // Collaborator principal (#127) — mirrors firestore.rules isCollabWorkspace.
+    // The redeemed token is WORKSPACE-scoped { wid, colid, linkId } (a
+    // collaborator can be assigned tasks across projects) — there is no pid
+    // claim. Storage cannot cross-service get() the task, so per-file
+    // assignee-membership + task visibility is re-checked at the Firestore
+    // metadata layer (validCollabDocumentCreate for writes, documents/{did}
+    // rules for reads); object paths carry unguessable uuids — the same
+    // workspace-wide-read MVP tradeoff as firm members above.
+    function isCollabPrincipal(wid) {
       return isSignedIn()
         && request.auth.token.collab != null
         && request.auth.token.collab.wid == wid
-        && request.auth.token.collab.pid == pid;
+        && request.auth.token.collab.colid is string
+        && request.auth.token.collab.colid.size() > 0;
     }
 
     // Mirrors ALLOWED_DOCUMENT_MIME_TYPES in @siapp/shared (parity enforced
@@ -120,7 +130,7 @@ service firebase.storage {
         || isPortalClient(wid, pid)
         // #22: firm files shared with a collaborator (visibleToCollaboratorIds
         // gates the metadata; unguessable-uuid tradeoff as above).
-        || isCollabPrincipal(wid, pid);
+        || isCollabPrincipal(wid);
       allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
         && request.resource.size <= 25 * 1024 * 1024
         && isAllowedContentType();
@@ -145,8 +155,8 @@ service firebase.storage {
     match /workspaces/{wid}/projects/{pid}/collab-uploads/{fileName} {
       allow read: if isFirmMember(wid)
         || isPortalClient(wid, pid)
-        || isCollabPrincipal(wid, pid);
-      allow create: if isCollabPrincipal(wid, pid)
+        || isCollabPrincipal(wid);
+      allow create: if isCollabPrincipal(wid)
         && request.resource.size <= 25 * 1024 * 1024
         && isCollabAllowedContentType();
       allow update, delete: if false;
