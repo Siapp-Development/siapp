@@ -86,17 +86,15 @@ export interface IPortalClaims {
 }
 
 /**
- * Custom claims minted by `redeemCollabLink` (#22, E1): a collaborator
- * principal is pinned to ONE task in ONE project in ONE workspace. Like
- * portal claims it carries NO `workspaces` claim, so every firm rule
- * automatically denies it; the collab rules string-compare `wid`/`pid`/`tid`
- * against the match path.
+ * Custom claims minted by `redeemCollabLink` (#127): a collaborator principal
+ * is scoped to ONE collaborator record in ONE workspace and sees every task
+ * assigned to them (assignee-membership gate). Like portal claims it carries
+ * NO `workspaces` claim, so every firm rule automatically denies it; the
+ * collab rules string-compare `wid`/`colid` against the resource + match path.
  */
 export interface ICollabClaims {
   collab: {
     wid: string;
-    pid: string;
-    tid: string;
     colid: string;
     linkId: string;
   };
@@ -350,6 +348,27 @@ export interface ICollaboratorDoc {
 }
 
 /**
+ * `/workspaces/{wid}/collaborators/{colid}/assignedTasks/{pid}_{tid}` (#127)
+ * — server-maintained per-collaborator mirror of the tasks assigned to them
+ * across every project, fanned out by `onTaskWrite` and refreshed by
+ * `onProjectWrite`. Powers the collaborator's "My Assigned Tasks" switcher;
+ * reads are rules-gated (own colid only), writes are server-only.
+ */
+export interface IAssignedTaskMirrorDoc {
+  projectId: string;
+  taskId: string;
+  title: string;
+  status: TTaskStatus;
+  /** Absent when the task has no due date. */
+  dueDate?: Date;
+  projectName: string;
+  lifecycle: TProjectLifecycle;
+  /** Mirrors the task's per-collaborator visibility for THIS collaborator. */
+  visibleToThisCollaborator: boolean;
+  updatedAt: Date;
+}
+
+/**
  * `/workspaces/{wid}/magicLinks/{linkId}` — collaborator + client tokens
  * (server-only; rules deny all client access, #21 D2). The doc id is a
  * random linkId, NOT the shortCode: the URL token is `{shortCode}_{secret}`
@@ -500,6 +519,13 @@ export interface ITaskDoc {
   collaboratorCanSeeAllAttachments?: boolean;
   /** Empty = all assigned collaborators see it. */
   visibleToCollaboratorIds: string[];
+  /**
+   * #127: queryable string projection of collaborator-type `assignees` ids —
+   * powers the cross-project "my tasks" mirror + the rules assignee-membership
+   * gate (Firestore/rules cannot iterate the `assignees` object array).
+   * Maintained on task create/edit; always present on new writes.
+   */
+  assigneeCollaboratorIds: string[];
   /** Empty/missing = unrestricted; see 20-access-control-departments.md. */
   restrictedToDepartments: string[];
   /**
@@ -581,7 +607,7 @@ export interface IProjectDocumentDoc {
 
 /** Back-pointer from a message to the entity it concerns. */
 export interface IMessageRelatedTo {
-  type: 'task' | 'project' | 'milestone';
+  type: 'task' | 'project' | 'milestone' | 'collaborator';
   id: string;
 }
 

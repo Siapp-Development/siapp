@@ -68,7 +68,7 @@ export type TCollaboratorStatus = 'active' | 'archived';
 export type TMagicLinkKind = 'client' | 'collaborator';
 
 // Magic-link scope
-export type TMagicLinkScopeType = 'task' | 'project';
+export type TMagicLinkScopeType = 'task' | 'project' | 'collaborator';
 
 // Task activity-stream author kind
 export type TTaskUpdateAuthorType = 'user' | 'collaborator' | 'client' | 'system';
@@ -116,7 +116,10 @@ export type TNotificationTrigger =
   | 'task_blocked'
   | 'need_help'
   | 'inbound_auto_reply'
-  | 'wa_quota_90';
+  | 'wa_quota_90'
+  // #127: collaborator-scoped access link shared via WhatsApp (enqueue-only
+  // until the #19 dispatcher lands).
+  | 'collab_access_link';
 
 // Message queue recipient kind (#18, D7): widens the client/collaborator
 // phone-ref pair with firm members ('internal' recipients).

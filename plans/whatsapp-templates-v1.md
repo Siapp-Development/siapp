@@ -200,6 +200,25 @@ Trigger: `wa_quota_90` · Recipient: workspace owner (internal, once per period)
 
 ---
 
+## 9. `siapp_collab_access_link_v1_en`
+
+Trigger: `collab_access_link` · Recipient: collaborator · Vars: `ICollabAccessLinkVars` · (#127 — one durable link → all my tasks)
+
+> Hello {{collaborator_name}}, {{firm_name}} here.
+>
+> You can view every task assigned to you and post updates from one link — no app or sign-up needed:
+> {{access_link}}
+
+| Variable | Maps to | Sample |
+|---|---|---|
+| `collaborator_name` | `collaboratorName` | KF Electrical |
+| `firm_name` | `firmName` | DD Development |
+| `access_link` | `accessLink` | https://siapp.app/t/abc123 |
+
+> **Enqueue-only (D-001 / #127 Q-WA):** `sendCollaboratorLink` writes the `messages` queue record with `templateName: 'collab_access_link_v1'`; actual delivery depends on the #19 dispatcher + Twilio + Meta approval, which are not yet in-repo. Copy access link + Reset link are fully functional without WhatsApp.
+
+---
+
 ## Submission checklist
 
 - [ ] Create all 9 templates (8 triggers + auto-reply-unknown variant) in Content Template Builder, category **Utility**, language **en**, with the sample values above.

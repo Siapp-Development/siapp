@@ -1,6 +1,6 @@
 /**
- * Pure verification tests for redeemCollabLink (#22): the link-state blocker
- * matrix (pins audience 'collaborator' + scope 'task') and the uniform
+ * Pure verification tests for redeemCollabLink (#127): the link-state blocker
+ * matrix (pins audience 'collaborator' + scope 'collaborator') and the uniform
  * failure shape. Token parsing/hashing is covered in
  * lib/portalTokens.test.ts; the mint path runs in the emulator walkthrough.
  */
@@ -14,7 +14,7 @@ const NOW = Date.parse('2026-07-23T00:00:00Z');
 function validInput(overrides: Record<string, unknown> = {}) {
   return {
     audience: 'collaborator',
-    scopeType: 'task',
+    scopeType: 'collaborator',
     revoked: false,
     expiresAtMs: NOW + 1000,
     ...overrides,
@@ -22,12 +22,13 @@ function validInput(overrides: Record<string, unknown> = {}) {
 }
 
 describe('collabLinkBlocker', () => {
-  it('accepts a live collaborator task link', () => {
+  it('accepts a live collaborator-scoped link', () => {
     expect(collabLinkBlocker(validInput(), NOW)).toBeNull();
   });
 
-  it('rejects client links and non-task scopes', () => {
+  it('rejects client links and legacy task/project scopes (#127 migration)', () => {
     expect(collabLinkBlocker(validInput({ audience: 'client' }), NOW)).toBe('audience');
+    expect(collabLinkBlocker(validInput({ scopeType: 'task' }), NOW)).toBe('audience');
     expect(collabLinkBlocker(validInput({ scopeType: 'project' }), NOW)).toBe('audience');
     expect(collabLinkBlocker(validInput({ audience: undefined }), NOW)).toBe('audience');
   });
