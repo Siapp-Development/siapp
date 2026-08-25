@@ -38,6 +38,7 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/pdf',
   'application/zip',
   'application/x-zip-compressed',
+  'image/vnd.dwg',
   'image/png',
   'image/jpeg',
   'image/webp',
@@ -102,13 +103,17 @@ export const TASK_NOTIFY_DEFAULTS = {
 export const MAX_CLIENT_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
- * Content types accepted for client portal uploads (#21, D-034): PDF, images
- * and Word only — a deliberate subset of ALLOWED_DOCUMENT_MIME_TYPES.
- * Mirrored verbatim in storage.rules and firestore.rules (parity enforced by
- * a rules test). No image/svg+xml — SVGs can carry scripts.
+ * Content types accepted for client portal uploads (#21, D-034): PDF, images,
+ * Word, ZIP archives and AutoCAD (.dwg) — a deliberate subset of
+ * ALLOWED_DOCUMENT_MIME_TYPES. Mirrored verbatim in storage.rules and
+ * firestore.rules (parity enforced by a rules test). No image/svg+xml — SVGs
+ * can carry scripts.
  */
 export const CLIENT_ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/pdf',
+  'application/zip',
+  'application/x-zip-compressed',
+  'image/vnd.dwg',
   'image/png',
   'image/jpeg',
   'image/webp',
@@ -148,6 +153,7 @@ export const COLLAB_ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/pdf',
   'application/zip',
   'application/x-zip-compressed',
+  'image/vnd.dwg',
   'image/png',
   'image/jpeg',
   'image/webp',

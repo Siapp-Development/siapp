@@ -379,6 +379,7 @@ service cloud.firestore {
           'image/gif',
           'application/zip',
           'application/x-zip-compressed',
+          'image/vnd.dwg',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'application/msword'
         ]
@@ -424,6 +425,7 @@ service cloud.firestore {
           'image/gif',
           'application/zip',
           'application/x-zip-compressed',
+          'image/vnd.dwg',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           'application/msword'
         ]

@@ -25,11 +25,12 @@ import {
   validateDocumentFile,
   type IDocumentRow,
 } from './useDocuments.ts';
+import { isZipContentType } from './zip.ts';
 
-const FILE_INPUT_ACCEPT = ALLOWED_DOCUMENT_MIME_TYPES.join(',');
+const FILE_INPUT_ACCEPT = `${ALLOWED_DOCUMENT_MIME_TYPES.join(',')},.dwg`;
 
 function isPreviewable(mimeType: string): boolean {
-  return (PREVIEWABLE_MIME_TYPES as readonly string[]).includes(mimeType);
+  return (PREVIEWABLE_MIME_TYPES as readonly string[]).includes(mimeType) || isZipContentType(mimeType);
 }
 
 // ---------------------------------------------------------------------------
