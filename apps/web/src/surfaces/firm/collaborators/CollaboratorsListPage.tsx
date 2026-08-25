@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 
-import { ContactDrawer } from '../clients/ContactDrawer.tsx';
+import { ContactModal } from '../clients/ContactModal.tsx';
 import { ContactSearchInput } from '../clients/ContactSearchInput.tsx';
 import { NotificationsOffBadge, PhoneActions } from '../clients/PhoneActions.tsx';
 import { DeletePersonalDataDialog } from '../pdpa/DeletePersonalDataDialog.tsx';
@@ -341,7 +341,7 @@ export function CollaboratorsListPage({
         </div>
       )}
 
-      <ContactDrawer open={drawerOpen} onClose={closeDrawer} title={drawerLabel} label={drawerLabel}>
+      <ContactModal open={drawerOpen} onClose={closeDrawer} title={drawerLabel} label={drawerLabel}>
         {editing !== undefined ? (
           <>
             {editing.notificationsOptOut && (
@@ -379,7 +379,7 @@ export function CollaboratorsListPage({
             }}
           />
         )}
-      </ContactDrawer>
+      </ContactModal>
 
       {deletingDataFor !== null && (
         <DeletePersonalDataDialog

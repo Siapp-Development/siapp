@@ -226,7 +226,7 @@ describe('CollaboratorsListPage', () => {
     );
   });
 
-  it('opens the create form in a drawer dialog and submits the vertical form', async () => {
+  it('opens the create form in a modal dialog and submits the vertical form', async () => {
     const user = userEvent.setup();
     renderPage();
 

@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { TASK_NOTIFY_DEFAULTS } from '@siapp/shared';
@@ -368,6 +369,81 @@ describe('TaskDetailPanel details', () => {
     await userEvent.click(confirmButtons[confirmButtons.length - 1]!);
     expect(tasksData.deleteTask).toHaveBeenCalledWith('wksA', 'p1', 't1');
     expect(onDeleted).toHaveBeenCalled();
+  });
+
+  it('dismisses the confirm dialog without deleting when cancelled', async () => {
+    const onDeleted = vi.fn();
+    tasksData.deleteTask.mockResolvedValue(undefined);
+    renderPanel({ onDeleted });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete task' }));
+    // Confirm dialog is open: two "Delete task" buttons (header + destructive confirm).
+    expect(screen.getAllByRole('button', { name: 'Delete task' })).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // Dialog is dismissed, nothing deleted, and only the header button remains reachable.
+    expect(tasksData.deleteTask).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Delete task' })).toHaveLength(1);
+  });
+
+  it('closes via the header Close icon button', async () => {
+    const onClose = vi.fn();
+    renderPanel({ onClose });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('renders both columns and toggles them via the Details/Activity tablist', async () => {
+    renderPanel();
+
+    // The small-viewport tablist is always in the DOM (md:hidden is purely CSS).
+    expect(screen.getByRole('tablist', { name: 'Task detail tabs' })).toBeInTheDocument();
+    const detailsTab = screen.getByRole('tab', { name: 'details' });
+    const activityTab = screen.getByRole('tab', { name: 'activity' });
+
+    // Both columns render simultaneously (md+ shows both); tabs only toggle the
+    // `hidden` utility class below the breakpoint.
+    const detailsColumn = screen.getByLabelText('Status').closest('div.overflow-y-auto');
+    const activityColumn = screen.getByLabelText('Add a comment').closest('div.overflow-y-auto');
+    expect(detailsColumn).not.toBeNull();
+    expect(activityColumn).not.toBeNull();
+    expect(detailsColumn).not.toBe(activityColumn);
+
+    // Default: Details selected and visible, Activity hidden (small-viewport rule).
+    expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    expect(activityTab).toHaveAttribute('aria-selected', 'false');
+    expect(detailsColumn).not.toHaveClass('hidden');
+    expect(activityColumn).toHaveClass('hidden');
+
+    // Switch to Activity: selection and the hidden class flip.
+    await userEvent.click(activityTab);
+    expect(activityTab).toHaveAttribute('aria-selected', 'true');
+    expect(detailsTab).toHaveAttribute('aria-selected', 'false');
+    expect(activityColumn).not.toHaveClass('hidden');
+    expect(detailsColumn).toHaveClass('hidden');
+  });
+
+  it('has no axe violations and names its header icon buttons', async () => {
+    const { container } = renderPanel();
+
+    // Icon-only header controls expose accessible names via aria-label.
+    expect(screen.getByRole('button', { name: 'Delete task' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+
+    const results = await axe.run(
+      // The hidden `<input type=file>` is `display:none` in production (Tailwind
+      // `hidden`), but jsdom loads no CSS so axe sees it as a visible unlabeled
+      // control. Exclude it — the labeled "Attach file" button drives it.
+      { include: [container], exclude: [['[data-testid="document-file-input"]']] },
+      {
+        rules: { region: { enabled: false }, 'color-contrast': { enabled: false } },
+      },
+    );
+    expect(results.violations).toEqual([]);
   });
 });
 

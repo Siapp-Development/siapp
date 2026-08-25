@@ -66,4 +66,27 @@ describe('Dialog', () => {
 
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('defaults to the compact (sm) shell width', () => {
+    render(
+      <Dialog open onClose={vi.fn()} aria-label="Settings">
+        <p>Body</p>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-md');
+  });
+
+  it('renders a wide, height-capped shell when size="lg"', () => {
+    render(
+      <Dialog open onClose={vi.fn()} size="lg" aria-label="Settings">
+        <p>Body</p>
+      </Dialog>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveClass('max-w-4xl');
+    expect(dialog).toHaveClass('max-h-[90vh]');
+    expect(dialog).not.toHaveClass('max-w-md');
+  });
 });

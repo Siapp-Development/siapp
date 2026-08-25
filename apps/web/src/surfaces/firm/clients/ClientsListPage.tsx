@@ -18,7 +18,7 @@ import { useState } from 'react';
 import { DeletePersonalDataDialog } from '../pdpa/DeletePersonalDataDialog.tsx';
 import { NoConsentBadge, PdpaErasedBadge } from '../pdpa/PdpaBadges.tsx';
 import { ClientForm } from './ClientForm.tsx';
-import { ContactDrawer } from './ContactDrawer.tsx';
+import { ContactModal } from './ContactModal.tsx';
 import { ContactSearchInput } from './ContactSearchInput.tsx';
 import { NotificationsOffBadge, PhoneActions } from './PhoneActions.tsx';
 import { createClient, updateClient, useClients, type IClientRow } from './useClients.ts';
@@ -203,7 +203,7 @@ export function ClientsListPage({ workspaceId, workspaceName, role, uid }: IClie
         </div>
       )}
 
-      <ContactDrawer open={drawerOpen} onClose={closeDrawer} title={drawerLabel} label={drawerLabel}>
+      <ContactModal open={drawerOpen} onClose={closeDrawer} title={drawerLabel} label={drawerLabel}>
         {editing !== undefined ? (
           <>
             {editing.notificationsOptOut && (
@@ -234,7 +234,7 @@ export function ClientsListPage({ workspaceId, workspaceName, role, uid }: IClie
             }}
           />
         )}
-      </ContactDrawer>
+      </ContactModal>
 
       {deletingDataFor !== null && (
         <DeletePersonalDataDialog

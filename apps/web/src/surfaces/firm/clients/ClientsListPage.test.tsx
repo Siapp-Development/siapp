@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TCollectionState } from '../settings/useTeamData.ts';
@@ -186,7 +187,7 @@ describe('ClientsListPage', () => {
     expect(screen.queryByText('Siti Aminah')).not.toBeInTheDocument();
   });
 
-  it('opens the create form in a drawer dialog and submits the vertical form', async () => {
+  it('opens the create form in a modal dialog and submits the vertical form', async () => {
     const user = userEvent.setup();
     renderPage();
 
@@ -199,6 +200,21 @@ describe('ClientsListPage', () => {
     await user.click(screen.getByRole('button', { name: 'Add client' }));
 
     expect(clientsData.createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no axe violations while the ContactModal is open and names its Close button', async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage();
+
+    await user.click(screen.getByRole('button', { name: 'New client' }));
+    const dialog = screen.getByRole('dialog', { name: 'New client' });
+    // Icon-only Close control exposes an accessible name.
+    expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+
+    const results = await axe.run(container, {
+      rules: { region: { enabled: false }, 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
   });
 
   it('shows the no-consent badge when a client has no consent record', () => {

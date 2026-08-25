@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -222,6 +223,37 @@ describe('ProjectsListPage', () => {
 
     expect(screen.getByRole('heading', { level: 2, name: 'New project' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Blank' })).toBeChecked();
+  });
+
+  it('opens the New project flow inside a named modal dialog and closes it', async () => {
+    renderPage('pm');
+
+    // No dialog until the button is pressed.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+
+    const dialog = screen.getByRole('dialog', { name: 'New project' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { level: 2, name: 'New project' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: 'Blank' })).toBeChecked();
+
+    // Cancelling closes the modal and clears the form.
+    await userEvent.click(within(dialog).getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+  });
+
+  it('has no axe violations while the New project modal is open', async () => {
+    const { container } = renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: /new project/i }));
+    expect(screen.getByRole('dialog', { name: 'New project' })).toBeInTheDocument();
+
+    const results = await axe.run(container, {
+      rules: { region: { enabled: false }, 'color-contrast': { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
   });
 
   it('ignores ?new=1 for viewers', () => {
