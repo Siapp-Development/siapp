@@ -33,7 +33,7 @@ export interface IPortalDocumentUpload {
   /** Comma-separated accept list for the file input. */
   accept: string;
   /** Attach to a (hidden) file input the shortcut button opens. */
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLInputElement>;
   /** Open the OS file picker via the attached input. */
   openPicker: () => void;
   /** onChange handler for a file input — validates and starts the upload. */
@@ -49,10 +49,10 @@ export function usePortalDocumentUpload({
 }: IUsePortalDocumentUploadParams): IPortalDocumentUpload {
   const [state, setState] = useState<TPortalUploadState>({ status: 'idle' });
   const lastFileRef = useRef<File | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function startUpload(file: File): Promise<void> {
-    const invalid = validateClientFile(file);
+    const invalid = validateClientFile({ name: file.name, size: file.size, type: file.type });
     if (invalid !== null) {
       setState({ status: 'invalid', reason: invalid });
       return;
@@ -75,7 +75,7 @@ export function usePortalDocumentUpload({
 
   return {
     state,
-    accept: CLIENT_ALLOWED_DOCUMENT_MIME_TYPES.join(','),
+    accept: `${CLIENT_ALLOWED_DOCUMENT_MIME_TYPES.join(',')},.dwg`,
     inputRef,
     openPicker: () => inputRef.current?.click(),
     handleInputChange: (event) => {
