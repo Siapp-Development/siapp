@@ -10,7 +10,6 @@ import { Alert, Button, Input, Label, cn } from '@siapp/ui';
 import type {
   ITaskBlockedBy,
   TMemberRole,
-  TProjectLifecycle,
   TTaskAssignee,
   TTaskStatus,
 } from '@siapp/shared';
@@ -22,7 +21,7 @@ import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
 import { TaskAttachments } from '../documents/DocumentsSection.tsx';
 import { TagSelect } from '../tags/TagSelect.tsx';
 import { createTag, deleteTag, useTags } from '../tags/useTags.ts';
-import { CollabLinkButton } from './CollabLinkButton.tsx';
+import { CollabAccessLinkButton } from '../../collaborators/CollabAccessLinkButton.tsx';
 import { parseMentions, tokenizeMentions, type IMentionMember } from './mentions.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import {
@@ -243,8 +242,6 @@ export interface ITaskDetailPanelProps {
   departments: readonly IDepartmentRow[];
   role: TMemberRole;
   memberDepartments: readonly string[];
-  /** Project lifecycle — collab task links need published/completed (#22). */
-  lifecycle: TProjectLifecycle;
   canEdit: boolean;
   uid: string;
   userName: string;
@@ -262,7 +259,6 @@ export function TaskDetailPanel({
   departments,
   role,
   memberDepartments,
-  lifecycle,
   canEdit,
   uid,
   userName,
@@ -473,26 +469,6 @@ export function TaskDetailPanel({
           />
         ) : (
           <div className="flex flex-col gap-6">
-            {/* #22 (D-e): one rotating task link per collaborator assignee. */}
-            {task.assignees.some((entry) => entry.type === 'collaborator') && (
-              <section aria-label="Collaborator task links" className="flex flex-col gap-2">
-                <h4 className="text-sm font-medium">Collaborator task links</h4>
-                {task.assignees
-                  .filter((entry) => entry.type === 'collaborator')
-                  .map((entry) => (
-                    <CollabLinkButton
-                      key={entry.id}
-                      workspaceId={workspaceId}
-                      projectId={projectId}
-                      taskId={task.id}
-                      collaboratorId={entry.id}
-                      collaboratorName={entry.name}
-                      lifecycle={lifecycle}
-                      role={role}
-                    />
-                  ))}
-              </section>
-            )}
             {!canEdit ? (
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
@@ -635,6 +611,15 @@ export function TaskDetailPanel({
                           className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
                         >
                           {entry.name}
+                          {entry.type === 'collaborator' && (
+                            /* #127: copy this collaborator's durable access link. */
+                            <CollabAccessLinkButton
+                              variant="chip"
+                              workspaceId={workspaceId}
+                              collaboratorId={entry.id}
+                              collaboratorName={entry.name}
+                            />
+                          )}
                           <button
                             type="button"
                             aria-label={`Remove ${entry.name}`}

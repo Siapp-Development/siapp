@@ -17,14 +17,15 @@ import type {
   IExportProjectResponse,
   IGetRestrictedTaskHeadersRequest,
   IGetRestrictedTaskHeadersResponse,
-  IIssueCollabLinkRequest,
-  IIssueCollabLinkResponse,
+  IIssueCollaboratorLinkRequest,
+  IIssueCollaboratorLinkResponse,
   IIssuePortalLinkRequest,
   IIssuePortalLinkResponse,
   IResendInviteRequest,
   IRevokeInviteRequest,
   ISetMemberDepartmentsRequest,
   ISetMemberDepartmentsResponse,
+  ISendCollaboratorLinkRequest,
   ISetProjectLifecycleRequest,
   ISetProjectLifecycleResponse,
   ISubmitCollabUpdateRequest,
@@ -32,6 +33,7 @@ import type {
   IUpdateNotificationSettingsRequest,
   IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
+  TSendCollaboratorLinkResponse,
 } from '@siapp/shared';
 
 import { functions } from './firebase.ts';
@@ -126,20 +128,35 @@ export async function issuePortalLink(
 }
 
 /**
- * Mints (or resets) a collaborator task link (#22, E1). One active link per
- * (task, collaborator) — every call rotates, so earlier links stop working.
+ * Mints (or resets) a collaborator's one durable access link (#127). One active
+ * link per collaborator — every call rotates, so earlier links stop working.
+ * The single link exposes every task assigned to that collaborator.
  */
-export async function issueCollabLink(
-  data: IIssueCollabLinkRequest,
-): Promise<IIssueCollabLinkResponse> {
-  const call = httpsCallable<IIssueCollabLinkRequest, IIssueCollabLinkResponse>(
+export async function issueCollaboratorLink(
+  data: IIssueCollaboratorLinkRequest,
+): Promise<IIssueCollaboratorLinkResponse> {
+  const call = httpsCallable<IIssueCollaboratorLinkRequest, IIssueCollaboratorLinkResponse>(
     functions,
-    'issueCollabLink',
+    'issueCollaboratorLink',
   );
   return (await call(data)).data;
 }
 
-/** Collaborator status/need-help/note submission from the /t page (#22, D-b). */
+/**
+ * Enqueues the collaborator's access link over WhatsApp (#127, Q-WA). Honours
+ * opt-out / consent; delivery depends on the #19 dispatcher (enqueue-only).
+ */
+export async function sendCollaboratorLink(
+  data: ISendCollaboratorLinkRequest,
+): Promise<TSendCollaboratorLinkResponse> {
+  const call = httpsCallable<ISendCollaboratorLinkRequest, TSendCollaboratorLinkResponse>(
+    functions,
+    'sendCollaboratorLink',
+  );
+  return (await call(data)).data;
+}
+
+/** Collaborator status/need-help/note submission from the /t page (#127, D-b). */
 export async function submitCollabUpdate(data: ISubmitCollabUpdateRequest): Promise<void> {
   const call = httpsCallable<ISubmitCollabUpdateRequest, ISubmitCollabUpdateResponse>(
     functions,

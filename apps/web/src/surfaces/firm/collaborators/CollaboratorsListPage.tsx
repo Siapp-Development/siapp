@@ -35,6 +35,7 @@ import { ContactSearchInput } from '../clients/ContactSearchInput.tsx';
 import { NotificationsOffBadge, PhoneActions } from '../clients/PhoneActions.tsx';
 import { DeletePersonalDataDialog } from '../pdpa/DeletePersonalDataDialog.tsx';
 import { NoConsentBadge, PdpaErasedBadge } from '../pdpa/PdpaBadges.tsx';
+import { CollabAccessLinkButton } from './CollabAccessLinkButton.tsx';
 import { CollaboratorForm } from './CollaboratorForm.tsx';
 import {
   createCollaborator,
@@ -85,6 +86,7 @@ export interface ICollaboratorsListPageProps {
 
 interface ICollaboratorCardProps {
   collaborator: ICollaboratorRow;
+  workspaceId: string;
   canManage: boolean;
   canDeleteData: boolean;
   onEdit: (collaborator: ICollaboratorRow) => void;
@@ -94,6 +96,7 @@ interface ICollaboratorCardProps {
 
 function CollaboratorCard({
   collaborator,
+  workspaceId,
   canManage,
   canDeleteData,
   onEdit,
@@ -196,6 +199,17 @@ function CollaboratorCard({
             </div>
           )}
         </dl>
+      )}
+      {!collaborator.pdpaErased && canManage && !archived && (
+        <div className="flex items-center justify-end border-t border-border pt-3">
+          {/* #127: distribute the collaborator's one durable access link. */}
+          <CollabAccessLinkButton
+            variant="card"
+            workspaceId={workspaceId}
+            collaboratorId={collaborator.id}
+            collaboratorName={collaborator.name}
+          />
+        </div>
       )}
     </article>
   );
@@ -331,6 +345,7 @@ export function CollaboratorsListPage({
             <CollaboratorCard
               key={row.id}
               collaborator={row}
+              workspaceId={workspaceId}
               canManage={canManage}
               canDeleteData={canDeleteData}
               onEdit={openEdit}

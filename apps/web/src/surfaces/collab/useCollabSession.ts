@@ -1,15 +1,17 @@
 /**
- * Collab session bootstrap (#22, D-a): redeem the URL token via the
+ * Collab session bootstrap (#127): redeem the URL token via the
  * redeemCollabLink callable, sign in with the returned custom token, and
- * expose the scoped session (ids + branding + task snapshot) to the /t tree.
+ * expose the collaborator-scoped session (ids + branding + firm/collaborator
+ * identity) to the /t tree. The single link exposes every task assigned to the
+ * collaborator; the surface then live-queries the assigned-tasks mirror.
  *
- * Mirrors usePortalSession: a live session is reused without re-redeeming
- * when the signed-in user already carries matching collab claims AND the
- * redeem response is cached in sessionStorage (branding/task snapshot only
- * arrive in the redeem response).
+ * Mirrors usePortalSession: a live session is reused without re-redeeming when
+ * the signed-in user already carries matching collaborator claims AND the
+ * redeem response is cached in sessionStorage (branding only arrives in the
+ * redeem response).
  */
 
-import type { ICollabTaskSnapshot, IPortalBranding, TRedeemCollabLinkResponse } from '@siapp/shared';
+import type { IPortalBranding, TRedeemCollabLinkResponse } from '@siapp/shared';
 import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
@@ -18,11 +20,10 @@ import { auth, functions } from '@/lib/firebase.ts';
 
 export interface ICollabSession {
   workspaceId: string;
-  projectId: string;
-  taskId: string;
   collaboratorId: string;
+  firmName: string;
+  collaboratorName: string;
   branding: IPortalBranding;
-  task: ICollabTaskSnapshot;
 }
 
 export type TCollabSessionState =
@@ -52,14 +53,10 @@ function readCachedSession(): ICachedCollabSession | null {
     return typeof parsed.token === 'string' &&
       typeof session === 'object' &&
       session !== null &&
-      typeof session.taskId === 'string' &&
       typeof session.workspaceId === 'string' &&
-      typeof session.projectId === 'string' &&
       typeof session.collaboratorId === 'string' &&
       typeof session.branding === 'object' &&
-      session.branding !== null &&
-      typeof session.task === 'object' &&
-      session.task !== null
+      session.branding !== null
       ? (parsed as ICachedCollabSession)
       : null;
   } catch {
@@ -106,21 +103,21 @@ export function useCollabSession(token: string | undefined): {
       }
       setState({ status: 'loading' });
 
-      // Reuse a live session (page refresh) — only when the URL token is
-      // the SAME token that produced the cached session AND the current
-      // user's collab claims still match. A different /t/{token} (e.g. a
-      // rotated link) always re-redeems.
+      // Reuse a live session (page refresh) — only when the URL token is the
+      // SAME token that produced the cached session AND the current user's
+      // collaborator claims still match. A different /t/{token} (e.g. a reset
+      // link) always re-redeems.
       const user = auth.currentUser;
       if (user !== null) {
         const cached = readCachedSession();
         if (cached !== null && cached.token === token) {
           const claims = (await user.getIdTokenResult()).claims as {
-            collab?: { tid?: unknown };
+            collab?: { colid?: unknown };
           };
           if (cancelled) {
             return;
           }
-          if (claims.collab?.tid === cached.session.taskId) {
+          if (claims.collab?.colid === cached.session.collaboratorId) {
             setState({ status: 'ready', session: cached.session });
             return;
           }
@@ -143,11 +140,10 @@ export function useCollabSession(token: string | undefined): {
         await signInWithCustomToken(auth, response.customToken);
         const session: ICollabSession = {
           workspaceId: response.workspaceId,
-          projectId: response.projectId,
-          taskId: response.taskId,
           collaboratorId: response.collaboratorId,
+          firmName: response.firmName,
+          collaboratorName: response.collaborator.name,
           branding: response.branding,
-          task: response.task,
         };
         writeCachedSession(token, session);
         if (!cancelled) {
