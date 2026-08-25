@@ -65,7 +65,7 @@ export function PortalHeader({ project, workspaceId, projectId, clientId }: IPor
           type="button"
           onClick={upload.openPicker}
           disabled={upload.state.status === 'uploading'}
-          className="flex-1"
+          className="w-full sm:flex-1"
         >
           <FileUp className="h-4 w-4 shrink-0" aria-hidden="true" />
           Upload Document
@@ -75,7 +75,7 @@ export function PortalHeader({ project, workspaceId, projectId, clientId }: IPor
           variant="outline"
           onClick={() => window.print()}
           aria-label="Print project summary"
-          className="shrink-0"
+          className="w-full sm:w-auto"
         >
           <Printer className="h-4 w-4 shrink-0" aria-hidden="true" />
           Print
