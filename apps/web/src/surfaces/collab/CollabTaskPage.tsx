@@ -1,6 +1,7 @@
 /**
- * Collaborator page at siapp.app/t/:token (#127) — lazy-loaded, warm portal
- * theme, mobile-first, submit-only (Q1). Redeems the collaborator-scoped link
+ * Collaborator page at siapp.app/t/:token (#127) — lazy-loaded, cool firm
+ * theme (matches the firm app + client portal), mobile-first, submit-only
+ * (Q1). Redeems the collaborator-scoped link
  * token, then shows a "My Assigned Tasks" switcher over every task assigned to
  * the collaborator across projects (subject to the same per-task visibility +
  * project-lifecycle gates). Selecting one renders the existing task-detail
@@ -9,6 +10,7 @@
  */
 
 import type { TTaskStatus } from '@siapp/shared';
+import { Calendar, ChevronsUpDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 
@@ -47,13 +49,21 @@ const STATUS_LABELS: Record<TTaskStatus, string> = {
   done: 'Done',
 };
 
+/** Accent eyebrow above the task title (matches the "ACTIVE TASK" mock). */
+const STATUS_EYEBROW: Record<TTaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'Active task',
+  blocked: 'Needs help',
+  done: 'Completed',
+};
+
 const DUE_FORMAT = new Intl.DateTimeFormat('en-MY', { dateStyle: 'long' });
 
 const EMPTY_ROWS: readonly IAssignedTaskRow[] = [];
 
 export function CollabTaskPage() {
   const { token } = useParams<'token'>();
-  useSurfaceTheme('portal');
+  useSurfaceTheme('firm');
   const { state, retry } = useCollabSession(token);
 
   if (state.status === 'loading') {
@@ -110,8 +120,10 @@ function CollabWorkspaceView({ session }: { session: ICollabSession }) {
     <>
       <SkipLink />
       <header className="border-b border-border bg-card px-6 py-4">
-        <p className="text-sm text-muted-foreground">{firmName}</p>
-        <h1 className="mt-1 text-xl font-bold">My Assigned Tasks</h1>
+        <div className="mx-auto max-w-xl">
+          <p className="text-sm font-medium text-muted-foreground">{firmName}</p>
+          <h1 className="mt-0.5 text-xl font-bold tracking-tight">My Assigned Tasks</h1>
+        </div>
       </header>
       <main id="main" className="mx-auto max-w-xl space-y-8 px-6 py-8">
         {tasksState.status === 'loading' && (
@@ -169,22 +181,28 @@ function TaskSwitcher({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor="collab-task-switcher" className="text-sm font-medium">
+      <label htmlFor="collab-task-switcher" className="text-sm font-semibold">
         My Assigned Tasks
       </label>
-      <select
-        id="collab-task-switcher"
-        className="h-11 rounded-md border border-border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        value={selectedKey ?? ''}
-        onChange={(event) => onSelect(event.target.value)}
-      >
-        {rows.map((row) => (
-          <option key={row.key} value={row.key}>
-            {row.title}
-            {row.active ? ' (Active)' : ''} — {row.projectName}
-          </option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          id="collab-task-switcher"
+          className="h-12 w-full appearance-none rounded-lg border border-border bg-card px-4 pr-11 text-sm font-medium shadow-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={selectedKey ?? ''}
+          onChange={(event) => onSelect(event.target.value)}
+        >
+          {rows.map((row) => (
+            <option key={row.key} value={row.key}>
+              {row.title}
+              {row.active ? ' (Active)' : ''} — {row.projectName}
+            </option>
+          ))}
+        </select>
+        <ChevronsUpDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+      </div>
     </div>
   );
 }
@@ -243,12 +261,17 @@ function CollabTaskView({
   return (
     <section aria-labelledby="collab-task-heading" className="space-y-8">
       <div>
-        <p className="text-sm text-muted-foreground">
-          {branding.firmName !== '' ? branding.firmName : 'Project team'} · {projectName}
-        </p>
-        <h2 id="collab-task-heading" className="mt-1 text-lg font-bold">
+        {task !== null ? (
+          <p className="text-xs font-semibold uppercase tracking-wider text-accent">
+            {STATUS_EYEBROW[task.status]}
+          </p>
+        ) : null}
+        <h2 id="collab-task-heading" className="mt-1 text-2xl font-bold tracking-tight">
           {task?.title ?? 'Loading task…'}
         </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {branding.firmName !== '' ? branding.firmName : 'Project team'} · {projectName}
+        </p>
       </div>
 
       {task === null ? (
@@ -258,18 +281,19 @@ function CollabTaskView({
       ) : (
         <>
           <div className="space-y-3">
-            <p className="text-sm">
-              <span className="rounded-full bg-muted px-3 py-1 font-medium">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 font-medium">
                 {STATUS_LABELS[task.status]}
               </span>
               {task.dueDate !== null ? (
-                <span className="ml-3 text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <Calendar aria-hidden="true" className="size-4" />
                   Due {DUE_FORMAT.format(task.dueDate)}
                 </span>
               ) : null}
-            </p>
+            </div>
             {task.status === 'blocked' && task.blockedReason !== '' ? (
-              <p className="rounded-md border border-border bg-muted p-3 text-sm">
+              <p className="rounded-lg border border-border bg-muted p-3 text-sm">
                 Help requested: {task.blockedReason}
               </p>
             ) : null}
@@ -284,7 +308,7 @@ function CollabTaskView({
             <h3 id="collab-actions-heading" className="sr-only">
               Update status
             </h3>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-3">
               <CollabStatusButtons
                 status={task.status}
                 busy={busy}

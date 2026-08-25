@@ -4,6 +4,7 @@
  * entries — rules deny everything else.
  */
 
+import { Quote, Send } from 'lucide-react';
 import { useId, useState } from 'react';
 
 import type { TCollabUpdatesState } from './useCollabTask.ts';
@@ -69,14 +70,16 @@ export function CollabNotes({
           onChange={(event) => setText(event.target.value)}
           maxLength={5000}
           rows={3}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          placeholder="Type your note here…"
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
         <button
           type="submit"
           disabled={busy || text.trim() === ''}
-          className="min-h-11 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Send note
+          <Send aria-hidden="true" className="size-4" />
         </button>
       </form>
       {updates.status === 'loading' ? (
@@ -92,13 +95,24 @@ export function CollabNotes({
       ) : (
         <ul className="space-y-3">
           {updates.rows.map((row) => (
-            <li key={row.id} className="rounded-md border border-border bg-card p-3">
-              <p className="text-sm">{updateLine(row.action, row.text, row.to)}</p>
-              {row.createdAt !== null ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {TIME_FORMAT.format(row.createdAt)}
-                </p>
-              ) : null}
+            <li
+              key={row.id}
+              className="flex gap-3 rounded-xl border border-border bg-card p-4 shadow-card"
+            >
+              <span
+                aria-hidden="true"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+              >
+                <Quote className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm">{updateLine(row.action, row.text, row.to)}</p>
+                {row.createdAt !== null ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {TIME_FORMAT.format(row.createdAt)}
+                  </p>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
