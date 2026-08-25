@@ -45,6 +45,8 @@ If any of those steps requires a phone call to us, v1 isn't done.
 - Mobile-responsive web (PWA installable)
 
 ### Client portal
+> **Superseded in part by D-042 (#126):** the portal is now a single-screen dashboard showing % complete (progress ring), a **client-visible task list + Gantt timeline**, recent updates, and shared documents — with a **print/export** view. The timespan bar, current-phase, and next-milestone blocks below were dropped. See [decisions-log.md](./decisions-log.md) (D-042 supersedes D-034 point 2 for the client portal).
+
 - Magic-link access (no password required for v1)
 - Per-project page: project name, firm branding, **project start date + target date**, **timespan bar** showing elapsed vs remaining with a "today" marker (D-034), current phase, % complete, next milestone with date, recent updates feed, shared documents
 - **Client document upload** (D-034): clients can upload files (PDF / image / DOCX up to 10 MB per file) into the project's shared documents. Uploads are always visible to the firm; firm-side activity feed records `client_document_uploaded` events.
@@ -92,7 +94,7 @@ If any of those steps requires a phone call to us, v1 isn't done.
 | Native iOS/Android apps | PWA is enough | After v1.5 retention proven |
 | Custom template authoring UI | Use Siapp-Admin starter project + firm Duplicate first (D-031) | v2 |
 | Time tracking & billing | Different product surface | v2 (or integrate) |
-| Gantt charts & resource planning | Procore territory | Never (out of scope as product) |
+| Gantt charts & resource planning | Procore territory | Never for the firm app; a read-only client-portal Gantt is now in scope per D-042 (#126) |
 | E-signature | Integrate (DocuSign/Hellosign) when asked | v1.5 |
 | Accounting integration (SQL Account, AutoCount) | High value but slow build; partner first | v2 |
 | White-label custom domains | Wait for Business tier traction | v1.5 |
