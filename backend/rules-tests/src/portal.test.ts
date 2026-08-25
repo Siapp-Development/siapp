@@ -460,13 +460,116 @@ describe('portal activity reads (D4)', () => {
   });
 });
 
-describe('portal tasks stay hidden', () => {
-  it('denies portal task reads even on the live project', async () => {
-    await seedDoc(testEnv, `${PUB_PREFIX}/tasks/task-portal`, {
-      title: 'Internal task',
+describe('portal task list (D-042 / #126)', () => {
+  const T_PREFIX = `${PUB_PREFIX}/tasks`;
+  const PROJ_DELETED = 'proj-portal-deleted';
+  const DELETED_PREFIX = `workspaces/${WKS_A}/projects/${PROJ_DELETED}`;
+
+  beforeAll(async () => {
+    // Client-visible, non-restricted — the ONLY tasks a portal client may list.
+    await seedDoc(testEnv, `${T_PREFIX}/task-vis`, {
+      title: 'Client-visible task',
+      visibleToClient: true,
       restrictedToDepartments: [],
     });
-    await assertFails(getDoc(doc(dbAsPortal(), `${PUB_PREFIX}/tasks/task-portal`)));
-    await assertFails(getDocs(collection(dbAsPortal(), `${PUB_PREFIX}/tasks`)));
+    // Opted out of client visibility.
+    await seedDoc(testEnv, `${T_PREFIX}/task-hidden`, {
+      title: 'Internal task',
+      visibleToClient: false,
+      restrictedToDepartments: [],
+    });
+    // Client-visible but department-restricted (D-025) — must never reach a client.
+    await seedDoc(testEnv, `${T_PREFIX}/task-restricted`, {
+      title: 'Restricted task',
+      visibleToClient: true,
+      restrictedToDepartments: ['legal'],
+    });
+    // Same-shaped visible task on the draft project (lifecycle-gate denial).
+    await seedDoc(testEnv, `${DRAFT_PREFIX}/tasks/task-vis`, {
+      title: 'Draft visible task',
+      visibleToClient: true,
+      restrictedToDepartments: [],
+    });
+    // Soft-deleted project (D-027): lifecycle 'deleted' must close the portal.
+    await seedDoc(testEnv, DELETED_PREFIX, { lifecycle: 'deleted', clientId: CLIENT_ID });
+    await seedDoc(testEnv, `${DELETED_PREFIX}/tasks/task-vis`, {
+      title: 'Deleted-project visible task',
+      visibleToClient: true,
+      restrictedToDepartments: [],
+    });
+  });
+
+  function portalTaskQuery(db: ReturnType<typeof dbAsPortal>, prefix: string) {
+    return query(
+      collection(db, `${prefix}/tasks`),
+      where('visibleToClient', '==', true),
+      where('restrictedToDepartments', '==', []),
+    );
+  }
+
+  it('allows the fully-constrained portal query on a live project', async () => {
+    await assertSucceeds(getDocs(portalTaskQuery(dbAsPortal(), PUB_PREFIX)));
+  });
+
+  it('denies an unconstrained task list (the prover forces both where clauses)', async () => {
+    await assertFails(getDocs(collection(dbAsPortal(), T_PREFIX)));
+  });
+
+  it('denies a query missing the restrictedToDepartments constraint', async () => {
+    await assertFails(
+      getDocs(query(collection(dbAsPortal(), T_PREFIX), where('visibleToClient', '==', true))),
+    );
+  });
+
+  it('denies a query missing the visibleToClient constraint', async () => {
+    await assertFails(
+      getDocs(
+        query(collection(dbAsPortal(), T_PREFIX), where('restrictedToDepartments', '==', [])),
+      ),
+    );
+  });
+
+  it('denies the constrained query on a draft project (D-027 lifecycle gate)', async () => {
+    await assertFails(getDocs(portalTaskQuery(dbAsPortal(PROJ_DRAFT), DRAFT_PREFIX)));
+  });
+
+  it('denies the constrained query on a soft-deleted project (D-027 lifecycle gate)', async () => {
+    await assertFails(getDocs(portalTaskQuery(dbAsPortal(PROJ_DELETED), DELETED_PREFIX)));
+  });
+
+  it('denies a portal principal reading another client on the same project', async () => {
+    // dbAsPortal(PROJ_OTHER) keeps the default cid (CLIENT_ID) but PROJ_OTHER
+    // belongs to client-other → portalProjectLive's clientId re-check fails.
+    await assertFails(
+      getDocs(
+        portalTaskQuery(dbAsPortal(PROJ_OTHER), `workspaces/${WKS_A}/projects/${PROJ_OTHER}`),
+      ),
+    );
+  });
+
+  it('denies a WKS_A portal token reading WKS_B tasks (cross-workspace isolation)', async () => {
+    await assertFails(
+      getDocs(
+        portalTaskQuery(dbAsPortal(), `workspaces/${WKS_B}/projects/${PROJ_PUB}`),
+      ),
+    );
+  });
+
+  it('still denies a single-doc portal task get (no portal get grant added)', async () => {
+    await assertFails(getDoc(doc(dbAsPortal(), `${T_PREFIX}/task-vis`)));
+  });
+
+  it('still lets a firm owner list tasks (regression — portal grant is additive)', async () => {
+    // owner/admin satisfy canSeeRestrictedList unconditionally, so an
+    // unconstrained firm list keeps working alongside the new portal grant.
+    await assertSucceeds(getDocs(collection(dbAs('owner'), T_PREFIX)));
+  });
+
+  it('still lets a firm viewer run the restriction-constrained task list (regression)', async () => {
+    await assertSucceeds(
+      getDocs(
+        query(collection(dbAs('viewer'), T_PREFIX), where('restrictedToDepartments', '==', [])),
+      ),
+    );
   });
 });

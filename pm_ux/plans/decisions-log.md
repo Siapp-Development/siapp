@@ -12,6 +12,39 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-08-24 — Client portal is a single-screen dashboard with a client-visible task list, Gantt timeline, and print/export (D-042)
+
+**Decision:** Redesign the client portal ([B2], #126) from a tabbed/route-changing layout into a **single-screen dashboard** at `siapp.app/p/:token` with exactly four sections: **Overall Progress** (a circular % ring on the server-maintained `summary.progressPct`), **Project Tasks**, **Recent Updates**, and **Documents** (preview + upload). Two substantive additions:
+
+1. **Client-visible task list + Gantt timeline.** The portal now shows tasks the firm has opted in with `visibleToClient == true` (and never restricted tasks — `restrictedToDepartments` must be empty). A "Show All Tasks →" button opens a modal with a **List** view and a **Timeline (Gantt-style)** view, tasks grouped by phase (PRE-CONSTRUCTION, FOUNDATION, …). Client task statuses are Done / In Progress / To do / Blocked / Overdue (`blockedReason` stays hidden from clients). The timeline axis uses the dynamic min/max of task start/due dates (± padding), matching the firm `TimelineView`.
+2. **Print / export.** A Print action at the top of the portal renders a horizontal, print-friendly layout of everything (header, progress, updates, documents, and the tasks in **both** list and timeline views) via `@media print` + `window.print()` — no server-side PDF.
+
+Phase and milestone information is no longer shown as standalone portal blocks: **the "Current phase" and "Next milestone" sections are removed**, and **milestones are no longer rendered in the portal at all**. Phases survive only as the grouping headers within the task list/timeline.
+
+**Why:**
+- **Trust the wedge with more data (extends D-008).** Firms and clients in review asked to see the actual task breakdown and a real timeline, not just a % and a next-milestone line. A single screen removes navigation friction on mobile and gives one printable project snapshot.
+- **The task list is the accessible equivalent of the Gantt**, so adding the visual timeline does not regress screen-reader users.
+- **Curation stays with the firm** via the existing `visibleToClient` flag (already governing docs/updates), so nothing leaks by default and department-restricted tasks (D-025) are structurally excluded.
+
+**Supersedes:**
+- **D-034** point 2 (the timespan bar chosen *instead of* a Gantt "because a client audience would never use a full timeline") — the timespan bar is **removed** and replaced by the progress ring + the opt-in Gantt. D-034's start-date and shared-documents decisions stand.
+- **11-mvp-scope.md** portal-scope lines that omit a task list, and the "Gantt charts … Never (out of scope as product)" line **for the client portal specifically**. (Firm-side Gantt/Kanban scope under D-033 is unchanged.)
+
+**Consequences:**
+- New `firestore.rules` grant: portal principal (`isPortalClient` + `portalProjectLive`) may `list` tasks constrained to `visibleToClient == true` && `restrictedToDepartments.size() == 0` (list-provable, forces the query filters). No portal `get` on tasks. Client bundle maps only client-safe task fields.
+- Equality-only query + client-side sort ⇒ no new composite index (mirrors the documents hook).
+- New shared `CircularProgress` primitive in `@siapp/ui` (D-038); read-only portal-local Gantt (no firm-surface import — D-036/D-037).
+- Old `/p/:token/documents` and `/updates` routes become backward-compatible redirects into the single screen (in-flight WhatsApp links must not 404).
+- Bundle isolation (D-036/D-037), the "Powered by Siapp" footer (D-030), and the lifecycle/read-only gates (D-027) are unchanged.
+
+**Reversal cost:** Low-moderate — reverting to the tabbed portal is a UI change; the additive tasks `list` rule and `CircularProgress` primitive can stay. Restoring the timespan bar is a UI-only change.
+
+**Revisit when:** Firms ask to curate tasks beyond the single `visibleToClient` flag, clients want task-level detail/drill-in, or print fidelity for long Gantts becomes a complaint.
+
+**Affects:** [11-mvp-scope.md](./11-mvp-scope.md), [firestore-data-model.md](./firestore-data-model.md), [13-tech-architecture.md](./13-tech-architecture.md), `firestore.rules`, `packages/ui`, wireframes ([B2]); implementation plan `plans/126-client-portal-single-screen.md`.
+
+---
+
 ## 2026-08-24 — Project & task tags use two independent workspace-level registries (D-041)
 
 **Decision:** Project tags live in `workspaces/{wid}/projectTags`, task tags in `workspaces/{wid}/taskTags`; project/task docs store arrays of tagIds (`tags?: string[]`, ≤20) that resolve name+color against the live registry on read. Deleting a registry doc removes the tag from options everywhere for free (orphan ids are filtered on read). Owner/admin/pm may create/rename/delete tags. Closes the tag-model question for #111.
@@ -175,6 +208,8 @@ Root pipeline: `pnpm turbo build | lint | typecheck | test` orchestrates all wor
 ---
 
 ## 2026-07-12 — Client portal gets shared documents (upload + list), project start date, and a timespan visualization (D-034)
+
+> **⚠️ Partially superseded by [D-042](#2026-08-24--client-portal-is-a-single-screen-dashboard-with-a-client-visible-task-list-gantt-timeline-and-printexport-d-042) (2026-08-24, #126):** point 2 (the **timespan bar**, chosen instead of a Gantt) is **removed** — the single-screen redesign replaces it with a progress ring plus an opt-in client Gantt timeline. Point 1 (project start date) and point 3 (shared documents) still stand.
 
 **Decision:** Extend the client portal ([B2]) with three additions:
 

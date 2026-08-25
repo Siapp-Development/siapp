@@ -1,7 +1,9 @@
 /**
- * Live portal reads (#21): project doc + phases + milestones under the
- * portal rules grants. Progress is the server-maintained summary.progressPct
- * (D5) — never recomputed client-side.
+ * Live portal reads (#21): project doc + phases under the portal rules
+ * grants. Progress is the server-maintained summary.progressPct (D5) — never
+ * recomputed client-side. Phases are read for task-group headers/order/labels
+ * (#126, D-042); milestones are no longer rendered in the portal, so that
+ * subscription and the current-phase/next-milestone helpers were removed.
  */
 
 import {
@@ -33,14 +35,6 @@ export interface IPortalPhase {
   status: 'todo' | 'in_progress' | 'done';
 }
 
-export interface IPortalMilestone {
-  id: string;
-  name: string;
-  targetDate: Date | null;
-  completedAt: Date | null;
-  description: string;
-}
-
 export type TPortalProjectState =
   | { status: 'loading' }
   | { status: 'error' }
@@ -48,7 +42,6 @@ export type TPortalProjectState =
       status: 'ready';
       project: IPortalProject;
       phases: IPortalPhase[];
-      milestones: IPortalMilestone[];
     };
 
 function asDate(value: unknown): Date | null {
@@ -77,42 +70,13 @@ function mapPhase(id: string, data: DocumentData): IPortalPhase {
   };
 }
 
-function mapMilestone(id: string, data: DocumentData): IPortalMilestone {
-  return {
-    id,
-    name: String(data['name'] ?? ''),
-    targetDate: asDate(data['targetDate']),
-    completedAt: asDate(data['completedAt']),
-    description: typeof data['description'] === 'string' ? data['description'] : '',
-  };
-}
-
-/** The client's "current phase": first in-progress, else first todo, else last done. */
-export function currentPhase(phases: IPortalPhase[]): IPortalPhase | null {
-  return (
-    phases.find((phase) => phase.status === 'in_progress') ??
-    phases.find((phase) => phase.status === 'todo') ??
-    phases.at(-1) ??
-    null
-  );
-}
-
-/** Earliest incomplete milestone by target date, or null. */
-export function nextMilestone(milestones: IPortalMilestone[]): IPortalMilestone | null {
-  return milestones.find((milestone) => milestone.completedAt === null) ?? null;
-}
-
 export function usePortalProject(workspaceId: string, projectId: string): TPortalProjectState {
   const [project, setProject] = useState<IPortalProject | 'loading' | 'error'>('loading');
   const [phases, setPhases] = useState<IPortalPhase[] | 'loading' | 'error'>('loading');
-  const [milestones, setMilestones] = useState<IPortalMilestone[] | 'loading' | 'error'>(
-    'loading',
-  );
 
   useEffect(() => {
     setProject('loading');
     setPhases('loading');
-    setMilestones('loading');
     const prefix = `workspaces/${workspaceId}/projects/${projectId}`;
     const unsubscribes = [
       onSnapshot(
@@ -130,22 +94,15 @@ export function usePortalProject(workspaceId: string, projectId: string): TPorta
         },
         () => setPhases('error'),
       ),
-      onSnapshot(
-        query(collection(db, `${prefix}/milestones`), orderBy('targetDate')),
-        (snapshot) => {
-          setMilestones(snapshot.docs.map((docSnap) => mapMilestone(docSnap.id, docSnap.data())));
-        },
-        () => setMilestones('error'),
-      ),
     ];
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
   }, [workspaceId, projectId]);
 
-  if (project === 'error' || phases === 'error' || milestones === 'error') {
+  if (project === 'error' || phases === 'error') {
     return { status: 'error' };
   }
-  if (project === 'loading' || phases === 'loading' || milestones === 'loading') {
+  if (project === 'loading' || phases === 'loading') {
     return { status: 'loading' };
   }
-  return { status: 'ready', project, phases, milestones };
+  return { status: 'ready', project, phases };
 }
