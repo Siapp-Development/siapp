@@ -851,8 +851,18 @@ service cloud.firestore {
             || (isCollabPrincipal(wid, pid, tid)
               && projectLive(wid, pid)
               && collabCanSeeTask(resource.data));
-          allow list: if isFirmMember(wid)
-            && canSeeRestrictedList(wid, resource.data);
+          allow list: if (isFirmMember(wid)
+              && canSeeRestrictedList(wid, resource.data))
+            // #126 (D-042): the portal client lists ONLY client-visible,
+            // non-restricted tasks on a live project. The visibleToClient /
+            // restrictedToDepartments fields are referenced directly (not via
+            // .get() defaults) so Firestore's list prover FORCES the query to
+            // constrain both — an unconstrained query is denied, not filtered
+            // (closes the D-025 restricted-task leak). No portal `get` grant.
+            || (isPortalClient(wid, pid)
+              && portalProjectLive(wid, pid)
+              && resource.data.visibleToClient == true
+              && resource.data.restrictedToDepartments.size() == 0);
           allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
             && workspaceActive(wid)
             && validTaskFields(tid)
