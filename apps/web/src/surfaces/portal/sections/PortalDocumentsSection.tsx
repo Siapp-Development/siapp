@@ -7,14 +7,12 @@
  * a static list with no uploader or download buttons.
  */
 
-import { CLIENT_ALLOWED_DOCUMENT_MIME_TYPES } from '@siapp/shared';
-import { useId, useRef, useState } from 'react';
+import { useId } from 'react';
 
+import { usePortalDocumentUpload } from '../documents/usePortalDocumentUpload.ts';
 import {
   portalDownloadUrl,
-  uploadPortalDocument,
   usePortalDocuments,
-  validateClientFile,
   type TClientFileError,
 } from '../documents/usePortalDocuments.ts';
 
@@ -23,13 +21,6 @@ const DATE_FORMAT = new Intl.DateTimeFormat('en-MY', {
   month: 'short',
   year: 'numeric',
 });
-
-type TUploadState =
-  | { status: 'idle' }
-  | { status: 'uploading'; percent: number }
-  | { status: 'invalid'; reason: TClientFileError }
-  | { status: 'failed' }
-  | { status: 'done' };
 
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) {
@@ -58,33 +49,9 @@ export function PortalDocumentsSection({
   interactive = true,
 }: IPortalDocumentsSectionProps) {
   const state = usePortalDocuments(workspaceId, projectId);
-  const [upload, setUpload] = useState<TUploadState>({ status: 'idle' });
-  const lastFileRef = useRef<File | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const upload = usePortalDocumentUpload({ workspaceId, projectId, clientId });
   const headingId = useId();
   const uploadId = useId();
-
-  async function startUpload(file: File): Promise<void> {
-    const invalid = validateClientFile(file);
-    if (invalid !== null) {
-      setUpload({ status: 'invalid', reason: invalid });
-      return;
-    }
-    lastFileRef.current = file;
-    setUpload({ status: 'uploading', percent: 0 });
-    try {
-      await uploadPortalDocument({
-        workspaceId,
-        projectId,
-        clientId,
-        file,
-        onProgress: (percent) => setUpload({ status: 'uploading', percent }),
-      });
-      setUpload({ status: 'done' });
-    } catch {
-      setUpload({ status: 'failed' });
-    }
-  }
 
   async function handleDownload(storagePath: string): Promise<void> {
     try {
@@ -113,46 +80,35 @@ export function PortalDocumentsSection({
             PDF, images, or Word documents up to 10 MB.
           </p>
           <input
-            ref={inputRef}
+            ref={upload.inputRef}
             id={uploadId}
             type="file"
-            accept={CLIENT_ALLOWED_DOCUMENT_MIME_TYPES.join(',')}
-            disabled={upload.status === 'uploading'}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file !== undefined) {
-                void startUpload(file);
-              }
-              event.target.value = '';
-            }}
+            accept={upload.accept}
+            disabled={upload.state.status === 'uploading'}
+            onChange={upload.handleInputChange}
             className="mt-3 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground"
           />
-          {upload.status === 'uploading' && (
+          {upload.state.status === 'uploading' && (
             <p role="status" className="mt-2 text-sm text-muted-foreground">
-              Uploading… {upload.percent}%
+              Uploading… {upload.state.percent}%
             </p>
           )}
-          {upload.status === 'done' && (
+          {upload.state.status === 'done' && (
             <p role="status" className="mt-2 text-sm text-primary">
               File shared with your project team.
             </p>
           )}
-          {upload.status === 'invalid' && (
+          {upload.state.status === 'invalid' && (
             <p role="alert" className="mt-2 text-sm text-destructive">
-              {INVALID_MESSAGES[upload.reason]}
+              {INVALID_MESSAGES[upload.state.reason]}
             </p>
           )}
-          {upload.status === 'failed' && (
+          {upload.state.status === 'failed' && (
             <div role="alert" className="mt-2 text-sm text-destructive">
               <p>The upload didn’t finish. Check your connection and try again.</p>
               <button
                 type="button"
-                onClick={() => {
-                  const file = lastFileRef.current;
-                  if (file !== null) {
-                    void startUpload(file);
-                  }
-                }}
+                onClick={upload.retry}
                 className="mt-1 rounded-md border border-border px-3 py-1 text-sm font-medium text-foreground hover:bg-muted"
               >
                 Retry upload

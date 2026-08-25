@@ -45,7 +45,12 @@ export function PortalProjectPage() {
   return (
     <>
       <div className="flex flex-col gap-6 print:hidden">
-        <PortalHeader project={project} />
+        <PortalHeader
+          project={project}
+          workspaceId={session.workspaceId}
+          projectId={session.projectId}
+          clientId={session.clientId}
+        />
         <div className="grid gap-6 md:grid-cols-2">
           <PortalProgressSection progressPct={project.progressPct} />
           <PortalTasksSection groups={groups} projectName={project.name} />

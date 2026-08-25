@@ -22,7 +22,9 @@ import { PortalSessionProvider, usePortalSession } from './usePortalSession.ts';
  */
 export function PortalShell() {
   const { token } = useParams<'token'>();
-  useSurfaceTheme('portal');
+  // Client portal adopts the firm dashboard's cool neutral background
+  // (the collaborator surface keeps the warm 'portal' palette).
+  useSurfaceTheme('firm');
   const { state, retry } = usePortalSession(token);
 
   if (state.status === 'loading') {
