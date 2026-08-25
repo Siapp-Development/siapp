@@ -203,16 +203,20 @@ export type TRedeemPortalLinkResponse =
 export type TPortalErrorCode = 'portal/invalid_or_expired';
 
 /**
- * issueCollaboratorLink (#127): firm owner/admin/pm mints (or resets) the one
- * durable, collaborator-scoped access link for a collaborator. One active link
- * per collaborator — every issue revokes any previous active link and returns a
- * fresh URL. The single link exposes every task assigned to that collaborator
- * (subject to per-task visibility + project-lifecycle gates).
+ * issueCollaboratorLink (#127): firm owner/admin/pm surfaces the one durable,
+ * collaborator-scoped access link. Durable, reset-only (locked): the default
+ * path is GET-OR-CREATE — while an active, unexpired link exists it returns the
+ * SAME URL (no rotation), so earlier links keep working. Only `reset: true`
+ * revokes-and-mints a fresh URL. The single link exposes every task assigned to
+ * that collaborator (subject to per-task visibility + project-lifecycle gates).
  */
 export interface IIssueCollaboratorLinkRequest {
   workspaceId: string;
   collaboratorId: string;
-  /** Explicit firm-side "Reset link" — audit-logged as collab_link.reset. */
+  /**
+   * Explicit firm-side "Reset link" — revoke the active link and mint a fresh
+   * one (audited collab_link.reset). Omit/false = idempotent get-or-create.
+   */
   reset?: boolean;
 }
 
@@ -224,10 +228,10 @@ export interface IIssueCollaboratorLinkResponse {
 }
 
 /**
- * sendCollaboratorLink (#127, Q-WA): enqueue-only — mints/reuses the
- * collaborator's access link and writes a `messages` doc for WhatsApp delivery
- * via the `collab_access_link_v1` template. Delivery depends on the #19
- * dispatcher (not yet in-repo); this only enqueues.
+ * sendCollaboratorLink (#127, Q-WA): enqueue-only — get-or-creates the
+ * collaborator's ONE durable access link (never rotates a still-valid one) and
+ * writes a `messages` doc for WhatsApp delivery via the `collab_access_link_v1`
+ * template. Delivery depends on the #19 dispatcher (not yet in-repo).
  */
 export interface ISendCollaboratorLinkRequest {
   workspaceId: string;

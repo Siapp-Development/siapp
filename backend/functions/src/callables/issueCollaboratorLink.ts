@@ -1,14 +1,21 @@
 /**
- * issueCollaboratorLink (#127): firm owner/admin/pm mints (or resets) the one
- * durable, collaborator-scoped access link for a collaborator. The single link
- * exposes every task assigned to that collaborator (subject to per-task
- * visibility + project-lifecycle gates re-checked in rules).
+ * issueCollaboratorLink (#127): firm owner/admin/pm surfaces the one durable,
+ * collaborator-scoped access link for a collaborator. The single link exposes
+ * every task assigned to that collaborator (subject to per-task visibility +
+ * project-lifecycle gates re-checked in rules).
  *
- * One active link per collaborator: raw secrets are never at rest (only their
- * SHA-256), so an existing link's URL can never be re-surfaced — every issue
- * revokes any active collaborator-scoped link and mints a fresh one. `reset:
- * true` records the rotation as an explicit 'collab_link.reset' audit entry
- * (vs 'collab_link.issue'). Sliding expiry is refreshed by redeemCollabLink.
+ * DURABLE, RESET-ONLY (locked decision): Copy / Send-via-WhatsApp are
+ * idempotent — while an active, unexpired link exists they return the SAME URL
+ * every time (get-or-create), so earlier links keep working. The raw URL token
+ * is persisted server-side (plaintext `token` on the magicLink doc, which is
+ * Firestore rules-denied to ALL clients — see firestore.rules `magicLinks`) so
+ * the URL can be re-surfaced without rotation. The `secretHash` is still the
+ * only form compared on redeem.
+ *
+ * ONLY an explicit Reset (`reset: true`) rotates: it revokes the active link
+ * and mints a fresh one, audited as 'collab_link.reset'. First-ever creation is
+ * audited 'collab_link.issue'; re-surfacing an existing link is not audited
+ * (lightweight get-or-create). Sliding expiry is refreshed by redeemCollabLink.
  */
 
 import { FieldValue, Timestamp, getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -55,14 +62,17 @@ export interface IIssuedCollaboratorLink {
   url: string;
   expiresAt: Timestamp;
   linkId: string;
-  /** True when an existing active link was revoked in favour of this one. */
-  rotated: boolean;
+}
+
+export interface IResolvedCollaboratorLink extends IIssuedCollaboratorLink {
+  /** True when a fresh link was minted; false when an existing one was reused. */
+  created: boolean;
 }
 
 /**
  * Revokes any active collaborator-scoped link for the collaborator and mints a
- * fresh one. Shared by the issue + send callables. Assumes the caller has
- * already authorized and validated workspace/collaborator existence.
+ * fresh one. This is the ROTATE path (explicit Reset / no re-surfaceable link).
+ * Assumes the caller has already authorized and validated existence.
  */
 export async function mintCollaboratorLink(
   db: Firestore,
@@ -81,7 +91,6 @@ export async function mintCollaboratorLink(
     .where('subjectId', '==', collaboratorId)
     .where('revoked', '==', false)
     .get();
-  const rotated = !active.empty;
   for (const snap of active.docs) {
     await snap.ref.update({
       revoked: true,
@@ -97,6 +106,11 @@ export async function mintCollaboratorLink(
     id: linkRef.id,
     shortCode,
     secretHash: hashSecret(secret),
+    // Durable, reset-only (#127): the raw URL token is retained so Copy/Send
+    // can re-surface the SAME URL. magicLinks is denied to all clients in
+    // firestore.rules, so this never leaves the Admin SDK. Redemption still
+    // verifies against `secretHash`, never this field.
+    token,
     audience: 'collaborator',
     scopeType: 'collaborator',
     scopeId: collaboratorId,
@@ -108,7 +122,47 @@ export async function mintCollaboratorLink(
     createdBy: issuerUid,
   });
 
-  return { url: buildCollabUrl(collabOrigin.value(), token), expiresAt, linkId: linkRef.id, rotated };
+  return { url: buildCollabUrl(collabOrigin.value(), token), expiresAt, linkId: linkRef.id };
+}
+
+/**
+ * GET-OR-CREATE (#127, durable/reset-only): returns the collaborator's active,
+ * unexpired link URL unchanged when one with a re-surfaceable token exists;
+ * otherwise mints a fresh one (which also revokes any stale/tokenless active
+ * links). Never rotates a still-valid link — that is Reset's job.
+ */
+export async function getOrCreateCollaboratorLink(
+  db: Firestore,
+  workspaceId: string,
+  collaboratorId: string,
+  issuerUid: string,
+): Promise<IResolvedCollaboratorLink> {
+  const linksRef = db.collection(`workspaces/${workspaceId}/magicLinks`);
+  const nowMs = Date.now();
+
+  const active = await linksRef
+    .where('audience', '==', 'collaborator')
+    .where('scopeType', '==', 'collaborator')
+    .where('subjectId', '==', collaboratorId)
+    .where('revoked', '==', false)
+    .get();
+
+  for (const snap of active.docs) {
+    const expiresAt = snap.get('expiresAt') as Timestamp | undefined;
+    const token = snap.get('token');
+    const expiresMs = typeof expiresAt?.toMillis === 'function' ? expiresAt.toMillis() : 0;
+    if (expiresMs > nowMs && typeof token === 'string' && token !== '') {
+      return {
+        url: buildCollabUrl(collabOrigin.value(), token),
+        expiresAt: expiresAt as Timestamp,
+        linkId: snap.id,
+        created: false,
+      };
+    }
+  }
+
+  const minted = await mintCollaboratorLink(db, workspaceId, collaboratorId, issuerUid);
+  return { ...minted, created: true };
 }
 
 export const issueCollaboratorLink = onCall(async (request) => {
@@ -131,28 +185,45 @@ export const issueCollaboratorLink = onCall(async (request) => {
     throw new HttpsError('not-found', 'Collaborator not found.');
   }
 
-  const { url, expiresAt, linkId, rotated } = await mintCollaboratorLink(
+  if (reset) {
+    // ROTATE: revoke the active link and mint a fresh one.
+    const { url, expiresAt, linkId } = await mintCollaboratorLink(
+      db,
+      workspaceId,
+      collaboratorId,
+      issuer.uid,
+    );
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: issuer.uid,
+      action: 'collab_link.reset',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: { collaboratorId, expiresAt: expiresAt.toDate().toISOString() },
+      ...callableRequestMeta(request),
+    });
+    return { url, expiresAt: expiresAt.toDate().toISOString() };
+  }
+
+  // GET-OR-CREATE: idempotent Copy/Send — reuse the active link if present.
+  const { url, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
     db,
     workspaceId,
     collaboratorId,
     issuer.uid,
   );
+  if (created) {
+    // Only first-ever creation is audited; re-surfacing is not (lightweight).
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: issuer.uid,
+      action: 'collab_link.issue',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: { collaboratorId, expiresAt: expiresAt.toDate().toISOString() },
+      ...callableRequestMeta(request),
+    });
+  }
 
-  await writeAuditLog(workspaceId, {
-    actorType: 'user',
-    actorId: issuer.uid,
-    action: reset || rotated ? 'collab_link.reset' : 'collab_link.issue',
-    targetType: 'magicLink',
-    targetId: linkId,
-    after: {
-      collaboratorId,
-      expiresAt: expiresAt.toDate().toISOString(),
-    },
-    ...callableRequestMeta(request),
-  });
-
-  return {
-    url,
-    expiresAt: expiresAt.toDate().toISOString(),
-  };
+  return { url, expiresAt: expiresAt.toDate().toISOString() };
 });

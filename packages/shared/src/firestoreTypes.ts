@@ -380,6 +380,14 @@ export interface IMagicLinkDoc {
   shortCode: string;
   /** SHA-256 hex of the URL secret — raw secrets are never persisted. */
   secretHash: string;
+  /**
+   * #127 (durable, reset-only collaborator links): the raw URL token
+   * `{shortCode}_{secret}` retained so firm Copy/Send can re-surface the SAME
+   * URL without rotating. Server-only — magicLinks is denied to all clients in
+   * firestore.rules; redemption still verifies against `secretHash`, never this.
+   * Absent on legacy links minted before this decision.
+   */
+  token?: string;
   audience: TMagicLinkKind;
   scopeType: TMagicLinkScopeType;
   scopeId: string;

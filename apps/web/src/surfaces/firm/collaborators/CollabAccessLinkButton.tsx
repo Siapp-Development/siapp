@@ -5,13 +5,14 @@
  * collaborator assignee chip in the task panel (`variant="chip"`, copy-icon
  * only).
  *
- * Every issue rotates the collaborator's link (raw secrets are never at rest,
- * so an existing URL can't be re-surfaced) — copying both mints a fresh 90-day
- * link and invalidates earlier ones. "Reset link" is the same, surfaced as an
- * explicit rotation for a lost/leaked link.
+ * Durable, reset-only (locked): Copy and Send-via-WhatsApp are idempotent —
+ * they re-surface the SAME URL every time (get-or-create), so earlier links
+ * keep working and no "earlier links stop working" warning is shown. ONLY the
+ * explicit "Reset link" action rotates (revoke + mint), and it first asks for
+ * confirmation because it invalidates the collaborator's current link.
  */
 
-import { Button } from '@siapp/ui';
+import { Button, ConfirmDialog } from '@siapp/ui';
 import { Copy, Link2, MessageCircle, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 
@@ -33,7 +34,7 @@ type TLinkState =
   | { status: 'working' }
   | { status: 'copied'; expiresAt: string }
   | { status: 'reset'; expiresAt: string }
-  | { status: 'shown'; url: string; expiresAt: string }
+  | { status: 'shown'; url: string; expiresAt: string; reset: boolean }
   | { status: 'sent'; expiresAt: string }
   | { status: 'opted_out' }
   | { status: 'no_consent' }
@@ -53,11 +54,14 @@ export interface ICollabAccessLinkButtonProps {
 function statusMessage(state: TLinkState): string {
   switch (state.status) {
     case 'copied':
-      return `Access link copied — valid until ${formatExpiry(state.expiresAt)}. Earlier links stop working.`;
+      // Durable link: copying re-surfaces the same URL, so no invalidation.
+      return `Access link copied — valid until ${formatExpiry(state.expiresAt)}.`;
     case 'reset':
-      return `Link reset — a new link is valid until ${formatExpiry(state.expiresAt)}. The previous link stops working.`;
+      return `Link reset — a new link is valid until ${formatExpiry(state.expiresAt)}. The previous link no longer works.`;
     case 'shown':
-      return `New link (valid until ${formatExpiry(state.expiresAt)}, earlier links stop working): ${state.url}`;
+      return state.reset
+        ? `New link (valid until ${formatExpiry(state.expiresAt)}, the previous link no longer works): ${state.url}`
+        : `Access link (valid until ${formatExpiry(state.expiresAt)}): ${state.url}`;
     case 'sent':
       return `Access link sent via WhatsApp — valid until ${formatExpiry(state.expiresAt)}.`;
     case 'opted_out':
@@ -78,6 +82,7 @@ export function CollabAccessLinkButton({
   variant,
 }: ICollabAccessLinkButtonProps) {
   const [state, setState] = useState<TLinkState>({ status: 'idle' });
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const working = state.status === 'working';
 
   async function issueAndCopy(reset: boolean): Promise<void> {
@@ -93,11 +98,16 @@ export function CollabAccessLinkButton({
         setState(reset ? { status: 'reset', expiresAt } : { status: 'copied', expiresAt });
       } catch {
         // Clipboard denied (permissions/insecure context) — show the URL.
-        setState({ status: 'shown', url, expiresAt });
+        setState({ status: 'shown', url, expiresAt, reset });
       }
     } catch {
       setState({ status: 'error' });
     }
+  }
+
+  async function confirmReset(): Promise<void> {
+    setConfirmingReset(false);
+    await issueAndCopy(true);
   }
 
   async function send(): Promise<void> {
@@ -117,7 +127,8 @@ export function CollabAccessLinkButton({
   }
 
   const message = statusMessage(state);
-  const isError = state.status === 'error' || state.status === 'opted_out' || state.status === 'no_consent';
+  const isError =
+    state.status === 'error' || state.status === 'opted_out' || state.status === 'no_consent';
 
   if (variant === 'chip') {
     return (
@@ -159,7 +170,7 @@ export function CollabAccessLinkButton({
           aria-label={`Reset ${collaboratorName}'s access link`}
           className={ICON_BUTTON_CLASS}
           disabled={working}
-          onClick={() => void issueAndCopy(true)}
+          onClick={() => setConfirmingReset(true)}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
         </Button>
@@ -182,6 +193,16 @@ export function CollabAccessLinkButton({
       >
         {message}
       </span>
+      <ConfirmDialog
+        open={confirmingReset}
+        title={`Reset ${collaboratorName}'s access link?`}
+        description="This invalidates the collaborator's current link. Anyone using the old link will lose access, and you'll need to share the new one."
+        confirmLabel="Reset link"
+        variant="destructive"
+        pending={working}
+        onConfirm={() => void confirmReset()}
+        onCancel={() => setConfirmingReset(false)}
+      />
     </div>
   );
 }

@@ -128,9 +128,10 @@ export async function issuePortalLink(
 }
 
 /**
- * Mints (or resets) a collaborator's one durable access link (#127). One active
- * link per collaborator — every call rotates, so earlier links stop working.
- * The single link exposes every task assigned to that collaborator.
+ * Surfaces a collaborator's one durable access link (#127). Durable, reset-only:
+ * the default is idempotent GET-OR-CREATE (Copy/Send re-surface the SAME URL —
+ * earlier links keep working); pass `reset: true` to rotate (revoke + mint) for
+ * a lost/leaked link. The single link exposes every task assigned to them.
  */
 export async function issueCollaboratorLink(
   data: IIssueCollaboratorLinkRequest,

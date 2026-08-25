@@ -1,7 +1,8 @@
 /**
- * sendCollaboratorLink (#127, Q-WA): firm owner/admin/pm mints/reuses the
- * collaborator access link and ENQUEUES a WhatsApp `messages` doc using the
- * `collab_access_link_v1` template.
+ * sendCollaboratorLink (#127, Q-WA): firm owner/admin/pm reuses (get-or-create)
+ * the collaborator's ONE durable access link and ENQUEUES a WhatsApp `messages`
+ * doc using the `collab_access_link_v1` template. Durable/reset-only: sending
+ * never rotates a still-valid link — the same URL is re-surfaced every time.
  *
  * DELIVERY DEPENDENCY: the WA send stack is a no-op stub today (no #19
  * dispatcher, no Twilio). This callable only writes the queue record — it does
@@ -16,7 +17,7 @@ import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { isOptedOut } from '../lib/optOut.js';
 import { hasWaConsent } from '../lib/pdpa.js';
-import { mintCollaboratorLink, requireCollabLinkIssuer } from './issueCollaboratorLink.js';
+import { getOrCreateCollaboratorLink, requireCollabLinkIssuer } from './issueCollaboratorLink.js';
 
 /** Mirrors WA_UTILITY_COST_MYR in @siapp/shared. */
 const WA_UTILITY_COST_MYR = 0.1;
@@ -57,7 +58,14 @@ export const sendCollaboratorLink = onCall(async (request) => {
   const collaboratorName = typeof collaborator['name'] === 'string' ? collaborator['name'] : '';
   const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
 
-  const { url, expiresAt } = await mintCollaboratorLink(db, workspaceId, collaboratorId, issuer.uid);
+  // Durable, reset-only (#127): reuse the collaborator's active link if any —
+  // sending over WhatsApp must never rotate an existing valid URL.
+  const { url, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
+    db,
+    workspaceId,
+    collaboratorId,
+    issuer.uid,
+  );
 
   const messageRef = db.collection(`workspaces/${workspaceId}/messages`).doc();
   await messageRef.set({
@@ -79,19 +87,24 @@ export const sendCollaboratorLink = onCall(async (request) => {
     createdAt: Timestamp.now(),
   });
 
-  await writeAuditLog(workspaceId, {
-    actorType: 'user',
-    actorId: issuer.uid,
-    action: 'collab_link.issue',
-    targetType: 'magicLink',
-    targetId: messageRef.id,
-    after: {
-      collaboratorId,
-      channel: 'whatsapp',
-      expiresAt: expiresAt.toDate().toISOString(),
-    },
-    ...callableRequestMeta(request),
-  });
+  // Only a first-ever mint is audited as collab_link.issue; re-surfacing an
+  // existing durable link is not (the WhatsApp queue write is the record of
+  // this send). Never audit a rotation here — Send must not rotate.
+  if (created) {
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: issuer.uid,
+      action: 'collab_link.issue',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: {
+        collaboratorId,
+        channel: 'whatsapp',
+        expiresAt: expiresAt.toDate().toISOString(),
+      },
+      ...callableRequestMeta(request),
+    });
+  }
 
   return { status: 'queued' as const, expiresAt: expiresAt.toDate().toISOString() };
 });
