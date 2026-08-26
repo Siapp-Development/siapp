@@ -1,11 +1,16 @@
 /**
- * #22 collaborator Firestore rules: collab principals (custom-token claims
- * `collab.{wid,pid,tid,colid,linkId}` minted by redeemCollabLink) get ONE
- * pinned task (gated on lifecycle + collaborator visibility), read-back of
- * ONLY their own task updates, task-scoped shared document reads, and a
- * pinned collab-upload document create (D-f). All task/note WRITES go
- * through the submitCollabUpdate callable — direct writes stay denied.
- * Also covers the firm-side blockedReason field (D-d).
+ * #127 collaborator Firestore rules: the collaborator-scoped access link mints
+ * custom-token claims `collab.{wid, colid, linkId}` (uid `collab_{wid}_{colid}`)
+ * and exposes EVERY task assigned to the collaborator on a live project, gated
+ * by the assignee-membership rule (`assigneeCollaboratorIds.hasAny([colid])` +
+ * `collabCanSeeTask` + `projectLive`) rather than a single pinned task.
+ *
+ * Covers: assignee-membership task reads (assigned+visible+live allow; not
+ * assigned / not visible / draft-or-archived project / cross-workspace deny),
+ * the per-collaborator `assignedTasks` mirror (own read allow, other colid /
+ * write deny), membership-gated updates + documents reads, the task-parameterized
+ * collab-upload create validator, and that NO client — firm member or collab —
+ * can read the server-only `magicLinks` token material.
  */
 
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -28,26 +33,34 @@ import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.t
 const WKS_A = 'wksA';
 const WKS_B = 'wksB';
 const COL_ID = 'col1';
+const OTHER_COL = 'col-other';
 const PROJ_PUB = 'proj-collab-pub';
 const PROJ_DRAFT = 'proj-collab-draft';
-const TASK_OPEN = 'ctask-open';
-const TASK_LIMITED = 'ctask-limited';
-const TASK_HIDDEN = 'ctask-hidden';
-const TASK_CLIENTVIS = 'ctask-clientvis';
+
+// Tasks in the published project, keyed by the assignee/visibility case.
+const TASK_ASSIGNED = 'ctask-assigned'; // assigned col1, visible to all
+const TASK_LIMITED = 'ctask-limited'; // assigned col1, visible list = [col1]
+const TASK_HIDDEN = 'ctask-hidden'; // assigned col1, visible list = [col-other]
+const TASK_UNASSIGNED = 'ctask-unassigned'; // assigned col-other only
+const TASK_CLIENTVIS = 'ctask-clientvis'; // assigned col1, visibleToClient
 
 const PUB_PREFIX = `workspaces/${WKS_A}/projects/${PROJ_PUB}`;
 const DRAFT_PREFIX = `workspaces/${WKS_A}/projects/${PROJ_DRAFT}`;
-const TASK_PATH = `${PUB_PREFIX}/tasks/${TASK_OPEN}`;
+const ASSIGNED_PATH = `${PUB_PREFIX}/tasks/${TASK_ASSIGNED}`;
 
 let testEnv: RulesTestEnvironment;
 
-/** A task doc shaped like the #13 create rule output. */
+/**
+ * A task doc shaped like the #13 create rule output, PLUS the #127
+ * `assigneeCollaboratorIds` queryable projection the rules gate reads.
+ */
 function collabTask(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id,
     title: 'Install rebar',
     status: 'in_progress',
     assignees: [{ type: 'collaborator', id: COL_ID }],
+    assigneeCollaboratorIds: [COL_ID],
     visibleToClient: false,
     collaboratorCanSeeAllAttachments: true,
     visibleToCollaboratorIds: [],
@@ -69,10 +82,7 @@ beforeAll(async () => {
   await seedDoc(testEnv, DRAFT_PREFIX, { lifecycle: 'draft' });
   await seedDoc(testEnv, `workspaces/${WKS_B}/projects/${PROJ_PUB}`, { lifecycle: 'published' });
 
-  // Tasks: open (empty visibility list = all assignees), limited (this
-  // collaborator listed), hidden (another collaborator listed), client-vis
-  // (visibleToClient true — upload inheritance), plus a draft-project task.
-  await seedDoc(testEnv, TASK_PATH, collabTask(TASK_OPEN));
+  await seedDoc(testEnv, ASSIGNED_PATH, collabTask(TASK_ASSIGNED));
   await seedDoc(
     testEnv,
     `${PUB_PREFIX}/tasks/${TASK_LIMITED}`,
@@ -81,19 +91,32 @@ beforeAll(async () => {
   await seedDoc(
     testEnv,
     `${PUB_PREFIX}/tasks/${TASK_HIDDEN}`,
-    collabTask(TASK_HIDDEN, { visibleToCollaboratorIds: ['col-other'] }),
+    collabTask(TASK_HIDDEN, { visibleToCollaboratorIds: [OTHER_COL] }),
+  );
+  await seedDoc(
+    testEnv,
+    `${PUB_PREFIX}/tasks/${TASK_UNASSIGNED}`,
+    collabTask(TASK_UNASSIGNED, {
+      assignees: [{ type: 'collaborator', id: OTHER_COL }],
+      assigneeCollaboratorIds: [OTHER_COL],
+    }),
   );
   await seedDoc(
     testEnv,
     `${PUB_PREFIX}/tasks/${TASK_CLIENTVIS}`,
     collabTask(TASK_CLIENTVIS, { visibleToClient: true }),
   );
-  await seedDoc(testEnv, `${DRAFT_PREFIX}/tasks/${TASK_OPEN}`, collabTask(TASK_OPEN));
-  await seedDoc(testEnv, `workspaces/${WKS_B}/projects/${PROJ_PUB}/tasks/${TASK_OPEN}`, collabTask(TASK_OPEN));
+  // Same task assigned to col1 but on a draft project + on another workspace.
+  await seedDoc(testEnv, `${DRAFT_PREFIX}/tasks/${TASK_ASSIGNED}`, collabTask(TASK_ASSIGNED));
+  await seedDoc(
+    testEnv,
+    `workspaces/${WKS_B}/projects/${PROJ_PUB}/tasks/${TASK_ASSIGNED}`,
+    collabTask(TASK_ASSIGNED),
+  );
 
-  // Updates on the pinned task: one authored by this collaborator, one by
-  // a firm user.
-  await seedDoc(testEnv, `${TASK_PATH}/updates/cupd-own`, {
+  // Updates on the assigned task: one authored by col1, one by the firm, one by
+  // another collaborator. Plus an update on a task col1 is NOT assigned to.
+  await seedDoc(testEnv, `${ASSIGNED_PATH}/updates/cupd-own`, {
     id: 'cupd-own',
     authorType: 'collaborator',
     authorId: COL_ID,
@@ -103,7 +126,7 @@ beforeAll(async () => {
     payload: { text: 'Halfway done.' },
     createdAt: Timestamp.now(),
   });
-  await seedDoc(testEnv, `${TASK_PATH}/updates/cupd-firm`, {
+  await seedDoc(testEnv, `${ASSIGNED_PATH}/updates/cupd-firm`, {
     id: 'cupd-firm',
     authorType: 'user',
     authorId: 'user-pm',
@@ -113,12 +136,33 @@ beforeAll(async () => {
     payload: { text: 'Internal note.' },
     createdAt: Timestamp.now(),
   });
+  await seedDoc(testEnv, `${ASSIGNED_PATH}/updates/cupd-othercol`, {
+    id: 'cupd-othercol',
+    authorType: 'collaborator',
+    authorId: OTHER_COL,
+    authorNameDenorm: 'Other Collaborator',
+    source: 'web',
+    action: 'comment',
+    payload: { text: 'Not yours.' },
+    createdAt: Timestamp.now(),
+  });
+  await seedDoc(testEnv, `${PUB_PREFIX}/tasks/${TASK_UNASSIGNED}/updates/cupd-unassigned`, {
+    id: 'cupd-unassigned',
+    authorType: 'collaborator',
+    authorId: COL_ID,
+    authorNameDenorm: 'Ahmad Rebar',
+    source: 'web',
+    action: 'comment',
+    payload: { text: 'On a task I am not assigned to.' },
+    createdAt: Timestamp.now(),
+  });
 
-  // Documents: shared with this collaborator on the pinned task; shared but
-  // scoped to another task; not shared; shared but soft-deleted.
+  // Documents scoped to tasks. cdoc-shared is on an assigned task; the
+  // otherscope doc is on a task col1 is not assigned to; the deleted one is
+  // soft-deleted.
   await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-shared`, {
     scope: 'task',
-    scopeId: TASK_OPEN,
+    scopeId: TASK_ASSIGNED,
     visibleToClient: false,
     visibleToCollaboratorIds: [COL_ID],
     restrictedToDepartments: [],
@@ -126,7 +170,7 @@ beforeAll(async () => {
   });
   await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-otherscope`, {
     scope: 'task',
-    scopeId: TASK_HIDDEN,
+    scopeId: TASK_UNASSIGNED,
     visibleToClient: false,
     visibleToCollaboratorIds: [COL_ID],
     restrictedToDepartments: [],
@@ -134,7 +178,7 @@ beforeAll(async () => {
   });
   await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-notshared`, {
     scope: 'task',
-    scopeId: TASK_OPEN,
+    scopeId: TASK_ASSIGNED,
     visibleToClient: false,
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
@@ -142,11 +186,47 @@ beforeAll(async () => {
   });
   await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-del`, {
     scope: 'task',
-    scopeId: TASK_OPEN,
+    scopeId: TASK_ASSIGNED,
     visibleToClient: false,
     visibleToCollaboratorIds: [COL_ID],
     restrictedToDepartments: [],
     deletedAt: Timestamp.now(),
+  });
+
+  // Per-collaborator assignedTasks mirror docs (server-maintained).
+  await seedDoc(testEnv, `workspaces/${WKS_A}/collaborators/${COL_ID}/assignedTasks/at-own`, {
+    projectId: PROJ_PUB,
+    taskId: TASK_ASSIGNED,
+    title: 'Install rebar',
+    status: 'in_progress',
+    projectName: 'Tower A',
+    lifecycle: 'published',
+    visibleToThisCollaborator: true,
+    updatedAt: Timestamp.now(),
+  });
+  await seedDoc(testEnv, `workspaces/${WKS_A}/collaborators/${OTHER_COL}/assignedTasks/at-other`, {
+    projectId: PROJ_PUB,
+    taskId: TASK_UNASSIGNED,
+    title: 'Other work',
+    status: 'todo',
+    projectName: 'Tower A',
+    lifecycle: 'published',
+    visibleToThisCollaborator: true,
+    updatedAt: Timestamp.now(),
+  });
+
+  // Server-only magic-link token material (must never be client-readable).
+  await seedDoc(testEnv, `workspaces/${WKS_A}/magicLinks/a8K2pQ`, {
+    id: 'a8K2pQ',
+    shortCode: 'a8K2pQabcdef',
+    secretHash: 'deadbeef',
+    token: 'a8K2pQabcdef_supersecrettokenvalue1234567890',
+    audience: 'collaborator',
+    scopeType: 'collaborator',
+    scopeId: COL_ID,
+    subjectId: COL_ID,
+    revoked: false,
+    expiresAt: Timestamp.fromMillis(Date.now() + 1_000_000),
   });
 });
 
@@ -154,16 +234,11 @@ afterAll(async () => {
   await testEnv.cleanup();
 });
 
-/** Firestore as a collab principal — same claims shape redeemCollabLink mints. */
-function dbAsCollab(
-  tid: string = TASK_OPEN,
-  pid: string = PROJ_PUB,
-  wid: string = WKS_A,
-  colid: string = COL_ID,
-) {
+/** Firestore as a collab principal — the claims redeemCollabLink mints (#127). */
+function dbAsCollab(colid: string = COL_ID, wid: string = WKS_A) {
   return testEnv
-    .authenticatedContext(`collab_${wid}_${tid}_${colid}`, {
-      collab: { wid, pid, tid, colid, linkId: 'link1' },
+    .authenticatedContext(`collab_${wid}_${colid}`, {
+      collab: { wid, colid, linkId: 'link1' },
     })
     .firestore();
 }
@@ -174,9 +249,10 @@ function dbAs(role: TMemberRole, wid: string = WKS_A, departments: string[] = []
     .firestore();
 }
 
-/** A payload satisfying validCollabDocumentCreate for TASK_OPEN. */
+/** A payload satisfying validCollabDocumentCreate for a given task. */
 function validCollabDocPayload(
   did: string,
+  scopeId: string = TASK_ASSIGNED,
   extra: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
@@ -186,7 +262,7 @@ function validCollabDocPayload(
     sizeBytes: 123456,
     storagePath: `workspaces/${WKS_A}/projects/${PROJ_PUB}/collab-uploads/uuid-${did}.pdf`,
     scope: 'task',
-    scopeId: TASK_OPEN,
+    scopeId,
     uploadedBy: COL_ID,
     uploaderType: 'collaborator',
     uploadedAt: Timestamp.now(),
@@ -199,34 +275,34 @@ function validCollabDocPayload(
   };
 }
 
-describe('collab task reads', () => {
-  it('gets the pinned task when the visibility list is empty or includes the colid', async () => {
-    await assertSucceeds(getDoc(doc(dbAsCollab(), TASK_PATH)));
-    await assertSucceeds(
-      getDoc(doc(dbAsCollab(TASK_LIMITED), `${PUB_PREFIX}/tasks/${TASK_LIMITED}`)),
-    );
+describe('assignee-membership task reads (#127)', () => {
+  it('reads any task it is assigned to while the project is live', async () => {
+    await assertSucceeds(getDoc(doc(dbAsCollab(), ASSIGNED_PATH)));
+    await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_LIMITED}`)));
+    await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_CLIENTVIS}`)));
   });
 
-  it('denies a task whose visibility list excludes the colid', async () => {
-    await assertFails(getDoc(doc(dbAsCollab(TASK_HIDDEN), `${PUB_PREFIX}/tasks/${TASK_HIDDEN}`)));
+  it('denies a task it is not an assignee of', async () => {
+    await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_UNASSIGNED}`)));
   });
 
-  it('denies tasks other than the pinned tid', async () => {
-    await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_LIMITED}`)));
+  it('denies an assigned task whose visibility list excludes the colid', async () => {
+    await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_HIDDEN}`)));
   });
 
-  it('denies draft-project and cross-workspace tasks (lifecycle gate)', async () => {
+  it('denies assigned tasks on a draft (non-live) project', async () => {
+    await assertFails(getDoc(doc(dbAsCollab(), `${DRAFT_PREFIX}/tasks/${TASK_ASSIGNED}`)));
+  });
+
+  it('denies cross-workspace reads even for the same task id (isolation)', async () => {
+    // Claim wid = WKS_A → isCollabWorkspace(WKS_B) is false.
     await assertFails(
-      getDoc(doc(dbAsCollab(TASK_OPEN, PROJ_DRAFT), `${DRAFT_PREFIX}/tasks/${TASK_OPEN}`)),
+      getDoc(doc(dbAsCollab(), `workspaces/${WKS_B}/projects/${PROJ_PUB}/tasks/${TASK_ASSIGNED}`)),
     );
-    await assertFails(
-      getDoc(
-        doc(
-          dbAsCollab(TASK_OPEN, PROJ_PUB, WKS_A),
-          `workspaces/${WKS_B}/projects/${PROJ_PUB}/tasks/${TASK_OPEN}`,
-        ),
-      ),
-    );
+  });
+
+  it('denies another collaborator reading a task assigned only to col1', async () => {
+    await assertFails(getDoc(doc(dbAsCollab(OTHER_COL), ASSIGNED_PATH)));
   });
 
   it('denies task list queries (get-only surface)', async () => {
@@ -234,14 +310,59 @@ describe('collab task reads', () => {
   });
 });
 
+describe('assignedTasks mirror (#127)', () => {
+  it('reads ONLY its own assignedTasks subcollection', async () => {
+    await assertSucceeds(
+      getDoc(doc(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${COL_ID}/assignedTasks/at-own`)),
+    );
+    await assertSucceeds(
+      getDocs(collection(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${COL_ID}/assignedTasks`)),
+    );
+  });
+
+  it("denies reading another collaborator's assignedTasks", async () => {
+    await assertFails(
+      getDoc(
+        doc(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${OTHER_COL}/assignedTasks/at-other`),
+      ),
+    );
+    await assertFails(
+      getDocs(
+        collection(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${OTHER_COL}/assignedTasks`),
+      ),
+    );
+  });
+
+  it('denies collaborator writes to its own mirror (server-only fan-out)', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${COL_ID}/assignedTasks/at-new`),
+        { projectId: PROJ_PUB, taskId: TASK_ASSIGNED, visibleToThisCollaborator: true },
+      ),
+    );
+    await assertFails(
+      updateDoc(
+        doc(dbAsCollab(), `workspaces/${WKS_A}/collaborators/${COL_ID}/assignedTasks/at-own`),
+        { status: 'done' },
+      ),
+    );
+  });
+
+  it('denies a firm member reading a collaborator mirror only via the collab rule', async () => {
+    // Firm members still read the parent collaborators tree, but a collab
+    // principal cannot enumerate the collaborators collection.
+    await assertFails(getDocs(collection(dbAsCollab(), `workspaces/${WKS_A}/collaborators`)));
+  });
+});
+
 describe('collab writes stay denied (callable-only, D-b)', () => {
   it('denies direct task updates', async () => {
-    await assertFails(updateDoc(doc(dbAsCollab(), TASK_PATH), { status: 'done' }));
+    await assertFails(updateDoc(doc(dbAsCollab(), ASSIGNED_PATH), { status: 'done' }));
   });
 
   it('denies direct updates/ appends', async () => {
     await assertFails(
-      setDoc(doc(dbAsCollab(), `${TASK_PATH}/updates/cupd-new`), {
+      setDoc(doc(dbAsCollab(), `${ASSIGNED_PATH}/updates/cupd-new`), {
         id: 'cupd-new',
         authorType: 'collaborator',
         authorId: COL_ID,
@@ -254,51 +375,71 @@ describe('collab writes stay denied (callable-only, D-b)', () => {
     );
   });
 
-  it('denies project, phase, activity and magicLink reads', async () => {
+  it('denies project, phase, activity reads', async () => {
     await assertFails(getDoc(doc(dbAsCollab(), PUB_PREFIX)));
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/phases/phase1`)));
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/activity/act1`)));
+  });
+});
+
+describe('magicLinks token material is server-only (#127, D-035)', () => {
+  it('denies the collab principal reading its own link doc/token', async () => {
     await assertFails(getDoc(doc(dbAsCollab(), `workspaces/${WKS_A}/magicLinks/a8K2pQ`)));
+  });
+
+  it('denies EVERY firm role reading the magicLink token field', async () => {
+    for (const role of ['owner', 'admin', 'pm'] as const) {
+      await assertFails(getDoc(doc(dbAs(role), `workspaces/${WKS_A}/magicLinks/a8K2pQ`)));
+      await assertFails(getDocs(collection(dbAs(role), `workspaces/${WKS_A}/magicLinks`)));
+    }
   });
 });
 
 describe('collab update read-back (D-c: own entries only)', () => {
-  it('gets its own entry but not a firm-authored one', async () => {
-    await assertSucceeds(getDoc(doc(dbAsCollab(), `${TASK_PATH}/updates/cupd-own`)));
-    await assertFails(getDoc(doc(dbAsCollab(), `${TASK_PATH}/updates/cupd-firm`)));
+  it('gets its own entry but not firm- or other-collaborator-authored ones', async () => {
+    await assertSucceeds(getDoc(doc(dbAsCollab(), `${ASSIGNED_PATH}/updates/cupd-own`)));
+    await assertFails(getDoc(doc(dbAsCollab(), `${ASSIGNED_PATH}/updates/cupd-firm`)));
+    await assertFails(getDoc(doc(dbAsCollab(), `${ASSIGNED_PATH}/updates/cupd-othercol`)));
+  });
+
+  it('denies updates on a task the collaborator is not assigned to', async () => {
+    await assertFails(
+      getDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/tasks/${TASK_UNASSIGNED}/updates/cupd-unassigned`),
+      ),
+    );
   });
 
   it('lists only when the query pins authorType + authorId to the colid', async () => {
     await assertSucceeds(
       getDocs(
         query(
-          collection(dbAsCollab(), `${TASK_PATH}/updates`),
+          collection(dbAsCollab(), `${ASSIGNED_PATH}/updates`),
           where('authorType', '==', 'collaborator'),
           where('authorId', '==', COL_ID),
         ),
       ),
     );
-    // authorId alone is no longer provable — the rule also pins authorType.
     await assertFails(
       getDocs(
-        query(collection(dbAsCollab(), `${TASK_PATH}/updates`), where('authorId', '==', COL_ID)),
+        query(collection(dbAsCollab(), `${ASSIGNED_PATH}/updates`), where('authorId', '==', COL_ID)),
       ),
     );
-    await assertFails(getDocs(collection(dbAsCollab(), `${TASK_PATH}/updates`)));
+    await assertFails(getDocs(collection(dbAsCollab(), `${ASSIGNED_PATH}/updates`)));
   });
 });
 
-describe('collab document reads', () => {
-  it('gets a doc shared with the colid on the pinned task', async () => {
+describe('collab document reads via assignee-membership', () => {
+  it('gets a doc on a task it is assigned to', async () => {
     await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-shared`)));
   });
 
-  it('denies other-task and soft-deleted docs', async () => {
+  it('denies docs on tasks it is not assigned to, and soft-deleted docs', async () => {
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-otherscope`)));
     await assertFails(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-del`)));
   });
 
-  it('allows unshared docs when collaboratorCanSeeAllAttachments is true/missing (#92)', async () => {
+  it('allows unshared docs when collaboratorCanSeeAllAttachments is true (#92)', async () => {
     await assertSucceeds(getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-notshared`)));
   });
 
@@ -307,7 +448,7 @@ describe('collab document reads', () => {
       getDocs(
         query(
           collection(dbAsCollab(), `${PUB_PREFIX}/documents`),
-          where('scopeId', '==', TASK_OPEN),
+          where('scopeId', '==', TASK_ASSIGNED),
           where('visibleToCollaboratorIds', 'array-contains', COL_ID),
           where('deletedAt', '==', null),
         ),
@@ -315,41 +456,19 @@ describe('collab document reads', () => {
     );
   });
 
-  it('allows scopeId+deletedAt list when task flag is true or missing (#92)', async () => {
+  it('allows scopeId+deletedAt list when the task flag is true', async () => {
     await assertSucceeds(
       getDocs(
         query(
           collection(dbAsCollab(), `${PUB_PREFIX}/documents`),
-          where('scopeId', '==', TASK_OPEN),
-          where('deletedAt', '==', null),
-        ),
-      ),
-    );
-
-    const TASK_MISSING_FLAG = 'ctask-missing-flag';
-    const legacyTask = collabTask(TASK_MISSING_FLAG);
-    delete legacyTask['collaboratorCanSeeAllAttachments'];
-    await seedDoc(testEnv, `${PUB_PREFIX}/tasks/${TASK_MISSING_FLAG}`, legacyTask);
-    await seedDoc(testEnv, `${PUB_PREFIX}/documents/cdoc-missing-flag`, {
-      scope: 'task',
-      scopeId: TASK_MISSING_FLAG,
-      visibleToClient: false,
-      visibleToCollaboratorIds: [],
-      restrictedToDepartments: [],
-      deletedAt: null,
-    });
-    await assertSucceeds(
-      getDocs(
-        query(
-          collection(dbAsCollab(TASK_MISSING_FLAG), `${PUB_PREFIX}/documents`),
-          where('scopeId', '==', TASK_MISSING_FLAG),
+          where('scopeId', '==', TASK_ASSIGNED),
           where('deletedAt', '==', null),
         ),
       ),
     );
   });
 
-  it('requires visibleToCollaboratorIds pin when task flag is false (#92)', async () => {
+  it('requires visibleToCollaboratorIds pin when the task flag is false (#92)', async () => {
     const TASK_RESTRICTED = 'ctask-restricted-attachments';
     await seedDoc(
       testEnv,
@@ -374,18 +493,16 @@ describe('collab document reads', () => {
     });
 
     await assertFails(
-      getDoc(doc(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents/cdoc-restricted-unshared`)),
+      getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-restricted-unshared`)),
     );
     await assertSucceeds(
-      getDoc(
-        doc(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents/cdoc-restricted-attachments`),
-      ),
+      getDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cdoc-restricted-attachments`)),
     );
 
     await assertFails(
       getDocs(
         query(
-          collection(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents`),
+          collection(dbAsCollab(), `${PUB_PREFIX}/documents`),
           where('scopeId', '==', TASK_RESTRICTED),
           where('deletedAt', '==', null),
         ),
@@ -394,7 +511,7 @@ describe('collab document reads', () => {
     await assertSucceeds(
       getDocs(
         query(
-          collection(dbAsCollab(TASK_RESTRICTED), `${PUB_PREFIX}/documents`),
+          collection(dbAsCollab(), `${PUB_PREFIX}/documents`),
           where('scopeId', '==', TASK_RESTRICTED),
           where('visibleToCollaboratorIds', 'array-contains', COL_ID),
           where('deletedAt', '==', null),
@@ -404,33 +521,41 @@ describe('collab document reads', () => {
   });
 });
 
-describe('collab document create (D-f)', () => {
-  it('accepts a fully pinned payload', async () => {
+describe('collab document create (D-f) — task-parameterized validator', () => {
+  it('accepts a valid payload scoped to an assigned task', async () => {
     await assertSucceeds(
       setDoc(doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-ok`), validCollabDocPayload('cnew-ok')),
     );
   });
 
-  it('inherits visibleToClient from the parent task (D-029)', async () => {
-    // Pinned task is NOT client-visible → claiming true must fail.
+  it('rejects a create scoped to a task the collaborator is not assigned to', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-unassigned`),
+        validCollabDocPayload('cnew-unassigned', TASK_UNASSIGNED),
+      ),
+    );
+  });
+
+  it('inherits visibleToClient from the parent task at the submitted scopeId (D-029)', async () => {
+    // Assigned task is NOT client-visible → claiming true must fail.
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-vis`),
-        validCollabDocPayload('cnew-vis', { visibleToClient: true }),
+        validCollabDocPayload('cnew-vis', TASK_ASSIGNED, { visibleToClient: true }),
       ),
     );
     // Client-visible task → true succeeds, false fails.
-    const onClientVisTask = validCollabDocPayload('cnew-cv', {
-      scopeId: TASK_CLIENTVIS,
-      visibleToClient: true,
-    });
     await assertSucceeds(
-      setDoc(doc(dbAsCollab(TASK_CLIENTVIS), `${PUB_PREFIX}/documents/cnew-cv`), onClientVisTask),
+      setDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-cv`),
+        validCollabDocPayload('cnew-cv', TASK_CLIENTVIS, { visibleToClient: true }),
+      ),
     );
     await assertFails(
       setDoc(
-        doc(dbAsCollab(TASK_CLIENTVIS), `${PUB_PREFIX}/documents/cnew-cv2`),
-        validCollabDocPayload('cnew-cv2', { scopeId: TASK_CLIENTVIS, visibleToClient: false }),
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-cv2`),
+        validCollabDocPayload('cnew-cv2', TASK_CLIENTVIS, { visibleToClient: false }),
       ),
     );
   });
@@ -439,11 +564,9 @@ describe('collab document create (D-f)', () => {
     const cases: Record<string, unknown>[] = [
       { uploadedBy: 'someone-else' },
       { uploaderType: 'firm_member' },
-      { scope: 'project', scopeId: PROJ_PUB },
-      { scopeId: TASK_LIMITED },
       { visibleToCollaboratorIds: [] },
-      { visibleToCollaboratorIds: [COL_ID, 'col-other'] },
-      { visibleToCollaboratorIds: ['col-other'] },
+      { visibleToCollaboratorIds: [COL_ID, OTHER_COL] },
+      { visibleToCollaboratorIds: [OTHER_COL] },
       { restrictedToDepartments: ['dep-finance'] },
       { scanStatus: 'clean' },
       { deletedAt: Timestamp.now() },
@@ -452,17 +575,17 @@ describe('collab document create (D-f)', () => {
       await assertFails(
         setDoc(
           doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-bad-${index}`),
-          validCollabDocPayload(`cnew-bad-${index}`, extra),
+          validCollabDocPayload(`cnew-bad-${index}`, TASK_ASSIGNED, extra),
         ),
       );
     }
   });
 
-  it('rejects bad storage paths, mime types and sizes', async () => {
+  it('rejects bad storage paths and oversized files', async () => {
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-path`),
-        validCollabDocPayload('cnew-path', {
+        validCollabDocPayload('cnew-path', TASK_ASSIGNED, {
           storagePath: `workspaces/${WKS_A}/projects/${PROJ_PUB}/uuid-x.pdf`,
         }),
       ),
@@ -470,35 +593,31 @@ describe('collab document create (D-f)', () => {
     await assertSucceeds(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-mime`),
-        validCollabDocPayload('cnew-mime', { mimeType: 'application/zip' }),
+        validCollabDocPayload('cnew-mime', TASK_ASSIGNED, { mimeType: 'application/zip' }),
       ),
     );
     await assertSucceeds(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-dwg`),
-        validCollabDocPayload('cnew-dwg', { mimeType: 'image/vnd.dwg' }),
+        validCollabDocPayload('cnew-dwg', TASK_ASSIGNED, { mimeType: 'image/vnd.dwg' }),
       ),
     );
-    await assertFails(
-      setDoc(
-        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size`),
-        validCollabDocPayload('cnew-size', { mimeType: 'application/x-msdownload' }),
-      ),
-    );
-
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size-too-large`),
-        validCollabDocPayload('cnew-size-too-large', { sizeBytes: 30 * 1024 * 1024 }),
+        validCollabDocPayload('cnew-size-too-large', TASK_ASSIGNED, {
+          sizeBytes: 30 * 1024 * 1024,
+        }),
       ),
     );
   });
 
   it('rejects creates on a draft project (lifecycle gate)', async () => {
+    await seedDoc(testEnv, `${DRAFT_PREFIX}/tasks/${TASK_ASSIGNED}`, collabTask(TASK_ASSIGNED));
     await assertFails(
       setDoc(
-        doc(dbAsCollab(TASK_OPEN, PROJ_DRAFT), `${DRAFT_PREFIX}/documents/cnew-draft`),
-        validCollabDocPayload('cnew-draft', {
+        doc(dbAsCollab(), `${DRAFT_PREFIX}/documents/cnew-draft`),
+        validCollabDocPayload('cnew-draft', TASK_ASSIGNED, {
           storagePath: `workspaces/${WKS_A}/projects/${PROJ_DRAFT}/collab-uploads/uuid-x.pdf`,
         }),
       ),
@@ -509,7 +628,7 @@ describe('collab document create (D-f)', () => {
 describe('firm-side blockedReason (D-d)', () => {
   it('allows a firm update carrying a bounded blockedReason', async () => {
     await assertSucceeds(
-      updateDoc(doc(dbAs('pm'), TASK_PATH), {
+      updateDoc(doc(dbAs('pm'), ASSIGNED_PATH), {
         status: 'blocked',
         blockedReason: 'Waiting on materials.',
         updatedAt: Timestamp.now(),
@@ -520,7 +639,7 @@ describe('firm-side blockedReason (D-d)', () => {
 
   it('rejects an oversized blockedReason', async () => {
     await assertFails(
-      updateDoc(doc(dbAs('pm'), TASK_PATH), {
+      updateDoc(doc(dbAs('pm'), ASSIGNED_PATH), {
         status: 'blocked',
         blockedReason: 'x'.repeat(1001),
         updatedAt: Timestamp.now(),

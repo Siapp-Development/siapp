@@ -98,12 +98,11 @@ describe('portalUid / buildPortalUrl / TTL', () => {
   });
 });
 
-describe('collabUid / parseCollabUid / buildCollabUrl / TTL (#22)', () => {
-  it('is deterministic per (wid, tid, colid) and round-trips', () => {
-    expect(collabUid('w1', 't1', 'col1')).toBe('collab_w1_t1_col1');
-    expect(parseCollabUid(collabUid('w1', 't1', 'col1'))).toEqual({
+describe('collabUid / parseCollabUid / buildCollabUrl / TTL (#127)', () => {
+  it('is deterministic per (wid, colid) and round-trips', () => {
+    expect(collabUid('w1', 'col1')).toBe('collab_w1_col1');
+    expect(parseCollabUid(collabUid('w1', 'col1'))).toEqual({
       wid: 'w1',
-      tid: 't1',
       colid: 'col1',
     });
   });
@@ -111,9 +110,9 @@ describe('collabUid / parseCollabUid / buildCollabUrl / TTL (#22)', () => {
   it('rejects non-collab uids and malformed shapes', () => {
     expect(parseCollabUid('u-firm-member')).toBeNull();
     expect(parseCollabUid('portal_w1_p1_c1')).toBeNull();
-    expect(parseCollabUid('collab_w1_t1')).toBeNull();
-    expect(parseCollabUid('collab_w1_t1_col1_extra')).toBeNull();
-    expect(parseCollabUid('collab___')).toBeNull();
+    expect(parseCollabUid('collab_w1')).toBeNull();
+    expect(parseCollabUid('collab_w1_col1_extra')).toBeNull();
+    expect(parseCollabUid('collab__')).toBeNull();
   });
 
   it('builds the apex /t URL and tolerates a trailing slash', () => {

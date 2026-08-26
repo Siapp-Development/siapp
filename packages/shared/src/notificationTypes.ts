@@ -66,6 +66,17 @@ export interface IInboundAutoReplyVars extends IBaseTemplateVars {
   portalLink: string;
 }
 
+/**
+ * #127: collaborator-scoped access link shared via WhatsApp. Maps to the
+ * `collab_access_link_v1` template. Enqueue-only until the #19 dispatcher +
+ * Twilio + Meta approval land.
+ */
+export interface ICollabAccessLinkVars extends IBaseTemplateVars {
+  trigger: 'collab_access_link';
+  collaboratorName: string;
+  accessLink: string;
+}
+
 export type TTemplateVars =
   | IProjectWelcomeVars
   | ITaskAssignedVars
@@ -73,4 +84,5 @@ export type TTemplateVars =
   | ITaskDueSoonVars
   | ITaskBlockedVars
   | INeedHelpVars
-  | IInboundAutoReplyVars;
+  | IInboundAutoReplyVars
+  | ICollabAccessLinkVars;

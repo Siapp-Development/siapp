@@ -4,6 +4,7 @@
  * and a collaborator_need_help activity entry (Q2).
  */
 
+import { HelpCircle } from 'lucide-react';
 import { useId, useState } from 'react';
 
 export function NeedHelpForm({
@@ -35,16 +36,17 @@ export function NeedHelpForm({
     return (
       <button
         type="button"
-        className="min-h-11 rounded-md border border-border px-5 py-2.5 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-5 text-sm font-semibold shadow-card hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         onClick={() => setOpen(true)}
       >
+        <HelpCircle aria-hidden="true" className="size-4" />
         {alreadyBlocked ? 'Update help request' : 'I need help'}
       </button>
     );
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)} className="space-y-3">
+    <form onSubmit={(event) => void handleSubmit(event)} className="w-full space-y-3">
       <label htmlFor={fieldId} className="block text-sm font-medium">
         What do you need help with?
       </label>
@@ -55,13 +57,13 @@ export function NeedHelpForm({
         maxLength={1000}
         rows={3}
         required
-        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
       <div className="flex gap-3">
         <button
           type="submit"
           disabled={busy || reason.trim() === ''}
-          className="min-h-11 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-card hover:opacity-90 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Send help request
         </button>
@@ -69,7 +71,7 @@ export function NeedHelpForm({
           type="button"
           disabled={busy}
           onClick={() => setOpen(false)}
-          className="min-h-11 rounded-md border border-border px-5 py-2.5 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="inline-flex min-h-12 flex-1 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-semibold hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Cancel
         </button>

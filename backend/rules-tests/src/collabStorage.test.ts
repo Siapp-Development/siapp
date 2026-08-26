@@ -1,11 +1,16 @@
 /**
- * #22 collaborator storage rules: collab principals read project objects,
- * client-uploads/ (D-029 the other way: portal ↔ collab file sharing goes
- * through metadata gates) and collab-uploads/, and may create objects under
- * collab-uploads/ only — ≤25 MB with the COLLAB_ALLOWED_DOCUMENT_MIME_TYPES
- * allowlist (parity asserted below; includes zip). Objects
- * stay immutable; cross-project/workspace access is denied. Portal + firm
- * reads of collab-uploads/ are covered (D-029).
+ * #127 collaborator storage rules: collab principals hold a WORKSPACE-scoped
+ * token `{ wid, colid, linkId }` (no pid/tid — a collaborator can be assigned
+ * tasks across projects). They read project objects, client-uploads/ (D-029
+ * the other way: portal ↔ collab file sharing goes through metadata gates) and
+ * collab-uploads/, and may create objects under collab-uploads/ only — ≤25 MB
+ * with the COLLAB_ALLOWED_DOCUMENT_MIME_TYPES allowlist (parity asserted
+ * below; includes zip). Reads are workspace-wide at the storage layer (per-
+ * file assignee-membership + visibility is enforced at the Firestore metadata
+ * layer, exercised in collab.test.ts) — the same tradeoff as firm-member
+ * reads. Objects stay immutable; cross-WORKSPACE access and colid-less tokens
+ * are denied fail-closed. Portal + firm reads of collab-uploads/ are covered
+ * (D-029).
  */
 
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -17,9 +22,8 @@ import { createStorageTestEnv, memberClaims } from './helpers.ts';
 const WKS_A = 'wksA';
 const WKS_B = 'wksB';
 const PROJ = 'proj-collab';
-const PROJ_OTHER = 'proj-collab-other';
-const TASK_ID = 'ctask1';
 const COL_ID = 'col1';
+const COL_ID_OTHER = 'col2';
 const CLIENT_ID = 'client1';
 const PROJECT_PREFIX = `workspaces/${WKS_A}/projects/${PROJ}`;
 const FIRM_OBJECT = `${PROJECT_PREFIX}/uuid-firm-collab.pdf`;
@@ -46,12 +50,20 @@ afterAll(async () => {
   await testEnv.cleanup();
 });
 
-function storageAsCollab(pid: string = PROJ, wid: string = WKS_A) {
+// #127: the redeemed collab token is workspace-scoped { wid, colid, linkId } —
+// the deterministic uid is `collab_${wid}_${colid}` (see collabUid in
+// portalTokens.ts). No pid/tid claim.
+function storageAsCollab(wid: string = WKS_A, colid: string = COL_ID) {
   return testEnv
-    .authenticatedContext(`collab_${wid}_${TASK_ID}_${COL_ID}`, {
-      collab: { wid, pid, tid: TASK_ID, colid: COL_ID, linkId: 'link1' },
+    .authenticatedContext(`collab_${wid}_${colid}`, {
+      collab: { wid, colid, linkId: 'link1' },
     })
     .storage();
+}
+
+// A malformed collab token missing the colid claim — must fail closed.
+function storageAsCollabNoColid(uid: string, wid: string = WKS_A) {
+  return testEnv.authenticatedContext(uid, { collab: { wid, linkId: 'link1' } }).storage();
 }
 
 function storageAsPortal(pid: string = PROJ, wid: string = WKS_A) {
@@ -83,9 +95,30 @@ describe('collab storage reads', () => {
     await assertSucceeds(storageAsCollab().ref(COLLAB_OBJECT).getDownloadURL());
   });
 
-  it('denies reads scoped to another project or workspace', async () => {
-    await assertFails(storageAsCollab(PROJ_OTHER).ref(FIRM_OBJECT).getDownloadURL());
-    await assertFails(storageAsCollab(PROJ, WKS_B).ref(FIRM_OBJECT).getDownloadURL());
+  // #127: the token is workspace-scoped (no pid), so reads are workspace-wide
+  // at the storage layer; a collaborator with a different colid still resolves
+  // the object here — per-file visibility is enforced at the Firestore layer.
+  it('allows reads of objects in the same workspace (metadata gates per-file)', async () => {
+    await assertSucceeds(
+      storageAsCollab(WKS_A, COL_ID_OTHER).ref(FIRM_OBJECT).getDownloadURL(),
+    );
+    await assertSucceeds(
+      storageAsCollab(WKS_A, COL_ID_OTHER).ref(COLLAB_OBJECT).getDownloadURL(),
+    );
+  });
+
+  it('denies reads from another workspace', async () => {
+    await assertFails(storageAsCollab(WKS_B).ref(FIRM_OBJECT).getDownloadURL());
+    await assertFails(storageAsCollab(WKS_B).ref(COLLAB_OBJECT).getDownloadURL());
+  });
+
+  it('denies a collab token with no colid claim (fail-closed)', async () => {
+    await assertFails(
+      storageAsCollabNoColid('collab_wksA_nocolid_read').ref(FIRM_OBJECT).getDownloadURL(),
+    );
+    await assertFails(
+      storageAsCollabNoColid('collab_wksA_nocolid_read').ref(COLLAB_OBJECT).getDownloadURL(),
+    );
   });
 
   it('lets firm members and the portal client read collab uploads (D-029)', async () => {
@@ -157,19 +190,33 @@ describe('collab-upload creates', () => {
     );
   });
 
-  it('denies cross-project and cross-workspace uploads', async () => {
-    await assertFails(
+  it('allows an assigned collaborator to upload with the new token shape', async () => {
+    await assertSucceeds(
       put(
-        storageAsCollab(PROJ_OTHER),
-        `${PROJECT_PREFIX}/collab-uploads/uuid-xproj.png`,
+        storageAsCollab(),
+        `${PROJECT_PREFIX}/collab-uploads/uuid-new-token.png`,
         PNG_BYTES,
         'image/png',
       ),
     );
+  });
+
+  it('denies cross-workspace uploads', async () => {
     await assertFails(
       put(
-        storageAsCollab(PROJ, WKS_B),
+        storageAsCollab(WKS_B),
         `${PROJECT_PREFIX}/collab-uploads/uuid-xwks.png`,
+        PNG_BYTES,
+        'image/png',
+      ),
+    );
+  });
+
+  it('denies uploads from a collab token with no colid claim (fail-closed)', async () => {
+    await assertFails(
+      put(
+        storageAsCollabNoColid('collab_wksA_nocolid_write'),
+        `${PROJECT_PREFIX}/collab-uploads/uuid-nocolid.png`,
         PNG_BYTES,
         'image/png',
       ),

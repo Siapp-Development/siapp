@@ -1,27 +1,28 @@
 /**
- * redeemCollabLink (#22): unauthenticated callable — the URL token is the
+ * redeemCollabLink (#127): unauthenticated callable — the URL token is the
  * credential. Sibling of redeemPortalLink sharing lib/portalTokens.js:
- * verifies shortCode + secret hash, revocation, expiry, the D-027 lifecycle
- * gate, and re-verifies assignment + collaborator visibility, then mints a
- * Firebase custom token with collab claims `{ collab: { wid, pid, tid,
- * colid, linkId } }` and returns the firm branding snapshot plus a task
- * snapshot for first paint.
+ * verifies shortCode + secret hash, revocation and expiry, then mints a
+ * Firebase custom token with collaborator-scoped claims `{ collab: { wid,
+ * colid, linkId } }` and returns the firm branding + collaborator identity.
+ *
+ * The single link exposes EVERY task assigned to the collaborator; the /t
+ * surface live-queries the collaborator's assigned-tasks mirror (rules-gated),
+ * so no single task is pinned or snapshotted here.
+ *
+ * Sliding expiry (#127, R4): a successful redeem extends `expiresAt` by the
+ * full COLLAB_LINK_TTL — active collaborators never lapse while abandoned
+ * links still expire.
  *
  * Anti-enumeration posture: every failure (unknown code, wrong secret,
- * revoked, expired, unassigned, archived/deleted project) throws the SAME
- * uniform 'collab/invalid_or_expired' error; hash comparison is
- * constant-time.
+ * revoked, expired, missing collaborator/workspace) throws the SAME uniform
+ * 'collab/invalid_or_expired' error; hash comparison is constant-time.
  */
 
 import { getAuth } from 'firebase-admin/auth';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
-import { collabUid, parsePortalToken, verifySecret } from '../lib/portalTokens.js';
-import {
-  isCollaboratorAssignee,
-  passesCollabVisibility,
-} from './issueCollabLink.js';
+import { COLLAB_LINK_TTL_MS, collabUid, parsePortalToken, verifySecret } from '../lib/portalTokens.js';
 
 export interface ICollabLinkCheckInput {
   audience: unknown;
@@ -32,15 +33,16 @@ export interface ICollabLinkCheckInput {
 }
 
 /**
- * Why a looked-up link doc cannot be redeemed as a collaborator link
+ * Why a looked-up link doc cannot be redeemed as a collaborator-scoped link
  * (secret already verified), or null when it is redeemable. Pure so it
- * unit-tests without emulators.
+ * unit-tests without emulators. Old task-scoped links (`scopeType: 'task'`)
+ * fail the audience check → uniform invalid_or_expired (migration, #127).
  */
 export function collabLinkBlocker(
   input: ICollabLinkCheckInput,
   nowMs: number,
 ): 'audience' | 'revoked' | 'expired' | null {
-  if (input.audience !== 'collaborator' || input.scopeType !== 'task') {
+  if (input.audience !== 'collaborator' || input.scopeType !== 'collaborator') {
     return 'audience';
   }
   if (input.revoked !== false) {
@@ -102,73 +104,47 @@ export const redeemCollabLink = onCall(async (request) => {
   }
 
   const workspaceRef = linkSnap.ref.parent.parent;
-  const taskId = linkSnap.get('scopeId');
   const collaboratorId = linkSnap.get('subjectId');
-  const projectId = linkSnap.get('projectId');
-  if (
-    workspaceRef === null ||
-    typeof taskId !== 'string' ||
-    typeof collaboratorId !== 'string' ||
-    typeof projectId !== 'string'
-  ) {
+  if (workspaceRef === null || typeof collaboratorId !== 'string') {
     throw collabInvalidOrExpired();
   }
   const workspaceId = workspaceRef.id;
 
-  const [projectSnap, taskSnap, workspaceSnap] = await Promise.all([
-    db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get(),
-    db.doc(`workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`).get(),
+  const [collaboratorSnap, workspaceSnap] = await Promise.all([
+    db.doc(`workspaces/${workspaceId}/collaborators/${collaboratorId}`).get(),
     workspaceRef.get(),
   ]);
-  if (!projectSnap.exists || !taskSnap.exists || !workspaceSnap.exists) {
+  if (!collaboratorSnap.exists || !workspaceSnap.exists) {
     throw collabInvalidOrExpired();
   }
 
   const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
-  const lifecycle = projectSnap.get('lifecycle');
-  if (lifecycle === 'draft') {
-    // Distinguishable on purpose: a valid link to a not-yet-published
-    // project is guidance, not an auth failure (portal precedent).
-    return { status: 'not_started', firmName };
-  }
-  if (lifecycle !== 'published' && lifecycle !== 'completed') {
-    throw collabInvalidOrExpired();
-  }
+  const collaboratorName =
+    typeof collaboratorSnap.get('name') === 'string' ? collaboratorSnap.get('name') : '';
 
-  // Re-verify assignment + visibility at redemption time — unassignment
-  // since issuance closes the link even before the step-7 revocation lands.
-  if (
-    !isCollaboratorAssignee(taskSnap.get('assignees'), collaboratorId) ||
-    !passesCollabVisibility(taskSnap.get('visibleToCollaboratorIds'), collaboratorId)
-  ) {
-    throw collabInvalidOrExpired();
-  }
-
-  const uid = collabUid(workspaceId, taskId, collaboratorId);
+  const uid = collabUid(workspaceId, collaboratorId);
   const customToken = await getAuth().createCustomToken(uid, {
     collab: {
       wid: workspaceId,
-      pid: projectId,
-      tid: taskId,
       colid: collaboratorId,
       linkId: linkSnap.id,
     },
   });
 
+  // Sliding expiry (R4): extend the TTL from now on every successful redeem.
   await linkSnap.ref.update({
     useCount: FieldValue.increment(1),
     lastUsedAt: FieldValue.serverTimestamp(),
+    expiresAt: Timestamp.fromMillis(Date.now() + COLLAB_LINK_TTL_MS),
   });
 
   const branding = (workspaceSnap.get('branding') ?? {}) as Record<string, unknown>;
-  const dueDate = taskSnap.get('dueDate') as { toDate?: () => Date } | undefined;
   return {
     status: 'ok',
     customToken,
     workspaceId,
-    projectId,
-    taskId,
     collaboratorId,
+    firmName,
     branding: {
       firmName,
       ...(stringOrUndefined(branding['logoUrl']) !== undefined
@@ -178,15 +154,6 @@ export const redeemCollabLink = onCall(async (request) => {
         ? { primaryColor: branding['primaryColor'] }
         : {}),
     },
-    task: {
-      title: typeof taskSnap.get('title') === 'string' ? taskSnap.get('title') : '',
-      description:
-        typeof taskSnap.get('description') === 'string' ? taskSnap.get('description') : '',
-      status: typeof taskSnap.get('status') === 'string' ? taskSnap.get('status') : 'todo',
-      dueDate:
-        typeof dueDate?.toDate === 'function' ? dueDate.toDate().toISOString().slice(0, 10) : null,
-      projectName:
-        typeof projectSnap.get('name') === 'string' ? projectSnap.get('name') : '',
-    },
+    collaborator: { name: collaboratorName },
   };
 });

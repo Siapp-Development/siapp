@@ -71,7 +71,7 @@ describe('deriveTaskActivity', () => {
     const events = deriveTaskActivity(
       't1',
       { ...TASK_BASE },
-      { ...TASK_BASE, status: 'done', updatedBy: 'collab_w1_t1_col1' },
+      { ...TASK_BASE, status: 'done', updatedBy: 'collab_w1_col1' },
     );
     expect(events[0]).toMatchObject({
       action: 'task_status_changed',

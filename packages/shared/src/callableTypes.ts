@@ -203,57 +203,72 @@ export type TRedeemPortalLinkResponse =
 export type TPortalErrorCode = 'portal/invalid_or_expired';
 
 /**
- * issueCollabLink (#22, E1): firm owner/admin/pm mints a task-scoped
- * collaborator magic link for a collaborator-type assignee of a task on a
- * published/completed project. One active link per (task, collaborator):
- * every issue revokes any previous active link and returns a fresh URL.
+ * issueCollaboratorLink (#127): firm owner/admin/pm surfaces the one durable,
+ * collaborator-scoped access link. Durable, reset-only (locked): the default
+ * path is GET-OR-CREATE — while an active, unexpired link exists it returns the
+ * SAME URL (no rotation), so earlier links keep working. Only `reset: true`
+ * revokes-and-mints a fresh URL. The single link exposes every task assigned to
+ * that collaborator (subject to per-task visibility + project-lifecycle gates).
  */
-export interface IIssueCollabLinkRequest {
+export interface IIssueCollaboratorLinkRequest {
   workspaceId: string;
-  projectId: string;
-  taskId: string;
   collaboratorId: string;
-  /** Explicit firm-side "Reset link" — audit-logged as collab_link.reset. */
+  /**
+   * Explicit firm-side "Reset link" — revoke the active link and mint a fresh
+   * one (audited collab_link.reset). Omit/false = idempotent get-or-create.
+   */
   reset?: boolean;
 }
 
-export interface IIssueCollabLinkResponse {
-  /** Full task URL: `https://siapp.app/t/{shortCode}_{secret}`. */
+export interface IIssueCollaboratorLinkResponse {
+  /** Full access URL: `https://siapp.app/t/{shortCode}_{secret}`. */
   url: string;
-  /** ISO instant the link stops redeeming (COLLAB_LINK_TTL_DAYS from issue). */
+  /** ISO instant the link stops redeeming (sliding COLLAB_LINK_TTL_DAYS). */
   expiresAt: string;
 }
+
+/**
+ * sendCollaboratorLink (#127, Q-WA): enqueue-only — get-or-creates the
+ * collaborator's ONE durable access link (never rotates a still-valid one) and
+ * writes a `messages` doc for WhatsApp delivery via the `collab_access_link_v1`
+ * template. Delivery depends on the #19 dispatcher (not yet in-repo).
+ */
+export interface ISendCollaboratorLinkRequest {
+  workspaceId: string;
+  collaboratorId: string;
+}
+
+export type TSendCollaboratorLinkResponse =
+  | { status: 'queued'; expiresAt: string }
+  | { status: 'opted_out' }
+  | { status: 'no_consent' };
 
 /** redeemCollabLink (#22): unauthenticated; the URL token is the credential. */
 export interface IRedeemCollabLinkRequest {
   token: string;
 }
 
-/** Task snapshot delivered in the collab redeem response (first paint). */
-export interface ICollabTaskSnapshot {
-  title: string;
-  description: string;
-  status: TTaskStatus;
-  /** ISO date, or null when the task has no due date. */
-  dueDate: string | null;
-  projectName: string;
+/** Collaborator identity delivered in the collab redeem response. */
+export interface ICollabCollaboratorSnapshot {
+  name: string;
 }
 
 /**
- * Collab redeem outcomes. Every failure path (unknown code, bad secret,
- * revoked, expired, unassigned, archived/deleted project) surfaces the single
- * uniform `collab/invalid_or_expired` error code — no enumeration signal.
+ * Collab redeem outcomes (#127). Success returns the workspace/collaborator
+ * ids + branding — NOT a single pinned task; the surface then live-queries the
+ * collaborator's assigned-tasks mirror. Every failure path (unknown code, bad
+ * secret, revoked, expired, archived collaborator) surfaces the single uniform
+ * `collab/invalid_or_expired` error code — no enumeration signal.
  */
 export type TRedeemCollabLinkResponse =
   | {
       status: 'ok';
       customToken: string;
       workspaceId: string;
-      projectId: string;
-      taskId: string;
       collaboratorId: string;
+      firmName: string;
       branding: IPortalBranding;
-      task: ICollabTaskSnapshot;
+      collaborator: ICollabCollaboratorSnapshot;
     }
   | { status: 'not_started'; firmName: string };
 
@@ -290,6 +305,9 @@ export type TCollabUpdatePayload =
   | ICollabNoteUpdate;
 
 export interface ISubmitCollabUpdateRequest {
+  /** #127: the update is task-parameterized — membership re-checked server-side. */
+  projectId: string;
+  taskId: string;
   update: TCollabUpdatePayload;
 }
 

@@ -88,6 +88,8 @@ export interface IDuplicateTaskDoc {
   phaseId: string | null;
   status: 'todo';
   assignees: TTaskAssignee[];
+  /** #127: duplicated tasks strip assignees, so this is always empty. */
+  assigneeCollaboratorIds: string[];
   visibleToClient: boolean;
   visibleToCollaboratorIds: string[];
   restrictedToDepartments: string[];
@@ -128,6 +130,7 @@ export function buildDuplicatePlan(
     phaseId: task.phaseId !== null ? (phaseIdMap.get(task.phaseId) ?? null) : null,
     status: 'todo',
     assignees: [],
+    assigneeCollaboratorIds: [],
     visibleToClient: task.visibleToClient,
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [...task.restrictedToDepartments],
@@ -238,6 +241,7 @@ export async function duplicateProject(args: IDuplicateProjectArgs): Promise<str
       ...(task.phaseId !== null ? { phaseId: task.phaseId } : {}),
       status: task.status,
       assignees: task.assignees,
+      assigneeCollaboratorIds: task.assigneeCollaboratorIds,
       visibleToClient: task.visibleToClient,
       visibleToCollaboratorIds: task.visibleToCollaboratorIds,
       restrictedToDepartments: task.restrictedToDepartments,
