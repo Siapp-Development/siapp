@@ -1,4 +1,4 @@
-import { createBrowserRouter, type RouteObject } from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 
 import { LoadingFallback } from '@/components/LoadingFallback.tsx';
 import { NotFoundScreen, RouteErrorFallback } from '@/components/RouteErrorFallback.tsx';
@@ -31,22 +31,16 @@ export const apexRoutes: RouteObject[] = [
         },
       },
       {
+        // Backward-compat (#126, D-042): the portal is now a single screen.
+        // Old WhatsApp deep links to the tab routes must not 404 — redirect
+        // to the dashboard (in-flight links land on a working screen; new
+        // notifications carry fresh tokens per D-036).
         path: 'documents',
-        lazy: async () => {
-          const { PortalDocumentsPage } = await import(
-            '@/surfaces/portal/documents/PortalDocumentsPage.tsx'
-          );
-          return { Component: PortalDocumentsPage };
-        },
+        element: <Navigate to=".." replace />,
       },
       {
         path: 'updates',
-        lazy: async () => {
-          const { PortalUpdatesPage } = await import(
-            '@/surfaces/portal/updates/PortalUpdatesPage.tsx'
-          );
-          return { Component: PortalUpdatesPage };
-        },
+        element: <Navigate to=".." replace />,
       },
     ],
   },

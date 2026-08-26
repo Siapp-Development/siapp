@@ -152,3 +152,28 @@
     transform: translateY(0);
   }
 }
+
+/* Portal print/export (#126, D-042): the client portal renders a landscape
+   summary via the Print button (window.print()). The screen dashboard is
+   marked `print:hidden` and a `hidden print:block` layout takes over; here we
+   set the page orientation, remove the viewport chrome, and force background
+   colors (status chips / timeline bars carry meaning) to print. No JS/print
+   dependency — @media print + window.print() is sufficient. */
+@media print {
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Status chips and timeline bars encode meaning with fill color — make
+     browsers print those backgrounds instead of dropping them. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

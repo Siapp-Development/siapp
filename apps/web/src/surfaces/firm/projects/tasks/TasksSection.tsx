@@ -516,7 +516,10 @@ export function TasksSection({
         startDate: null,
         dueDate: null,
         assignees: [],
-        visibleToClient: false,
+        // Tasks are client-visible by default (#126); the firm opts a task OUT
+        // via the task detail panel. Department-restricted tasks still never
+        // reach the portal regardless of this flag.
+        visibleToClient: true,
         restrictedToDepartments: [],
         sendWhatsapp: false,
         collaboratorCanSeeAllAttachments: true,

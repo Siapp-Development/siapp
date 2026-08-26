@@ -32,16 +32,25 @@ vi.mock('@/surfaces/portal/usePortalProject.ts', () => ({
     status: 'ready',
     project: {
       name: 'Roadside Cafe Fitout',
+      clientName: 'Aisyah Rahman',
       lifecycle: 'published',
       startDate: null,
       targetEndDate: null,
       progressPct: 40,
     },
     phases: [],
-    milestones: [],
   }),
-  currentPhase: () => null,
-  nextMilestone: () => null,
+}));
+
+vi.mock('@/surfaces/portal/tasks/usePortalTasks.ts', () => ({
+  usePortalTasks: () => ({ status: 'ready', tasks: [], groups: [] }),
+}));
+
+vi.mock('@/surfaces/portal/documents/usePortalDocuments.ts', () => ({
+  usePortalDocuments: () => ({ status: 'ready', rows: [] }),
+  validateClientFile: () => null,
+  portalDownloadUrl: vi.fn(),
+  uploadPortalDocument: vi.fn(),
 }));
 
 vi.mock('@/surfaces/portal/updates/usePortalUpdates.ts', () => ({
@@ -158,25 +167,41 @@ describe('apexRouter', () => {
     expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveFocus();
   });
 
-  it('lazy-loads the portal shell at /p/:token with branded header and nav', async () => {
+  it('lazy-loads the single-screen portal at /p/:token with branded header', async () => {
     renderAt('/p/abc');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Studio North')).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Portal sections' })).toBeInTheDocument();
+    // The tabbed nav was removed (#126, D-042) — everything is one screen.
+    expect(screen.queryByRole('navigation', { name: 'Portal sections' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: /overall progress/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 
-  it('applies the portal surface theme once the /p tree mounts', async () => {
+  it.each([['/p/abc/documents'], ['/p/abc/updates']])(
+    'redirects the old %s deep link to the single screen instead of 404',
+    async (path) => {
+      renderAt(path);
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('applies the firm surface theme once the /p tree mounts', async () => {
     renderAt('/p/abc');
 
     await screen.findByRole('heading', { level: 1, name: 'Roadside Cafe Fitout' });
 
     // useSurfaceTheme sets the attribute in an effect — wait for the flush.
+    // The client portal adopts the firm cool-neutral surface (#126, D-042).
     await waitFor(() => {
-      expect(document.documentElement.dataset.surface).toBe('portal');
+      expect(document.documentElement.dataset.surface).toBe('firm');
     });
   });
 
