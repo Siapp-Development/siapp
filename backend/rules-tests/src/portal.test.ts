@@ -379,6 +379,28 @@ describe('portal document uploads (D7)', () => {
     );
   });
 
+  it('accepts zip and .dwg (image/vnd.dwg) client uploads (#129 mime parity)', async () => {
+    const db = dbAsPortal();
+    await assertSucceeds(
+      setDoc(
+        doc(db, `${PUB_PREFIX}/documents/doc-up-zip`),
+        validClientDocPayload('doc-up-zip', { mimeType: 'application/zip' }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, `${PUB_PREFIX}/documents/doc-up-zipc`),
+        validClientDocPayload('doc-up-zipc', { mimeType: 'application/x-zip-compressed' }),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, `${PUB_PREFIX}/documents/doc-up-dwg`),
+        validClientDocPayload('doc-up-dwg', { mimeType: 'image/vnd.dwg' }),
+      ),
+    );
+  });
+
   it('rejects paths outside client-uploads/, oversize files and firm-only mimes', async () => {
     const db = dbAsPortal();
     await assertFails(

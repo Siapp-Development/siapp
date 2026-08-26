@@ -596,6 +596,12 @@ describe('collab document create (D-f) — task-parameterized validator', () => 
         validCollabDocPayload('cnew-mime', TASK_ASSIGNED, { mimeType: 'application/zip' }),
       ),
     );
+    await assertSucceeds(
+      setDoc(
+        doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-dwg`),
+        validCollabDocPayload('cnew-dwg', TASK_ASSIGNED, { mimeType: 'image/vnd.dwg' }),
+      ),
+    );
     await assertFails(
       setDoc(
         doc(dbAsCollab(), `${PUB_PREFIX}/documents/cnew-size-too-large`),

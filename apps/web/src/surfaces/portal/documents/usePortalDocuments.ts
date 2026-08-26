@@ -8,6 +8,7 @@
 import {
   CLIENT_ALLOWED_DOCUMENT_MIME_TYPES,
   MAX_CLIENT_DOCUMENT_SIZE_BYTES,
+  resolveUploadContentType,
 } from '@siapp/shared';
 import {
   Timestamp,
@@ -85,13 +86,15 @@ export function usePortalDocuments(
 
 /** Pre-upload validation mirroring the rules caps — null when acceptable. */
 export function validateClientFile(file: {
+  name: string;
   size: number;
   type: string;
 }): TClientFileError | null {
   if (file.size > MAX_CLIENT_DOCUMENT_SIZE_BYTES) {
     return 'too-large';
   }
-  if (!(CLIENT_ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+  const contentType = resolveUploadContentType(file.name, file.type);
+  if (!(CLIENT_ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(contentType)) {
     return 'unsupported';
   }
   return null;
@@ -110,6 +113,7 @@ export async function uploadPortalDocument(options: {
   onProgress?: (percent: number) => void;
 }): Promise<void> {
   const { workspaceId, projectId, clientId, file, onProgress } = options;
+  const contentType = resolveUploadContentType(file.name, file.type);
   const docId = crypto.randomUUID();
   // Sanitize like the firm upload flow (useDocuments.ts): raw names can
   // contain '/' or exceed rule limits, which would fail the metadata write
@@ -118,7 +122,7 @@ export async function uploadPortalDocument(options: {
   const storagePath = `workspaces/${workspaceId}/projects/${projectId}/client-uploads/${docId}-${safeName}`;
 
   const task = uploadBytesResumable(ref(storage, storagePath), file, {
-    contentType: file.type,
+    contentType,
   });
   await new Promise<void>((resolve, reject) => {
     task.on(
@@ -137,7 +141,7 @@ export async function uploadPortalDocument(options: {
   await setDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/documents/${docId}`), {
     id: docId,
     name: file.name.slice(0, 255),
-    mimeType: file.type,
+    mimeType: contentType,
     sizeBytes: file.size,
     storagePath,
     scope: 'project',

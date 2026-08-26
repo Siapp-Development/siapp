@@ -8,6 +8,7 @@
 import {
   COLLAB_ALLOWED_DOCUMENT_MIME_TYPES,
   MAX_COLLAB_DOCUMENT_SIZE_BYTES,
+  resolveUploadContentType,
   type TTaskStatus,
 } from '@siapp/shared';
 import {
@@ -219,13 +220,15 @@ export type TCollabFileError = 'too-large' | 'unsupported';
 
 /** Pre-upload validation mirroring the rules caps — null when acceptable. */
 export function validateCollabFile(file: {
+  name: string;
   size: number;
   type: string;
 }): TCollabFileError | null {
   if (file.size > MAX_COLLAB_DOCUMENT_SIZE_BYTES) {
     return 'too-large';
   }
-  if (!(COLLAB_ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+  const contentType = resolveUploadContentType(file.name, file.type);
+  if (!(COLLAB_ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(contentType)) {
     return 'unsupported';
   }
   return null;
@@ -258,11 +261,12 @@ export async function uploadCollabDocument(options: {
     file,
     onProgress,
   } = options;
+  const contentType = resolveUploadContentType(file.name, file.type);
   const docId = crypto.randomUUID();
   const storagePath = `workspaces/${workspaceId}/projects/${projectId}/collab-uploads/${docId}-${file.name}`;
 
   const task = uploadBytesResumable(ref(storage, storagePath), file, {
-    contentType: file.type,
+    contentType,
   });
   await new Promise<void>((resolve, reject) => {
     task.on(
@@ -279,7 +283,7 @@ export async function uploadCollabDocument(options: {
   await setDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/documents/${docId}`), {
     id: docId,
     name: file.name,
-    mimeType: file.type,
+    mimeType: contentType,
     sizeBytes: file.size,
     storagePath,
     scope: 'task',

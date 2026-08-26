@@ -7,6 +7,8 @@
 import { FileText, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
+import { COLLAB_ALLOWED_DOCUMENT_MIME_TYPES } from '@siapp/shared';
+
 import {
   collabDownloadUrl,
   uploadCollabDocument,
@@ -16,6 +18,8 @@ import {
 } from './useCollabTask.ts';
 
 const DATE_FORMAT = new Intl.DateTimeFormat('en-MY', { dateStyle: 'medium' });
+
+const FILE_INPUT_ACCEPT = `${COLLAB_ALLOWED_DOCUMENT_MIME_TYPES.join(',')},.dwg`;
 
 function sizeLabel(bytes: number): string {
   if (bytes >= 1024 * 1024) {
@@ -49,7 +53,7 @@ export function CollabUploader({
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function handleFile(file: File): Promise<void> {
-    const invalid = validateCollabFile(file);
+    const invalid = validateCollabFile({ name: file.name, size: file.size, type: file.type });
     if (invalid !== null) {
       setUpload({
         phase: 'error',
@@ -99,7 +103,7 @@ export function CollabUploader({
           className="sr-only"
           aria-hidden="true"
           tabIndex={-1}
-          accept="image/*,.pdf,.doc,.docx,.zip"
+          accept={FILE_INPUT_ACCEPT}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (file !== undefined) {

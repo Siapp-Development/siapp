@@ -12,7 +12,11 @@
  */
 
 import type { TMemberRole, TScanStatus, TUploaderType } from '@siapp/shared';
-import { ALLOWED_DOCUMENT_MIME_TYPES, MAX_DOCUMENT_SIZE_BYTES } from '@siapp/shared';
+import {
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_SIZE_BYTES,
+  resolveUploadContentType,
+} from '@siapp/shared';
 import {
   Timestamp,
   collection,
@@ -191,7 +195,8 @@ export interface IUploadDocumentInput {
 
 /** Client-side pre-check mirror of the storage/firestore rules. */
 export function validateDocumentFile(file: File): string | null {
-  if (!(ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+  const contentType = resolveUploadContentType(file.name, file.type);
+  if (!(ALLOWED_DOCUMENT_MIME_TYPES as readonly string[]).includes(contentType)) {
     return 'This file type is not supported.';
   }
   if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
@@ -209,10 +214,11 @@ function sanitizeFileName(name: string): string {
 
 export async function uploadDocument(input: IUploadDocumentInput): Promise<void> {
   const { workspaceId, projectId, file } = input;
+  const contentType = resolveUploadContentType(file.name, file.type);
   const storagePath = `workspaces/${workspaceId}/projects/${projectId}/${crypto.randomUUID()}-${sanitizeFileName(file.name)}`;
 
   const upload = uploadBytesResumable(ref(storage, storagePath), file, {
-    contentType: file.type,
+    contentType,
   });
   await new Promise<void>((resolve, reject) => {
     upload.on(
@@ -234,7 +240,7 @@ export async function uploadDocument(input: IUploadDocumentInput): Promise<void>
   batch.set(docRef, {
     id: docRef.id,
     name: file.name,
-    mimeType: file.type,
+    mimeType: contentType,
     sizeBytes: file.size,
     storagePath,
     scope: input.scope,
@@ -252,7 +258,7 @@ export async function uploadDocument(input: IUploadDocumentInput): Promise<void>
     appendDocActivity(batch, input.workspaceId, input.projectId, input.scopeId, 'doc_added', {
       name: file.name,
       storagePath,
-      mimeType: file.type,
+      mimeType: contentType,
       uid: input.uid,
       userName: input.userName,
     });

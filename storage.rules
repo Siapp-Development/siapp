@@ -80,6 +80,7 @@ service firebase.storage {
         'application/pdf',
         'application/zip',
         'application/x-zip-compressed',
+        'image/vnd.dwg',
         'image/png',
         'image/jpeg',
         'image/webp',
@@ -98,6 +99,9 @@ service firebase.storage {
     function isClientAllowedContentType() {
       return request.resource.contentType in [
         'application/pdf',
+        'application/zip',
+        'application/x-zip-compressed',
+        'image/vnd.dwg',
         'image/png',
         'image/jpeg',
         'image/webp',
@@ -114,6 +118,7 @@ service firebase.storage {
         'application/pdf',
         'application/zip',
         'application/x-zip-compressed',
+        'image/vnd.dwg',
         'image/png',
         'image/jpeg',
         'image/webp',

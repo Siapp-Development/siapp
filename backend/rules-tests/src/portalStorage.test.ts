@@ -92,6 +92,18 @@ describe('portal client-upload creates', () => {
     }
   });
 
+  it('explicitly allows image/vnd.dwg (.dwg) client uploads (#129)', async () => {
+    await assertSucceeds(
+      put(storageAsPortal(), `${PROJECT_PREFIX}/client-uploads/uuid-dwg`, PNG_BYTES, 'image/vnd.dwg'),
+    );
+  });
+
+  it('explicitly allows zip client uploads (#129)', async () => {
+    await assertSucceeds(
+      put(storageAsPortal(), `${PROJECT_PREFIX}/client-uploads/uuid-zip`, PNG_BYTES, 'application/zip'),
+    );
+  });
+
   it('denies firm-only mime types (spreadsheets) for client uploads', async () => {
     await assertFails(
       put(
