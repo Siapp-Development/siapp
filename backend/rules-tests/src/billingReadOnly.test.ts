@@ -44,6 +44,8 @@ async function seedBillingWorkspace(wid: string, billingStatus?: string): Promis
     status: 'todo',
     restrictedToDepartments: [],
     visibleToCollaboratorIds: [],
+    // #127: assignee-membership gate reads this queryable projection.
+    assigneeCollaboratorIds: ['col-bill-1'],
   });
   await seedDoc(testEnv, `workspaces/${wid}/clients/${CLIENT_ID}`, {
     id: CLIENT_ID,
@@ -88,7 +90,7 @@ function dbAsPortal(wid: string) {
 function dbAsCollab(wid: string) {
   return testEnv
     .authenticatedContext(`collab_${wid}`, {
-      collab: { wid, pid: PROJ, tid: 'task-bill-1', colid: 'col-bill-1', linkId: 'clink-bill' },
+      collab: { wid, colid: 'col-bill-1', linkId: 'clink-bill' },
     })
     .firestore();
 }
@@ -233,7 +235,7 @@ describe('read-only workspace: portal/collab reads open, writes blocked (D3)', (
     );
   });
 
-  it('still allows the collab principal to read its pinned task', async () => {
+  it('still allows the collab principal to read a task it is assigned to', async () => {
     await assertSucceeds(
       getDoc(doc(dbAsCollab(WKS_RO), `${projPrefix(WKS_RO)}/tasks/task-bill-1`)),
     );

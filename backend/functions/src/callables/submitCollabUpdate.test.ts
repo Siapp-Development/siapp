@@ -67,10 +67,10 @@ describe('parseCollabUpdate', () => {
 });
 
 describe('collabClaimsOf', () => {
-  const claims = { wid: 'w1', pid: 'p1', tid: 't1', colid: 'col1' };
+  const claims = { wid: 'w1', colid: 'col1' };
 
-  it('extracts well-formed collab claims', () => {
-    expect(collabClaimsOf({ collab: claims })).toEqual(claims);
+  it('extracts well-formed collaborator-scoped claims (#127)', () => {
+    expect(collabClaimsOf({ collab: { ...claims, linkId: 'l1' } })).toEqual(claims);
   });
 
   it('rejects missing, partial or empty claims', () => {
@@ -78,7 +78,7 @@ describe('collabClaimsOf', () => {
     expect(collabClaimsOf({})).toBeNull();
     expect(collabClaimsOf({ collab: null })).toBeNull();
     expect(collabClaimsOf({ collab: { ...claims, colid: '' } })).toBeNull();
-    expect(collabClaimsOf({ collab: { wid: 'w1', pid: 'p1', tid: 't1' } })).toBeNull();
+    expect(collabClaimsOf({ collab: { wid: 'w1' } })).toBeNull();
     expect(collabClaimsOf({ portal: { wid: 'w1', pid: 'p1', cid: 'c1' } })).toBeNull();
   });
 });
