@@ -7,7 +7,7 @@
  */
 
 import { Alert, Avatar, Badge, Button, Dialog, Input, cn } from '@siapp/ui';
-import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
+import type { TMemberRole } from '@siapp/shared';
 import { ChevronRight, Columns3, List, Plus, X } from 'lucide-react';
 import {
   useEffect,
@@ -341,8 +341,6 @@ export interface ITasksSectionProps {
   userName: string;
   /** Project-level edit gate (draft/published + role, from the detail page). */
   canEdit: boolean;
-  /** Project lifecycle — collab task links need published/completed (#22). */
-  lifecycle: TProjectLifecycle;
   /** Project schedule bounds — anchor the timeline view's visible range. */
   projectStartDate: Date | null;
   projectTargetDate: Date | null;
@@ -360,7 +358,6 @@ export function TasksSection({
   uid,
   userName,
   canEdit,
-  lifecycle,
   projectStartDate,
   projectTargetDate,
   deepLinkedTaskId = null,
@@ -903,7 +900,6 @@ export function TasksSection({
               departments={departmentRows}
               role={role}
               memberDepartments={departments}
-              lifecycle={lifecycle}
               canEdit={canEdit}
               uid={uid}
               userName={userName}

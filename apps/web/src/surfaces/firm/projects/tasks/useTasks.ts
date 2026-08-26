@@ -455,6 +455,11 @@ export async function createTask(
     ...(values.dueDate !== null ? { dueDate: Timestamp.fromDate(values.dueDate) } : {}),
     ...(values.status === 'done' ? { completedAt: serverTimestamp() } : {}),
     assignees: values.assignees,
+    // #127: queryable projection of collaborator-type assignees — powers the
+    // assignedTasks mirror + the rules assignee-membership gate.
+    assigneeCollaboratorIds: values.assignees
+      .filter((a) => a.type === 'collaborator')
+      .map((a) => a.id),
     visibleToClient: values.visibleToClient,
     collaboratorCanSeeAllAttachments: values.collaboratorCanSeeAllAttachments,
     visibleToCollaboratorIds: [],
@@ -494,6 +499,10 @@ export async function updateTask(
       ? { blockedReason: deleteField(), blockedBy: deleteField() }
       : { blockedBy: values.blockedBy ?? deleteField() }),
     assignees: values.assignees,
+    // #127: keep the queryable collaborator projection in sync on every edit.
+    assigneeCollaboratorIds: values.assignees
+      .filter((a) => a.type === 'collaborator')
+      .map((a) => a.id),
     visibleToClient: values.visibleToClient,
     collaboratorCanSeeAllAttachments: values.collaboratorCanSeeAllAttachments,
     restrictedToDepartments: values.restrictedToDepartments,

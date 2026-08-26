@@ -112,6 +112,26 @@ vi.mock('@/surfaces/collab/useCollabTask.ts', () => ({
   uploadCollabDocument: vi.fn(),
 }));
 
+vi.mock('@/surfaces/collab/useCollabAssignedTasks.ts', () => ({
+  // #127: the collab page lists every task assigned to the collaborator. A
+  // single ready row auto-selects and renders the task-detail surface below.
+  useCollabAssignedTasks: () => ({
+    status: 'ready',
+    rows: [
+      {
+        key: 'proj-1_task-1',
+        projectId: 'proj-1',
+        taskId: 'task-1',
+        title: 'Install signage',
+        status: 'todo',
+        dueDate: null,
+        projectName: 'Roadside Cafe Fitout',
+        active: true,
+      },
+    ],
+  }),
+}));
+
 vi.mock('@/lib/callables.ts', () => ({
   submitCollabUpdate: vi.fn(),
 }));
@@ -189,7 +209,11 @@ describe('apexRouter', () => {
     renderAt('/t/xyz');
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Install signage' }),
+      await screen.findByRole('heading', { level: 1, name: 'My Assigned Tasks' }),
+    ).toBeInTheDocument();
+    // The auto-selected task renders the existing task-detail surface (title h2).
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Install signage' }),
     ).toBeInTheDocument();
     // Firm name appears in the header and again in the PDPA footer notice (#26 D5).
     expect(screen.getAllByText(/studio north/i).length).toBeGreaterThan(0);

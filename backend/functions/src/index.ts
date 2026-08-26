@@ -48,7 +48,7 @@ import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { syncMemberProfile } from './triggers/syncMemberProfile.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
-import { removedCollaboratorIds, revokeCollabLinksForTask } from './lib/collabLinks.js';
+import { applyMirrorOps, diffTaskMirror, refreshProjectMirror } from './lib/assignedTasksMirror.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
 import { enqueueTaskEvent } from './lib/enqueueNotifications.js';
 import { triggersFor } from './lib/notifyConfig.js';
@@ -107,7 +107,8 @@ export { exportProject } from './callables/exportProject.js';
 export { deletePersonalData } from './callables/deletePersonalData.js';
 // ── Collaborator task-page callables (#22) ────────────────────────────
 
-export { issueCollabLink } from './callables/issueCollabLink.js';
+export { issueCollaboratorLink } from './callables/issueCollaboratorLink.js';
+export { sendCollaboratorLink } from './callables/sendCollaboratorLink.js';
 export { redeemCollabLink } from './callables/redeemCollabLink.js';
 export { submitCollabUpdate } from './callables/submitCollabUpdate.js';
 // ── Admin callables (#10) ───────────────────────────────────────────────────
@@ -160,20 +161,44 @@ export const onTaskWrite = onDocumentWritten(
         });
       }
     }
-    // #22 (step 7): unassigning a collaborator soft-revokes their task links
-    // — re-redemption stops immediately; live sessions are bounded by the
-    // rules-side visibility/lifecycle re-checks.
-    const removedIds = removedCollaboratorIds(before, after);
-    if (removedIds.length > 0) {
-      try {
-        await revokeCollabLinksForTask(event.params.workspaceId, event.params.taskId, removedIds);
-      } catch (error) {
-        logger.error('onTaskWrite: collab link revocation failed', {
-          workspaceId: event.params.workspaceId,
+    // #127: fan the task's assignee diff out to each collaborator's
+    // assignedTasks mirror (add/remove/update). Non-fatal: a mirror failure
+    // must not fail the trigger (which would re-run the summary recompute).
+    try {
+      const mirrorOps = diffTaskMirror({
+        projectId: event.params.projectId,
+        taskId: event.params.taskId,
+        before,
+        after,
+        project: {},
+      });
+      if (mirrorOps.length > 0) {
+        const projectSnap = await getFirestore()
+          .doc(`workspaces/${event.params.workspaceId}/projects/${event.params.projectId}`)
+          .get();
+        // Re-diff with the real project snapshot so set ops carry
+        // projectName/lifecycle; deletes are unaffected.
+        const ops = diffTaskMirror({
+          projectId: event.params.projectId,
           taskId: event.params.taskId,
-          err: errorPayload(error),
+          before,
+          after,
+          project: { name: projectSnap.get('name'), lifecycle: projectSnap.get('lifecycle') },
         });
+        await applyMirrorOps(
+          event.params.workspaceId,
+          event.params.projectId,
+          event.params.taskId,
+          ops,
+        );
       }
+    } catch (error) {
+      logger.error('onTaskWrite: assignedTasks mirror fan-out failed', {
+        workspaceId: event.params.workspaceId,
+        projectId: event.params.projectId,
+        taskId: event.params.taskId,
+        err: errorPayload(error),
+      });
     }
     const notifyTrigger = triggersFor(before, after);
     let lifecycleSuppressed = false;
@@ -297,6 +322,30 @@ export const onProjectWrite = onDocumentWritten(
       }
     } catch (error) {
       logger.error('onProjectWrite: activity capture failed', {
+        workspaceId: event.params.workspaceId,
+        projectId: event.params.projectId,
+        err: errorPayload(error),
+      });
+    }
+
+    // #127: refresh projectName/lifecycle across this project's assignedTasks
+    // mirror docs on rename or lifecycle change. Non-fatal, same posture as
+    // the activity block; skipped on summary-only / no-op writes.
+    try {
+      const before = event.data?.before?.data();
+      const after = event.data?.after?.data();
+      if (after !== undefined && before !== undefined) {
+        const nameChanged = before['name'] !== after['name'];
+        const lifecycleChanged = before['lifecycle'] !== after['lifecycle'];
+        if (nameChanged || lifecycleChanged) {
+          await refreshProjectMirror(event.params.workspaceId, event.params.projectId, {
+            name: after['name'],
+            lifecycle: after['lifecycle'],
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('onProjectWrite: assignedTasks mirror refresh failed', {
         workspaceId: event.params.workspaceId,
         projectId: event.params.projectId,
         err: errorPayload(error),

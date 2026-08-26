@@ -41,6 +41,15 @@
         { "fieldPath": "deletedAt", "order": "ASCENDING" },
         { "fieldPath": "scopeId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "assignedTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visibleToThisCollaborator", "order": "ASCENDING" },
+        { "fieldPath": "lifecycle", "order": "ASCENDING" },
+        { "fieldPath": "dueDate", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

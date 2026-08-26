@@ -124,7 +124,6 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
       uid="u1"
       userName="Alice Tan"
       canEdit
-      lifecycle="published"
       projectStartDate={null}
       projectTargetDate={null}
       {...overrides}
@@ -181,7 +180,6 @@ function DeepLinkHarness() {
         uid="u1"
         userName="Alice Tan"
         canEdit
-        lifecycle="published"
         projectStartDate={null}
         projectTargetDate={null}
         deepLinkedTaskId={deepLinkedTaskId}

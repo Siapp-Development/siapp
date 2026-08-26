@@ -4,6 +4,7 @@
  * list of the task-scoped documents shared with this collaborator.
  */
 
+import { FileText, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import {
@@ -111,8 +112,9 @@ export function CollabUploader({
           type="button"
           disabled={upload.phase === 'uploading'}
           onClick={() => inputRef.current?.click()}
-          className="min-h-11 rounded-md border border-border px-5 py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-semibold shadow-card hover:bg-muted disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
+          <Upload aria-hidden="true" className="size-4" />
           Upload a file
         </button>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -150,9 +152,15 @@ export function CollabUploader({
           {documents.rows.map((row) => (
             <li
               key={row.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-3"
+              className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
             >
-              <div className="min-w-0">
+              <span
+                aria-hidden="true"
+                className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger-tint text-danger"
+              >
+                <FileText className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{row.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {sizeLabel(row.sizeBytes)}
@@ -162,7 +170,7 @@ export function CollabUploader({
               <button
                 type="button"
                 onClick={() => void openDocument(row.storagePath)}
-                className="min-h-11 shrink-0 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 Open
               </button>
