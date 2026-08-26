@@ -47,6 +47,8 @@ import { recountSeats } from './triggers/recountSeats.js';
 import { recomputeProjectSummary } from './triggers/projectSummary.js';
 import { syncMemberClaims } from './triggers/syncMemberClaims.js';
 import { syncMemberProfile } from './triggers/syncMemberProfile.js';
+import { notifyInboxOnActivity } from './triggers/notifyInboxOnActivity.js';
+import { notifyInboxOnComment } from './triggers/notifyInboxOnComment.js';
 import { collaboratorIdsToStamp, stampCollaboratorLastTask } from './lib/lastTaskAt.js';
 import { applyMirrorOps, diffTaskMirror, refreshProjectMirror } from './lib/assignedTasksMirror.js';
 import { syncPhoneIndex } from './lib/phoneIndex.js';
@@ -411,6 +413,27 @@ export const onProjectDocumentWrite = onDocumentWritten(
 );
 
 // ── Scheduled functions (#18) ───────────────────────────────────────────────
+
+/**
+ * In-app notification inbox fan-out (#134). Two `onDocumentCreated` triggers
+ * write per-recipient notification docs under each firm member's
+ * `notifications` subcollection. Independent of the outbound WhatsApp
+ * pipeline; department need-to-know (D-025) is resolved at write time.
+ *
+ * Activity feed → assignment / status / blocked / lifecycle / client-doc /
+ * collaborator events.
+ * Task `updates` → comment mentions + watcher notifications (comments are not
+ * mirrored into the activity feed, so this is the single source).
+ */
+export const onNotifyInboxActivity = onDocumentCreated(
+  'workspaces/{workspaceId}/projects/{projectId}/activity/{activityId}',
+  notifyInboxOnActivity,
+);
+
+export const onNotifyInboxComment = onDocumentCreated(
+  'workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/updates/{updateId}',
+  notifyInboxOnComment,
+);
 
 /**
  * Daily due-soon sweep at 00:00 UTC = 08:00 MYT (D5) — the moment quiet

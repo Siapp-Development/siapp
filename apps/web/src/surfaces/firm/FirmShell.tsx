@@ -26,6 +26,7 @@ import { ProfileSettingsPage } from './settings/ProfileSettingsPage.tsx';
 import { SettingsLayout } from './settings/SettingsLayout.tsx';
 import { TeamSettingsPage } from './settings/TeamSettingsPage.tsx';
 import { useAuth } from './auth/useAuth.ts';
+import { NotificationBell } from './notifications/NotificationBell.tsx';
 import { useSidebarCollapsed } from './useSidebarCollapsed.ts';
 
 /** Sidebar nav link — NavLink supplies aria-current="page" on the active route. */
@@ -156,16 +157,23 @@ export function FirmShell() {
       >
         <div className={cn('flex items-center', collapsed ? 'flex-col gap-3' : 'justify-between px-3')}>
           <img src={siappLogoSimpleReversed} alt="Siapp" className="h-9 w-9 object-contain" />
-          <button
-            type="button"
-            onClick={toggle}
-            aria-expanded={!collapsed}
-            aria-controls="sidebar-nav"
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-active hover:text-white focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none active:bg-sidebar-active"
-          >
-            <CollapseIcon collapsed={collapsed} />
-          </button>
+          <div className={cn('flex items-center', collapsed ? 'flex-col gap-3' : 'gap-1')}>
+            <NotificationBell
+              workspaceId={workspace.id}
+              workspaceSlug={workspace.slug}
+              uid={state.user.uid}
+            />
+            <button
+              type="button"
+              onClick={toggle}
+              aria-expanded={!collapsed}
+              aria-controls="sidebar-nav"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-active hover:text-white focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none active:bg-sidebar-active"
+            >
+              <CollapseIcon collapsed={collapsed} />
+            </button>
+          </div>
         </div>
         {!collapsed && (
           <p className="mt-5 px-3 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">

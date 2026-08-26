@@ -82,6 +82,7 @@ export function workspacePaths(wid: string): Record<string, string> {
   return {
     workspace: `workspaces/${wid}`,
     member: `workspaces/${wid}/members/member1`,
+    notification: `workspaces/${wid}/members/member1/notifications/notif1`,
     invite: `workspaces/${wid}/invites/inv1`,
     department: `workspaces/${wid}/departments/dep1`,
     client: `workspaces/${wid}/clients/client1`,

@@ -42,6 +42,8 @@ vi.mock('./settings/NotificationSettingsPage.tsx', () => ({
     <h1>Notifications — {workspaceName}</h1>
   ),
 }));
+// #134: the notification bell subscribes to Firestore — covered by its own tests.
+vi.mock('./notifications/NotificationBell.tsx', () => ({ NotificationBell: () => null }));
 // #24: banners + billing page subscribe to Firestore — covered by their own tests.
 vi.mock('./billing/BillingBanners.tsx', () => ({ BillingBanners: () => null }));
 vi.mock('./billing/BillingSettingsPage.tsx', () => ({
