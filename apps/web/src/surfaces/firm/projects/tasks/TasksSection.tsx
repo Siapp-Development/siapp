@@ -6,9 +6,9 @@
  * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Avatar, Badge, Button, Drawer, Input, cn } from '@siapp/ui';
+import { Alert, Avatar, Badge, Button, Dialog, Input, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
-import { ChevronRight, Columns3, List, Plus } from 'lucide-react';
+import { ChevronRight, Columns3, List, Plus, X } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -856,9 +856,10 @@ export function TasksSection({
           </Button>
         ))}
 
-      <Drawer
+      <Dialog
         open={selectedRow !== null}
         onClose={() => setSelectedId(null)}
+        size="lg"
         aria-label={selectedRow !== null ? `Task: ${selectedRow.title}` : 'Task detail'}
       >
         {selectedRow !== null &&
@@ -869,10 +870,11 @@ export function TasksSection({
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
+                  size="icon"
+                  aria-label="Close"
                   onClick={() => setSelectedId(null)}
                 >
-                  Close
+                  <X className="h-5 w-5" aria-hidden="true" />
                 </Button>
               </div>
               <p className="mt-4 text-sm text-muted-foreground">
@@ -905,7 +907,7 @@ export function TasksSection({
               }}
             />
           ))}
-      </Drawer>
+      </Dialog>
     </div>
   );
 }

@@ -10,7 +10,8 @@
 import { Alert, Button, Card, CardContent, CardHeader, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { ALLOWED_DOCUMENT_MIME_TYPES, PREVIEWABLE_MIME_TYPES } from '@siapp/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Download, Paperclip } from 'lucide-react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { DocumentPreview } from './DocumentPreview.tsx';
@@ -40,9 +41,11 @@ interface IUploadButtonProps {
   disabled: boolean;
   onPick: (file: File) => void;
   onInvalid: (message: string) => void;
+  /** When provided, render an icon-only button using `label` as its aria-label. */
+  icon?: ReactNode;
 }
 
-function UploadButton({ label, disabled, onPick, onInvalid }: IUploadButtonProps) {
+function UploadButton({ label, disabled, onPick, onInvalid, icon }: IUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
     <>
@@ -66,15 +69,28 @@ function UploadButton({ label, disabled, onPick, onInvalid }: IUploadButtonProps
           onPick(file);
         }}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-      >
-        {label}
-      </Button>
+      {icon !== undefined ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          disabled={disabled}
+          onClick={() => inputRef.current?.click()}
+        >
+          {icon}
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => inputRef.current?.click()}
+        >
+          {label}
+        </Button>
+      )}
     </>
   );
 }
@@ -509,6 +525,7 @@ export function TaskAttachments({
         {canEdit && (
           <UploadButton
             label={progress !== null ? 'Uploading…' : 'Attach file'}
+            icon={<Paperclip className="h-5 w-5" aria-hidden="true" />}
             disabled={progress !== null}
             onPick={(file) => void handlePick(file)}
             onInvalid={setError}
@@ -531,10 +548,11 @@ export function TaskAttachments({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon"
+                aria-label="Download"
                 onClick={() => void downloadDocument(row.storagePath, row.name)}
               >
-                Download
+                <Download className="h-5 w-5" aria-hidden="true" />
               </Button>
             </li>
           ))}

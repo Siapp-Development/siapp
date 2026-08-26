@@ -354,7 +354,7 @@ describe('TasksSection', () => {
     });
   });
 
-  it('keeps the selected task drawer open after a successful list reorder', async () => {
+  it('keeps the selected task modal open after a successful list reorder', async () => {
     tasksData.reorderTasks.mockResolvedValue(undefined);
     tasksData.tasksState = {
       status: 'ready',
@@ -385,7 +385,7 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
   });
 
-  it('does not open the task drawer after a drag-and-drop reorder with no prior selection', async () => {
+  it('does not open the task modal after a drag-and-drop reorder with no prior selection', async () => {
     tasksData.reorderTasks.mockResolvedValue(undefined);
     tasksData.tasksState = {
       status: 'ready',
@@ -670,7 +670,7 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
   });
 
-  it('opens the detail panel in a modal drawer and closes it on Escape', async () => {
+  it('opens the detail panel in a modal and closes it on Escape', async () => {
     tasksData.tasksState = { status: 'ready', rows: [taskRow({ phaseId: 'ph1' })] };
     renderSection();
 
@@ -696,13 +696,13 @@ describe('TasksSection', () => {
     expect(onSelectedTaskChange).toHaveBeenCalledWith('t2');
   });
 
-  it('opens the deep-linked task drawer even when tasks load after mount (#102 regression)', async () => {
+  it('opens the deep-linked task modal even when tasks load after mount (#102 regression)', async () => {
     // Reproduces the Home → task-click bug: on a REAL navigation the project's
     // useTasks/usePhases start in `loading`, and ProjectDetailPage's
     // onSelectedTaskChange DELETES the `?task=` param when called with null.
     // If selectedId inits to null (the old bug), the mount-time sync effect
     // fires onSelectedTaskChange(null) → strips ?task= before tasks resolve, so
-    // the deep-link effect early-returns and the drawer never opens. The fix
+    // the deep-link effect early-returns and the modal never opens. The fix
     // seeds selectedId from deepLinkedTaskId. Unlike the #90 unit test, this
     // uses a REAL router param round-trip AND a real loading→ready transition.
     tasksData.tasksState = { status: 'loading' };
@@ -737,7 +737,7 @@ describe('TasksSection', () => {
     };
     view.rerender(harnessTree());
 
-    // Drawer opens for t2 AND the deep link is still present (not stripped).
+    // Modal opens for t2 AND the deep link is still present (not stripped).
     await waitFor(() => {
       expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't2');
     });
@@ -778,7 +778,7 @@ describe('TasksSection', () => {
     expect(screen.queryByRole('button', { name: '+ Add phase' })).not.toBeInTheDocument();
   });
 
-  it('marks overdue timeline bars with the accent colour and opens the drawer on click', async () => {
+  it('marks overdue timeline bars with the accent colour and opens the modal on click', async () => {
     tasksData.tasksState = {
       status: 'ready',
       rows: [
@@ -800,7 +800,7 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-task-id', 't1');
   });
 
-  it('opens the drawer when clicking the timeline left-side task label (#86)', async () => {
+  it('opens the modal when clicking the timeline left-side task label (#86)', async () => {
     tasksData.tasksState = {
       status: 'ready',
       rows: [

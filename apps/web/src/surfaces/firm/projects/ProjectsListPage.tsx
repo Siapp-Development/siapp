@@ -6,10 +6,10 @@
  * Duplicate from existing (structure carries, content clears).
  */
 
-import { Badge, Button, Card, CardContent, CardHeader, Label, Progress } from '@siapp/ui';
+import { Badge, Button, Dialog, Label, Progress } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { useClients } from '../clients/useClients.ts';
@@ -116,6 +116,7 @@ export function ProjectsListPage({
   const [creating, setCreating] = useState(canCreate && searchParams.get('new') === '1');
   const [createMode, setCreateMode] = useState<'blank' | 'duplicate'>('blank');
   const [sourceId, setSourceId] = useState('');
+  const newProjectHeadingId = useId();
 
   const listParams = useMemo(() => parseProjectsListParams(searchParams), [searchParams]);
 
@@ -152,16 +153,25 @@ export function ProjectsListPage({
         )}
       </div>
 
-      {creating && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-lg font-semibold">New project</h2>
+      <Dialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        size="lg"
+        aria-labelledby={newProjectHeadingId}
+      >
+        <div className="flex max-h-[90vh] flex-col">
+          <header className="border-b border-border px-6 py-4">
+            <h2 id={newProjectHeadingId} className="text-lg font-semibold">
+              New project
+            </h2>
             <p className="text-sm">
               Projects start as drafts — no messages go out until you publish.
             </p>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <fieldset>
+          </header>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+            {creating ? (
+              <>
+                <fieldset>
               <legend className="text-sm font-medium">Start from</legend>
               <div className="mt-2 flex flex-wrap gap-4">
                 <label className="flex items-center gap-2 text-sm">
@@ -270,9 +280,11 @@ export function ProjectsListPage({
                 )}
               </>
             )}
-          </CardContent>
-        </Card>
-      )}
+              </>
+            ) : null}
+          </div>
+        </div>
+      </Dialog>
 
       {projects.status === 'ready' && rows.length > 0 && (
         <ProjectsListControls

@@ -6,7 +6,7 @@
  * markdown (react-markdown, no raw HTML) with mentions bolded.
  */
 
-import { Alert, Button, Input, Label, cn } from '@siapp/ui';
+import { Alert, Button, ConfirmDialog, Input, Label, cn } from '@siapp/ui';
 import type {
   ITaskBlockedBy,
   TMemberRole,
@@ -15,6 +15,7 @@ import type {
 } from '@siapp/shared';
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Trash2, X } from 'lucide-react';
 
 import type { IDepartmentRow, IMemberRow } from '../../settings/useTeamData.ts';
 import type { ICollaboratorRow } from '../../collaborators/useCollaborators.ts';
@@ -416,59 +417,77 @@ export function TaskDetailPanel({
   }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="sticky top-0 z-10 flex flex-row items-center justify-between gap-3 border-b border-border bg-card p-6 pb-4">
-        <div className="flex min-w-0 items-center gap-4">
+    <>
+      <div className="flex max-h-[90vh] min-h-0 flex-col">
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-card px-6 py-4">
           <h3 className="truncate text-base font-semibold">{task.title}</h3>
-          <div role="tablist" aria-label="Task detail tabs" className="flex gap-1">
-            {(['details', 'activity'] as const).map((entry) => (
-              <button
-                key={entry}
+          <div className="flex items-center gap-1">
+            {canEdit && (
+              <Button
                 type="button"
-                role="tab"
-                aria-selected={tab === entry}
-                onClick={() => setTab(entry)}
-                className={cn(
-                  'rounded-md px-3 py-1 text-sm capitalize',
-                  tab === entry
-                    ? 'bg-muted font-medium'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+                variant="ghost"
+                size="icon"
+                aria-label="Delete task"
+                onClick={() => setConfirmingDelete(true)}
               >
-                {entry}
-              </button>
-            ))}
+                <Trash2 className="h-5 w-5" aria-hidden="true" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </Button>
           </div>
+        </header>
+        <div
+          role="tablist"
+          aria-label="Task detail tabs"
+          className="flex gap-1 border-b border-border px-6 py-2 md:hidden"
+        >
+          {(['details', 'activity'] as const).map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry}
+              onClick={() => setTab(entry)}
+              className={cn(
+                'rounded-md px-3 py-1 text-sm capitalize',
+                tab === entry
+                  ? 'bg-muted font-medium'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {entry}
+            </button>
+          ))}
         </div>
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-      <div className="p-6">
-        {/* #22 (D-d): surface the collaborator's help request to the firm. */}
-        {task.status === 'blocked' && (task.blockedReason !== '' || task.blockedBy !== null) && (
-          <Alert variant="destructive" className="mb-4" role="status" aria-live="polite">
-            <p className="font-medium">Task blocked</p>
-            <p className="mt-1 text-sm">
-              Blocked by:{' '}
-              {task.blockedBy !== null
-                ? `${task.blockedBy.name} (${task.blockedBy.kind})`
-                : 'A team member'}
-            </p>
-            <p className="text-sm">Reason: {task.blockedReason !== '' ? task.blockedReason : 'No reason provided.'}</p>
-          </Alert>
-        )}
-        {tab === 'activity' ? (
-          <ActivityFeed
-            workspaceId={workspaceId}
-            projectId={projectId}
-            taskId={task.id}
-            members={members}
-            uid={uid}
-            userName={userName}
-          />
-        ) : (
-          <div className="flex flex-col gap-6">
+        <div className="grid min-h-0 flex-1 gap-6 overflow-hidden p-6 md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+          <div
+            className={cn('min-w-0 overflow-y-auto', tab !== 'details' && 'hidden', 'md:block')}
+          >
+            <div className="flex flex-col gap-6">
+              {/* #22 (D-d): surface the collaborator's help request to the firm. */}
+              {task.status === 'blocked' &&
+                (task.blockedReason !== '' || task.blockedBy !== null) && (
+                  <Alert variant="destructive" role="status" aria-live="polite">
+                    <p className="font-medium">Task blocked</p>
+                    <p className="mt-1 text-sm">
+                      Blocked by:{' '}
+                      {task.blockedBy !== null
+                        ? `${task.blockedBy.name} (${task.blockedBy.kind})`
+                        : 'A team member'}
+                    </p>
+                    <p className="text-sm">
+                      Reason: {task.blockedReason !== '' ? task.blockedReason : 'No reason provided.'}
+                    </p>
+                  </Alert>
+                )}
             {!canEdit ? (
               <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
@@ -811,59 +830,47 @@ export function TaskDetailPanel({
                   <Button type="submit" disabled={pending} aria-busy={pending}>
                     {pending ? 'Saving…' : 'Save changes'}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setConfirmingDelete(true)}
-                  >
-                    Delete task
-                  </Button>
                 </div>
-                {confirmingDelete && (
-                  <Alert variant="destructive">
-                    <p className="text-sm font-medium">Delete this task?</p>
-                    <p className="mt-1 text-sm">
-                      Its activity history is removed too. This cannot be undone.
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => void handleDelete()}
-                      >
-                        Delete task
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setConfirmingDelete(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </Alert>
-                )}
               </form>
             )}
-            <TaskAttachments
+              <TaskAttachments
+                workspaceId={workspaceId}
+                projectId={projectId}
+                taskId={task.id}
+                taskVisibleToClient={task.visibleToClient}
+                taskRestrictedToDepartments={task.restrictedToDepartments}
+                role={role}
+                departments={[...memberDepartments]}
+                uid={uid}
+                userName={userName}
+                canEdit={canEdit}
+              />
+            </div>
+          </div>
+          <div
+            className={cn('min-w-0 overflow-y-auto', tab !== 'activity' && 'hidden', 'md:block')}
+          >
+            <ActivityFeed
               workspaceId={workspaceId}
               projectId={projectId}
               taskId={task.id}
-              taskVisibleToClient={task.visibleToClient}
-              taskRestrictedToDepartments={task.restrictedToDepartments}
-              role={role}
-              departments={[...memberDepartments]}
+              members={members}
               uid={uid}
               userName={userName}
-              canEdit={canEdit}
             />
           </div>
-        )}
+        </div>
       </div>
-    </div>
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete this task?"
+        description="Its activity history is removed too. This cannot be undone."
+        confirmLabel="Delete task"
+        variant="destructive"
+        pending={pending}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setConfirmingDelete(false)}
+      />
+    </>
   );
 }
