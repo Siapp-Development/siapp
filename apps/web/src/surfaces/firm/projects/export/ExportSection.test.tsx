@@ -21,7 +21,6 @@ function payload(overrides: Partial<IExportProjectResponse> = {}): IExportProjec
     projectId: 'p1',
     project: { id: 'p1', name: 'Bungalow Build' },
     phases: [],
-    milestones: [],
     tasks: [{ id: 't1', title: 'Pour foundation', updates: [] }],
     activity: [],
     documents: [],

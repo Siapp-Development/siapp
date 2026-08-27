@@ -15,6 +15,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
   return {
     id: 'p1',
     name: 'Bungalow build',
+    description: '',
     code: 'BB-1',
     vertical: 'construction',
     lifecycle: 'draft',

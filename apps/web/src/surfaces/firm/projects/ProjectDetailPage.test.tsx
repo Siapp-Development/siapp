@@ -54,6 +54,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
   return {
     id: 'p1',
     name: 'Bungalow build',
+    description: '',
     code: 'BB-1',
     vertical: 'construction',
     lifecycle: 'draft',
@@ -273,8 +274,7 @@ describe('ProjectDetailPage', () => {
     });
   });
 
-  it('maps stable project error codes to friendly messages', async () => {
-    const err = new Error('boom');
+  it('maps stable project error codes to friendly messages', async () => {    const err = new Error('boom');
     mockCallables.setProjectLifecycle.mockRejectedValue(err);
     mockCallables.projectErrorCode.mockReturnValue('project/forbidden-transition');
     renderPage('owner');
@@ -286,5 +286,88 @@ describe('ProjectDetailPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /delete project/i }));
 
     expect(await screen.findByText(/your role cannot perform this action/i)).toBeInTheDocument();
+  });
+
+  it('renders the project description in the header when present (#138)', () => {
+    projectData.state = {
+      status: 'ready',
+      project: projectRow({ description: 'Coastal villa across three phases.' }),
+    };
+    renderPage();
+
+    expect(screen.getByText('Coastal villa across three phases.')).toBeInTheDocument();
+  });
+
+  it('no longer surfaces a Milestones section (#138)', () => {
+    renderPage();
+
+    expect(screen.getByRole('tablist', { name: 'Project sections' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /milestones/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/milestones/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the header overflow menu for a published owner (#138)', async () => {
+    projectData.state = {
+      status: 'ready',
+      project: projectRow({ lifecycle: 'published', clientId: 'c1', clientNameDenorm: 'Ahmad' }),
+    };
+    renderPage('owner');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Project actions' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Mark as Completed' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Archive Project' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Copy client link' })).toBeInTheDocument();
+  });
+
+  it('gates the overflow menu by role and lifecycle (#138)', async () => {
+    projectData.state = {
+      status: 'ready',
+      project: projectRow({ lifecycle: 'published', clientId: 'c1', clientNameDenorm: 'Ahmad' }),
+    };
+    const pmRender = renderPage('pm');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Project actions' }));
+    // Archive is owner/admin only on a published project.
+    expect(screen.queryByRole('menuitem', { name: 'Archive Project' })).not.toBeInTheDocument();
+    pmRender.unmount();
+
+    // A draft project has no menu actions at all — no empty kebab.
+    projectData.state = { status: 'ready', project: projectRow({ lifecycle: 'draft' }) };
+    renderPage('owner');
+    expect(screen.queryByRole('button', { name: 'Project actions' })).not.toBeInTheDocument();
+  });
+
+  it('marks the project completed from the overflow menu (#138)', async () => {
+    mockCallables.setProjectLifecycle.mockResolvedValue({ lifecycle: 'completed' });
+    projectData.state = {
+      status: 'ready',
+      project: projectRow({ lifecycle: 'published', clientId: 'c1', clientNameDenorm: 'Ahmad' }),
+    };
+    renderPage('owner');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Project actions' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Mark as Completed' }));
+
+    expect(mockCallables.setProjectLifecycle).toHaveBeenCalledWith({
+      workspaceId: 'wksA',
+      projectId: 'p1',
+      action: 'complete',
+    });
+  });
+
+  it('deep-links Copy client link to the Details tab without minting a link (#138)', async () => {
+    projectData.state = {
+      status: 'ready',
+      project: projectRow({ lifecycle: 'published', clientId: 'c1', clientNameDenorm: 'Ahmad' }),
+    };
+    renderPage('owner');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Project actions' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Copy client link' }));
+
+    // The action reveals the Details tab's portal card rather than rotating a link.
+    expect(screen.getByRole('heading', { name: 'Details' })).toBeInTheDocument();
+    expect(mockCallables.setProjectLifecycle).not.toHaveBeenCalled();
   });
 });

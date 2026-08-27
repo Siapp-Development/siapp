@@ -58,6 +58,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
   return {
     id: 'p1',
     name: 'Bungalow build',
+    description: '',
     code: 'BB-1',
     vertical: 'construction',
     lifecycle: 'draft',
@@ -134,6 +135,32 @@ describe('ProjectsListPage', () => {
     );
     expect(screen.getByText(/2 overdue/)).toBeInTheDocument();
     expect(screen.getByText(/Ahmad Corp/)).toBeInTheDocument();
+  });
+
+  it('renders a project description under the row when present (#138)', () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [projectRow({ description: 'Full east-wing renovation with new wiring.' })],
+    };
+    renderPage();
+
+    expect(
+      screen.getByText('Full east-wing renovation with new wiring.'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no description text for a project without one (#138)', () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [projectRow({ name: 'No-description project', description: '' })],
+    };
+    renderPage();
+
+    // The row is present, but nothing is rendered for the absent description.
+    expect(screen.getByRole('link', { name: 'No-description project' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('Full east-wing renovation with new wiring.'),
+    ).not.toBeInTheDocument();
   });
 
   it('hides deleted and archived projects by default, revealing archived via the Filters pill', async () => {
