@@ -12,6 +12,8 @@
  *     + WhatsApp notification enqueue (#18)
  *   - updateNotificationSettings (#18): owner/admin quiet-hours settings.
  *   - onDueSoonSweep (#18): daily due-soon notification sweep (08:00 MYT).
+ *   - onMessageDispatchSweep (#133): every-minute outbound WhatsApp
+ *     dispatch sweep (Twilio Content Templates).
  *   - onClientWrite / onCollaboratorWrite → syncPhoneIndex (#16)
  *     + PII audit-log capture (#23)
  *   - adminProvisionWorkspace (#10): create workspace + first owner + starter project.
@@ -68,6 +70,9 @@ import { errorPayload } from './lib/errors.js';
 import { writeAuditLog } from './lib/auditLog.js';
 import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
 import { sweepTrialExpiry } from './scheduled/trialExpirySweep.js';
+import { sweepMessageQueue } from './scheduled/dispatchQueue.js';
+import { selectProvider } from './lib/messaging/selectProvider.js';
+import { twilioAccountSid, twilioAuthToken } from './lib/messaging/twilioConfig.js';
 import { recordMessageUsage } from './triggers/messageUsage.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
@@ -429,6 +434,23 @@ export const onTrialExpirySweep = onSchedule('15 0 * * *', async () => {
   const expired = await sweepTrialExpiry(new Date());
   logger.info('onTrialExpirySweep: sweep complete', { expired });
 });
+
+/**
+ * Outbound WhatsApp dispatch sweep (#133, the deferred #19) every 1 minute
+ * (O-3). Sends `queued`, non-suppressed, past-`holdUntil` WhatsApp docs via
+ * Twilio Content Templates. The two Twilio secrets are bound here so the
+ * runtime injects them into `process.env`; `selectProvider()` returns a
+ * `NoopProvider` under the emulator or when creds are absent, so local/CI runs
+ * never send. See `scheduled/dispatchQueue.ts`.
+ */
+export const onMessageDispatchSweep = onSchedule(
+  { schedule: '* * * * *', secrets: [twilioAccountSid, twilioAuthToken] },
+  async () => {
+    const provider = selectProvider();
+    const stats = await sweepMessageQueue(new Date(), provider);
+    logger.info('onMessageDispatchSweep: sweep complete', { ...stats });
+  },
+);
 
 /**
  * WhatsApp usage counting at enqueue time (#24, D4): every non-suppressed
