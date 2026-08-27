@@ -66,6 +66,9 @@ export function ProjectForm({
   submitLabel,
 }: IProjectFormProps) {
   const [name, setName] = useState(project?.name ?? prefill?.name ?? '');
+  const [description, setDescription] = useState(
+    project?.description ?? prefill?.description ?? '',
+  );
   const [code, setCode] = useState(project?.code ?? prefill?.code ?? '');
   const [vertical, setVertical] = useState<TProjectVertical>(
     project?.vertical ?? prefill?.vertical ?? 'construction',
@@ -97,6 +100,10 @@ export function ProjectForm({
       setError('Project codes must be at most 20 characters.');
       return;
     }
+    if (description.trim().length > 5000) {
+      setError('Descriptions must be at most 5000 characters.');
+      return;
+    }
     const start = fromDateInput(startDate);
     if (start === null) {
       setError('Enter a start date.');
@@ -123,6 +130,7 @@ export function ProjectForm({
     try {
       await onSubmit({
         name: trimmedName,
+        description: description.trim(),
         code: code.trim(),
         vertical,
         status,
@@ -159,6 +167,16 @@ export function ProjectForm({
             className="max-w-32"
           />
         </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="project-description">Description (optional)</Label>
+        <textarea
+          id="project-description"
+          className="min-h-20 rounded-md border border-border bg-background px-3 py-2 text-sm"
+          rows={3}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
       </div>
       <div className="flex flex-wrap gap-4">
         {project === undefined && (

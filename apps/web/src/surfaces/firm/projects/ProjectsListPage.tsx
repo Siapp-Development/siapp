@@ -83,6 +83,9 @@ function ProjectListItem({ project, workspaceSlug, tags }: IProjectListItemProps
         {project.startDate !== null && ` · starts ${project.startDate.toLocaleDateString()}`}
         {project.targetEndDate !== null && ` · due ${project.targetEndDate.toLocaleDateString()}`}
       </p>
+      {project.description !== '' && (
+        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{project.description}</p>
+      )}
       <TagChipList tagIds={project.tags} tags={tags} label={project.name} className="mt-2" />
     </li>
   );

@@ -8,61 +8,27 @@
 import { Alert, Button, Card, CardContent, CardHeader, cn } from '@siapp/ui';
 import type {
   TMemberRole,
-  TProjectLifecycle,
   TProjectLifecycleAction,
 } from '@siapp/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 
-import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
+import { setProjectLifecycle } from '@/lib/callables.ts';
 import { useClients } from '../clients/useClients.ts';
 import { ActivitySection } from './activity/ActivitySection.tsx';
 import { DocumentsSection } from './documents/DocumentsSection.tsx';
 import { ExportSection } from './export/ExportSection.tsx';
 import { LifecycleBadge } from './LifecycleBadge.tsx';
-import { MilestonesEditor } from './milestones/MilestonesEditor.tsx';
 import { PortalLinkCard } from './PortalLinkCard.tsx';
+import { ProjectActionsMenu } from './ProjectActionsMenu.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { PublishProjectDialog } from './PublishProjectDialog.tsx';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
+import { lifecycleActionsFor, lifecycleErrorMessage } from './projectLifecycle.ts';
 import { TagSelect } from './tags/TagSelect.tsx';
 import { createTag, deleteTag, useTags } from './tags/useTags.ts';
 import { TasksSection } from './tasks/TasksSection.tsx';
 import { updateProject, updateProjectTags, useProject, type IProjectRow } from './useProjects.ts';
-
-/** D-027 action availability by lifecycle and role (mirrors the callable). */
-const LIFECYCLE_ACTIONS: Record<
-  TProjectLifecycle,
-  Array<{ action: TProjectLifecycleAction; roles: TMemberRole[]; label: string }>
-> = {
-  draft: [{ action: 'delete', roles: ['owner'], label: 'Delete' }],
-  published: [
-    { action: 'complete', roles: ['owner', 'admin', 'pm'], label: 'Mark completed' },
-    { action: 'archive', roles: ['owner', 'admin'], label: 'Archive' },
-    { action: 'delete', roles: ['owner'], label: 'Delete' },
-  ],
-  completed: [
-    { action: 'reopen', roles: ['owner', 'admin'], label: 'Reopen' },
-    { action: 'archive', roles: ['owner', 'admin', 'pm'], label: 'Archive' },
-    { action: 'delete', roles: ['owner'], label: 'Delete' },
-  ],
-  archived: [{ action: 'delete', roles: ['owner'], label: 'Delete' }],
-  deleted: [],
-};
-
-const PROJECT_ERROR_MESSAGES: Record<string, string> = {
-  'project/not-found': 'This project no longer exists.',
-  'project/invalid-transition': 'This project has changed — refresh and try again.',
-  'project/forbidden-transition': 'Your role cannot perform this action.',
-};
-
-function lifecycleErrorMessage(err: unknown): string {
-  const code = projectErrorCode(err);
-  if (code !== null && code in PROJECT_ERROR_MESSAGES) {
-    return PROJECT_ERROR_MESSAGES[code];
-  }
-  return err instanceof Error ? err.message : 'Could not update the project.';
-}
 
 interface ILifecycleActionsProps {
   workspaceId: string;
@@ -75,9 +41,7 @@ function LifecycleActions({ workspaceId, project, role }: ILifecycleActionsProps
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const actions = LIFECYCLE_ACTIONS[project.lifecycle].filter((entry) =>
-    entry.roles.includes(role),
-  );
+  const actions = lifecycleActionsFor(project.lifecycle, role);
   if (actions.length === 0) {
     return null;
   }
@@ -242,7 +206,16 @@ export function ProjectDetailPage({
           {canPublish && (
             <PublishProjectDialog workspaceId={workspaceId} projectId={project.id} />
           )}
+          <ProjectActionsMenu
+            workspaceId={workspaceId}
+            project={project}
+            role={role}
+            onShowPortalLink={() => setTab('details')}
+          />
         </div>
+        {project.description !== '' && (
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{project.description}</p>
+        )}
         {(canEdit || project.tags.length > 0) && (
           <div className="mt-3">
             <TagSelect
@@ -410,8 +383,6 @@ export function ProjectDetailPage({
             clientId={project.clientId}
             role={role}
           />
-
-          <MilestonesEditor workspaceId={workspaceId} projectId={project.id} canEdit={canEdit} />
 
           {(role === 'owner' || role === 'admin') && (
             <ExportSection workspaceId={workspaceId} projectId={project.id} role={role} />

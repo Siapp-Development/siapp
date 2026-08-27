@@ -8,6 +8,7 @@
 
 import type { IPublishPreview } from '@siapp/shared';
 import { Button, ConfirmDialog } from '@siapp/ui';
+import { Send } from 'lucide-react';
 import { useState } from 'react';
 
 import { projectErrorCode, setProjectLifecycle } from '@/lib/callables.ts';
@@ -84,6 +85,7 @@ export function PublishProjectDialog({ workspaceId, projectId }: IPublishProject
         className="bg-success text-primary-foreground shadow-card hover:bg-success/90"
         onClick={() => void openDialog()}
       >
+        <Send className="h-4 w-4" aria-hidden />
         Publish
       </Button>
       <ConfirmDialog
@@ -96,14 +98,25 @@ export function PublishProjectDialog({ workspaceId, projectId }: IPublishProject
         onCancel={cancel}
       >
         <p className="mt-2 text-sm text-muted-foreground">
-          {preview === null
-            ? 'Checking what will be sent…'
-            : preview.waCount === 0
-              ? 'No WhatsApp messages will be sent.'
-              : `${preview.waCount} WhatsApp ${
-                  preview.waCount === 1 ? 'message' : 'messages'
-                } will be sent — est. RM ${preview.estimatedCostMyr.toFixed(2)}.`}
+          Publishing moves this project out of draft. Here&rsquo;s what happens:
         </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>The client gains access to the project portal.</li>
+          <li>A welcome message and task notifications are sent over WhatsApp.</li>
+          <li>
+            {preview === null
+              ? 'Checking what will be sent…'
+              : preview.waCount === 0
+                ? 'No WhatsApp messages will be sent.'
+                : `${preview.waCount} WhatsApp ${
+                    preview.waCount === 1 ? 'message' : 'messages'
+                  } will be sent — est. RM ${preview.estimatedCostMyr.toFixed(2)}.`}
+          </li>
+          <li>
+            Publishing can&rsquo;t be undone — afterwards you can only complete, archive or delete
+            the project.
+          </li>
+        </ul>
       </ConfirmDialog>
     </>
   );
