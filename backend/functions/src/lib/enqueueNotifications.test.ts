@@ -237,23 +237,243 @@ describe('planTaskNotifications — D8 decision table', () => {
   });
 
   it('uses deterministic dedupe ids for task_due_soon only (D5)', () => {
+    // #137 Part D: due-soon is internal-only, so the deterministic id keys off
+    // the MEMBER recipient (pre-Part D this asserted client_client1).
     const dueSoonTask = {
       title: 'T',
       status: 'todo',
       sendWhatsapp: true,
-      assignees: [],
+      assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
       dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
     };
-    const planned = planTaskNotifications(input({ trigger: 'task_due_soon', taskData: dueSoonTask }));
+    const dueSoonInput = () =>
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask,
+        memberProfiles: new Map([['u1', { phone: '+60122222222' }]]),
+      });
+    const planned = planTaskNotifications(dueSoonInput());
     expect(planned).toHaveLength(1);
-    expect(planned[0].id).toBe('dueSoon_p1_t1_2026-07-23_client_client1');
-    expect(planned[0].data).toMatchObject({ dedupeKey: 'dueSoon_p1_t1_2026-07-23_client_client1' });
+    expect(planned[0].id).toBe('dueSoon_p1_t1_2026-07-23_member_u1');
+    expect(planned[0].data).toMatchObject({ dedupeKey: 'dueSoon_p1_t1_2026-07-23_member_u1' });
     // Same inputs → same id (re-run cannot double-enqueue).
-    expect(planTaskNotifications(input({ trigger: 'task_due_soon', taskData: dueSoonTask }))[0].id).toBe(
-      planned[0].id,
-    );
+    expect(planTaskNotifications(dueSoonInput())[0].id).toBe(planned[0].id);
     // Status-change events use auto ids.
     expect(planTaskNotifications(input())[0].id).toBeNull();
+  });
+});
+
+describe('planTaskNotifications — #137 Part D: task_due_soon is INTERNAL-ONLY', () => {
+  const MEMBERS = new Map<string, Record<string, unknown> | undefined>([
+    ['u1', { phone: '+60122222222' }],
+    ['u2', { phone: '+60133333333' }],
+  ]);
+
+  function dueSoonTask(notify?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      title: 'Inspection',
+      status: 'todo',
+      sendWhatsapp: true,
+      assignees: [
+        { type: 'user', id: 'u1', name: 'Alice' },
+        { type: 'user', id: 'u2', name: 'Sam' },
+      ],
+      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
+      ...(notify ? { notify } : {}),
+    };
+  }
+
+  it('routes to the task assignees (members) only — never a client', () => {
+    const planned = planTaskNotifications(
+      input({ trigger: 'task_due_soon', taskData: dueSoonTask(), memberProfiles: MEMBERS }),
+    );
+    expect(planned).toHaveLength(2);
+    expect(planned.map((m) => (m.data as { recipientType: string }).recipientType)).toEqual([
+      'member',
+      'member',
+    ]);
+    expect(planned.map((m) => (m.data as { recipientId: string }).recipientId)).toEqual([
+      'u1',
+      'u2',
+    ]);
+    // No client recipient is ever produced for due-soon.
+    expect(
+      planned.some((m) => (m.data as { recipientType: string }).recipientType === 'client'),
+    ).toBe(false);
+  });
+
+  it('ignores config: toClient:true, toInternal:false STILL routes to members only', () => {
+    const notify = {
+      statusChange: true,
+      dueSoon: true,
+      blocked: true,
+      toClient: true,
+      toInternal: false,
+    };
+    const planned = planTaskNotifications(
+      input({ trigger: 'task_due_soon', taskData: dueSoonTask(notify), memberProfiles: MEMBERS }),
+    );
+    expect(planned).toHaveLength(2);
+    expect(
+      planned.every((m) => (m.data as { recipientType: string }).recipientType === 'member'),
+    ).toBe(true);
+    expect(
+      planned.some((m) => (m.data as { recipientType: string }).recipientType === 'client'),
+    ).toBe(false);
+  });
+
+  it('still respects notify.dueSoon disabled (no enqueue)', () => {
+    const notify = {
+      statusChange: true,
+      dueSoon: false,
+      blocked: true,
+      toClient: true,
+      toInternal: false,
+    };
+    expect(
+      planTaskNotifications(
+        input({ trigger: 'task_due_soon', taskData: dueSoonTask(notify), memberProfiles: MEMBERS }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('still respects sendWhatsapp === false (no enqueue)', () => {
+    const taskData = { ...dueSoonTask(), sendWhatsapp: false };
+    expect(
+      planTaskNotifications(
+        input({ trigger: 'task_due_soon', taskData, memberProfiles: MEMBERS }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('still suppresses an opted-out member with opt_out', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask(),
+        memberProfiles: new Map<string, Record<string, unknown> | undefined>([
+          ['u1', { phone: '+60122222222', notificationsOptOut: true }],
+          ['u2', { phone: '+60133333333' }],
+        ]),
+      }),
+    );
+    expect(planned).toHaveLength(2);
+    const u1 = planned.find((m) => (m.data as { recipientId: string }).recipientId === 'u1');
+    expect(u1?.data).toMatchObject({
+      suppressed: true,
+      suppressedReason: 'opt_out',
+      recipientType: 'member',
+    });
+    const u2 = planned.find((m) => (m.data as { recipientId: string }).recipientId === 'u2');
+    expect(u2?.data).not.toHaveProperty('suppressed');
+  });
+
+  it('still suppresses billing read-only workspaces for due-soon members', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask(),
+        memberProfiles: MEMBERS,
+        billingReadOnly: true,
+      }),
+    );
+    expect(planned).toHaveLength(2);
+    expect(
+      planned.every(
+        (m) => (m.data as { suppressedReason?: string }).suppressedReason === 'billing',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves task_status_change routing UNCHANGED — client by default per config', () => {
+    // Default notify (absent map) → toClient:true, toInternal:false. Part D must
+    // NOT touch this path: the status-change record is still the client's.
+    const planned = planTaskNotifications(
+      input({ trigger: 'task_status_change', taskData: dueSoonTask(), memberProfiles: MEMBERS }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({
+      recipientType: 'client',
+      recipientId: 'client1',
+      trigger: 'task_status_change',
+    });
+  });
+
+  it('leaves task_blocked routing UNCHANGED — client by default per config', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_blocked',
+        taskData: { ...dueSoonTask(), status: 'blocked', blockedReason: 'Waiting on materials' },
+        memberProfiles: MEMBERS,
+      }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({
+      recipientType: 'client',
+      recipientId: 'client1',
+      trigger: 'task_blocked',
+    });
+  });
+
+  it('Case C: fans out one deterministic per-member dedupe id, no client record', () => {
+    // Three members prove the id keys off EACH recipient.id (not a shared task id).
+    const taskData = {
+      title: 'Inspection',
+      status: 'todo',
+      sendWhatsapp: true,
+      assignees: [
+        { type: 'user', id: 'u1', name: 'Alice' },
+        { type: 'user', id: 'u2', name: 'Sam' },
+        { type: 'user', id: 'u3', name: 'Priya' },
+      ],
+      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
+    };
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData,
+        memberProfiles: new Map<string, Record<string, unknown> | undefined>([
+          ['u1', { phone: '+60122222222' }],
+          ['u2', { phone: '+60133333333' }],
+          ['u3', { phone: '+60144444444' }],
+        ]),
+      }),
+    );
+    expect(planned).toHaveLength(3);
+    // One record per member, no client.
+    expect(planned.every((m) => (m.data as { recipientType: string }).recipientType === 'member')).toBe(
+      true,
+    );
+    // Deterministic, per-member, and all distinct.
+    const ids = planned.map((m) => m.id);
+    expect(ids).toEqual([
+      'dueSoon_p1_t1_2026-07-23_member_u1',
+      'dueSoon_p1_t1_2026-07-23_member_u2',
+      'dueSoon_p1_t1_2026-07-23_member_u3',
+    ]);
+    expect(new Set(ids).size).toBe(3);
+    // dedupeKey mirrors the id on every record.
+    expect(planned.map((m) => (m.data as { dedupeKey: string }).dedupeKey)).toEqual(ids);
+  });
+
+  it('Case B: a draft project suppresses due_soon MEMBERS with lifecycle:<state> (flagged follow-up is current behavior)', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask(),
+        projectData: { name: 'P', lifecycle: 'draft', clientId: 'client1' },
+        memberProfiles: MEMBERS,
+      }),
+    );
+    expect(planned).toHaveLength(2);
+    expect(
+      planned.every(
+        (m) =>
+          (m.data as { recipientType: string }).recipientType === 'member' &&
+          (m.data as { suppressed?: boolean }).suppressed === true &&
+          (m.data as { suppressedReason?: string }).suppressedReason === 'lifecycle:draft',
+      ),
+    ).toBe(true);
   });
 });
 
@@ -264,8 +484,14 @@ describe('templateVariables — snake_case migration + link var deferred (#137)'
   // so no portal_link / task_link is emitted on task triggers in this PR.
   const LINK_KEYS = ['portal_link', 'task_link', 'portalLink', 'taskLink', 'portal_token'];
 
-  function varsFor(trigger: 'task_status_change' | 'task_blocked' | 'task_due_soon', taskData: Record<string, unknown>) {
-    const planned = planTaskNotifications(input({ trigger, taskData }));
+  function varsFor(
+    trigger: 'task_status_change' | 'task_blocked' | 'task_due_soon',
+    taskData: Record<string, unknown>,
+    memberProfiles?: ReadonlyMap<string, Record<string, unknown> | undefined>,
+  ) {
+    const planned = planTaskNotifications(
+      input(memberProfiles ? { trigger, taskData, memberProfiles } : { trigger, taskData }),
+    );
     expect(planned).toHaveLength(1);
     return planned[0].data['variables'] as Record<string, string>;
   }
@@ -310,13 +536,19 @@ describe('templateVariables — snake_case migration + link var deferred (#137)'
   });
 
   it('task_due_soon emits snake_case MYT due_date and NO link var', () => {
-    const variables = varsFor('task_due_soon', {
-      title: 'Inspection',
-      status: 'todo',
-      sendWhatsapp: true,
-      assignees: [],
-      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
-    });
+    // #137 Part D: due-soon is internal-only, so it needs a member assignee to
+    // produce a record (empty assignees would now yield zero records).
+    const variables = varsFor(
+      'task_due_soon',
+      {
+        title: 'Inspection',
+        status: 'todo',
+        sendWhatsapp: true,
+        assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+        dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
+      },
+      new Map([['u1', { phone: '+60122222222' }]]),
+    );
     expect(variables).toMatchObject({
       task_title: 'Inspection',
       project_title: 'Bungalow Reno',
