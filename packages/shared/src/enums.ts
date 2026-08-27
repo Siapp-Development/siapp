@@ -180,6 +180,25 @@ export type TProjectActivityAction =
   | 'collaborator_note_added'
   | 'collaborator_need_help';
 
+// In-app notification inbox event kinds (#134). Distinct from the outbound
+// WhatsApp `TNotificationTrigger` above — this drives the firm-member inbox
+// bell/popover only, is server-written (Option A fan-out), and is
+// independent of the outbound quiet-hours/consent pipeline (D-035/D-027).
+export type TNotificationKind =
+  | 'mention'
+  | 'task_assigned'
+  | 'task_comment'
+  | 'task_status_changed'
+  | 'task_blocked'
+  | 'task_due_soon'
+  | 'task_overdue'
+  | 'client_document_uploaded'
+  | 'collaborator_note_added'
+  | 'collaborator_need_help'
+  | 'project_published'
+  | 'project_completed'
+  | 'project_archived';
+
 // Workspace audit-log action kinds (#23, D5). Dot-namespaced; written only
 // by Cloud Functions via lib/auditLog.ts.
 // #26 adds the PDPA trail: consent-only client/collaborator diffs emit

@@ -611,6 +611,23 @@ service cloud.firestore {
       match /members/{memberUid} {
         allow read: if isFirmMember(wid);
         allow write: if false;
+
+        // In-app notification inbox (#134). Owner-only read — the parent
+        // members doc grants workspace-wide read, but subcollection matches
+        // do NOT inherit it, so scoping to request.auth.uid == memberUid
+        // keeps one member from reading another's inbox. All fan-out is
+        // server-only (Admin SDK); clients may only flip read/readAt.
+        match /notifications/{nid} {
+          allow read: if isFirmMember(wid) && request.auth.uid == memberUid;
+
+          allow update: if isFirmMember(wid)
+            && request.auth.uid == memberUid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['read', 'readAt'])
+            && request.resource.data.read is bool;
+
+          allow create, delete: if false;
+        }
       }
 
       // Team invitations (#11). Owner/admin manage invites in the UI, but

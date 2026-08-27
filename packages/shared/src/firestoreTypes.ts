@@ -28,6 +28,7 @@ import type {
   TMessageChannel,
   TMessageRecipientType,
   TMessageStatus,
+  TNotificationKind,
   TNotificationTrigger,
   TPhaseStatus,
   TPhoneRefType,
@@ -702,6 +703,37 @@ export interface IProjectActivityDoc {
    */
   visibleToClient?: boolean;
   at: Date;
+}
+
+/**
+ * `/workspaces/{wid}/members/{uid}/notifications/{nid}` — per-recipient
+ * in-app notification inbox (#134). One doc per recipient per source event
+ * (Option A fan-out), server-written only via the Admin SDK. Department
+ * need-to-know (D-025) is resolved at write time, so every doc a member can
+ * read is already need-to-know-eligible; `restrictedToDepartments` is
+ * intentionally NOT stored. Denormalized so a row renders + deep-links with
+ * zero extra reads. Clients may flip only `read`/`readAt` (firestore.rules).
+ */
+export interface INotificationDoc {
+  id: string;
+  kind: TNotificationKind;
+  /** Firestore Timestamp (serverTimestamp); newest-first ordering key. */
+  at: Date;
+  read: boolean;
+  readAt: Date | null;
+  actorType: TActorType;
+  /** '' for system-originated notifications (e.g. due-soon sweep). */
+  actorId: string;
+  actorNameDenorm: string;
+  projectId: string;
+  projectNameDenorm: string;
+  /** null for project-lifecycle notifications. */
+  taskId: string | null;
+  taskTitleDenorm: string | null;
+  /** e.g. a comment/note snippet; recipient is already dept-eligible. */
+  excerpt: string | null;
+  /** Provenance + idempotency source id (activity/update/sweep bucket). */
+  sourceActivityId: string | null;
 }
 
 /** `/workspaces/{wid}/usageCounters/{period}` e.g. period = "2026-07" */
