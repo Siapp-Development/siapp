@@ -104,6 +104,7 @@ export { updateNotificationSettings } from './callables/updateNotificationSettin
 // ── Client portal callables (#21) ────────────────────────────────────────
 
 export { issuePortalLink } from './callables/issuePortalLink.js';
+export { sendPortalLink } from './callables/sendPortalLink.js';
 export { redeemPortalLink } from './callables/redeemPortalLink.js';
 
 // ── Data export callable (#25) ──────────────────────────────────────────────

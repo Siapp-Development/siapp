@@ -144,25 +144,28 @@ function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNoti
 function templateVariables(input: IPlanTaskNotificationsInput): Record<string, string> {
   const title = input.taskData['title'];
   const projectName = input.projectData?.['name'];
+  // snake_case keys (#137 Part A): these ARE the wire contract — they must match
+  // the approved Meta template's NAMED variables exactly (Finding 1). No link
+  // variable is emitted yet (portal_link/task_link population is deferred Part B).
   const variables: Record<string, string> = {
-    taskTitle: typeof title === 'string' ? title : '',
-    projectTitle: typeof projectName === 'string' ? projectName : '',
-    firmName: input.firmName,
+    task_title: typeof title === 'string' ? title : '',
+    project_title: typeof projectName === 'string' ? projectName : '',
+    firm_name: input.firmName,
   };
   if (input.trigger === 'task_status_change') {
     const status = input.taskData['status'];
-    variables['newStatus'] = typeof status === 'string' ? status : '';
+    variables['new_status'] = typeof status === 'string' ? status : '';
   }
   if (input.trigger === 'task_blocked') {
-    // #22 (D-d): the need-help reason lands in the task_blocked_v1 template.
+    // #22 (D-d): the need-help reason lands in the task_blocked template.
     const reason = input.taskData['blockedReason'];
-    variables['blockedReason'] = typeof reason === 'string' ? reason : '';
+    variables['blocked_reason'] = typeof reason === 'string' ? reason : '';
   }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
     // Format in MYT — quiet-hours/dedupe semantics are Malaysia time (D6),
     // and a UTC date would show the wrong calendar day near midnight.
-    variables['dueDate'] =
+    variables['due_date'] =
       typeof dueDate?.toDate === 'function' ? mytDateString(dueDate.toDate()) : '';
   }
   return variables;

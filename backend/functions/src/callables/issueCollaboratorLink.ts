@@ -60,6 +60,8 @@ export function requireCollabLinkIssuer(
 
 export interface IIssuedCollaboratorLink {
   url: string;
+  /** Bare `{shortCode}_{secret}` URL path segment (token-only send, #137). */
+  token: string;
   expiresAt: Timestamp;
   linkId: string;
 }
@@ -122,7 +124,7 @@ export async function mintCollaboratorLink(
     createdBy: issuerUid,
   });
 
-  return { url: buildCollabUrl(collabOrigin.value(), token), expiresAt, linkId: linkRef.id };
+  return { url: buildCollabUrl(collabOrigin.value(), token), token, expiresAt, linkId: linkRef.id };
 }
 
 /**
@@ -154,6 +156,7 @@ export async function getOrCreateCollaboratorLink(
     if (expiresMs > nowMs && typeof token === 'string' && token !== '') {
       return {
         url: buildCollabUrl(collabOrigin.value(), token),
+        token,
         expiresAt: expiresAt as Timestamp,
         linkId: snap.id,
         created: false,

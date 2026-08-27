@@ -9,9 +9,20 @@
  * audit entry (vs 'portal_link.issue'). Revocation is soft (Q1): it blocks
  * re-redemption; already-signed-in sessions are bounded by the lifecycle
  * re-check in rules.
+ *
+ * #137: the rotate-on-issue mint is extracted into an exported
+ * `mintClientPortalLink()` so the on-demand `sendPortalLink` callable can reuse
+ * the SAME behaviour (fresh token captured at send time). This is a
+ * behaviour-preserving refactor — no durability change (Part B, deferred): the
+ * plaintext token is NOT persisted; it is only surfaced in-memory to the caller.
  */
 
-import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
+import {
+  FieldValue,
+  Timestamp,
+  getFirestore,
+  type Firestore,
+} from 'firebase-admin/firestore';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { defineString } from 'firebase-functions/params';
 
@@ -58,7 +69,11 @@ export function issueBlocker(
   return null;
 }
 
-function requireIssuerUid(request: CallableRequest, workspaceId: string): string {
+/**
+ * Owner/admin/pm gate for portal-link issuance (D-027). Exported (#137) so
+ * `sendPortalLink` reuses the SAME role check rather than duplicating it.
+ */
+export function requirePortalLinkIssuer(request: CallableRequest, workspaceId: string): string {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError('unauthenticated', 'Sign in to continue.');
@@ -73,39 +88,31 @@ function requireIssuerUid(request: CallableRequest, workspaceId: string): string
   return uid;
 }
 
-export const issuePortalLink = onCall(async (request) => {
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const workspaceId = typeof data['workspaceId'] === 'string' ? data['workspaceId'] : '';
-  const projectId = typeof data['projectId'] === 'string' ? data['projectId'] : '';
-  const reset = data['reset'] === true;
-  if (!workspaceId || !projectId) {
-    throw new HttpsError('invalid-argument', 'workspaceId and projectId are required.');
-  }
+export interface IMintedClientPortalLink {
+  /** Full portal URL: `https://siapp.app/p/{shortCode}_{secret}`. */
+  url: string;
+  /** Bare `{shortCode}_{secret}` URL path segment (token-only send, #137). */
+  token: string;
+  expiresAt: Timestamp;
+  linkId: string;
+  /** True when a prior active link for the pair was revoked by this mint. */
+  rotated: boolean;
+}
 
-  const uid = requireIssuerUid(request, workspaceId);
-  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
-
-  const db = getFirestore();
-  const projectSnap = await db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get();
-  const blocker = issueBlocker({
-    projectExists: projectSnap.exists,
-    lifecycle: projectSnap.get('lifecycle'),
-    clientId: projectSnap.get('clientId'),
-  });
-  if (blocker === 'not-found') {
-    throw new HttpsError('not-found', 'Project not found.');
-  }
-  if (blocker === 'not-published') {
-    throw new HttpsError(
-      'failed-precondition',
-      'Publish the project before sharing a portal link.',
-    );
-  }
-  if (blocker === 'no-client') {
-    throw new HttpsError('failed-precondition', 'Link a client to the project first.');
-  }
-  const clientId = projectSnap.get('clientId') as string;
-
+/**
+ * Revokes every active client portal link for the (project, client) pair and
+ * mints a fresh one atomically — the one-active-link invariant. Rotate-on-issue
+ * (D2): only `secretHash` is persisted; the raw token is returned in-memory to
+ * the caller (Part B durable storage is deferred). Assumes the caller has
+ * already authorized the actor and validated the project/client.
+ */
+export async function mintClientPortalLink(
+  db: Firestore,
+  workspaceId: string,
+  projectId: string,
+  clientId: string,
+  issuerUid: string,
+): Promise<IMintedClientPortalLink> {
   const linksRef = db.collection(`workspaces/${workspaceId}/magicLinks`);
   const now = Timestamp.now();
 
@@ -130,7 +137,7 @@ export const issuePortalLink = onCall(async (request) => {
       tx.update(snap.ref, {
         revoked: true,
         revokedAt: FieldValue.serverTimestamp(),
-        revokedBy: uid,
+        revokedBy: issuerUid,
       });
     }
     tx.set(linkRef, {
@@ -145,23 +152,73 @@ export const issuePortalLink = onCall(async (request) => {
       expiresAt,
       useCount: 0,
       revoked: false,
-      createdBy: uid,
+      createdBy: issuerUid,
     });
     return !active.empty;
   });
+
+  return {
+    url: buildPortalUrl(portalOrigin.value(), token),
+    token,
+    expiresAt,
+    linkId: linkRef.id,
+    rotated,
+  };
+}
+
+export const issuePortalLink = onCall(async (request) => {
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const workspaceId = typeof data['workspaceId'] === 'string' ? data['workspaceId'] : '';
+  const projectId = typeof data['projectId'] === 'string' ? data['projectId'] : '';
+  const reset = data['reset'] === true;
+  if (!workspaceId || !projectId) {
+    throw new HttpsError('invalid-argument', 'workspaceId and projectId are required.');
+  }
+
+  const uid = requirePortalLinkIssuer(request, workspaceId);
+  await assertWorkspaceActive(workspaceId); // #24 D2: read-only gate
+
+  const db = getFirestore();
+  const projectSnap = await db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get();
+  const blocker = issueBlocker({
+    projectExists: projectSnap.exists,
+    lifecycle: projectSnap.get('lifecycle'),
+    clientId: projectSnap.get('clientId'),
+  });
+  if (blocker === 'not-found') {
+    throw new HttpsError('not-found', 'Project not found.');
+  }
+  if (blocker === 'not-published') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Publish the project before sharing a portal link.',
+    );
+  }
+  if (blocker === 'no-client') {
+    throw new HttpsError('failed-precondition', 'Link a client to the project first.');
+  }
+  const clientId = projectSnap.get('clientId') as string;
+
+  const { url, expiresAt, linkId, rotated } = await mintClientPortalLink(
+    db,
+    workspaceId,
+    projectId,
+    clientId,
+    uid,
+  );
 
   await writeAuditLog(workspaceId, {
     actorType: 'user',
     actorId: uid,
     action: reset || rotated ? 'portal_link.reset' : 'portal_link.issue',
     targetType: 'magicLink',
-    targetId: linkRef.id,
+    targetId: linkId,
     after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
     ...callableRequestMeta(request),
   });
 
   return {
-    url: buildPortalUrl(portalOrigin.value(), token),
+    url,
     expiresAt: expiresAt.toDate().toISOString(),
   };
 });

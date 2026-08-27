@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const callables = vi.hoisted(() => ({
   issuePortalLink: vi.fn(),
+  sendPortalLink: vi.fn(),
 }));
 
 vi.mock('@/lib/callables.ts', () => callables);
@@ -22,6 +23,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   callables.issuePortalLink.mockResolvedValue({
     url: 'https://siapp.app/p/abc_secret',
+    expiresAt: '2026-06-01T00:00:00.000Z',
+  });
+  callables.sendPortalLink.mockResolvedValue({
+    status: 'queued',
     expiresAt: '2026-06-01T00:00:00.000Z',
   });
 });
@@ -90,4 +95,60 @@ describe('PortalLinkCard', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.t issue the link/i);
   });
+
+  describe('Send portal link (#137, Part C)', () => {
+    it('offers the Send button only for eligible (published + linked) projects', () => {
+      const { rerender } = render(<PortalLinkCard {...baseProps} />);
+      expect(screen.getByRole('button', { name: /send portal link/i })).toBeInTheDocument();
+
+      // Ineligible states show the reason and no action buttons at all.
+      rerender(<PortalLinkCard {...baseProps} lifecycle="draft" />);
+      expect(screen.queryByRole('button', { name: /send portal link/i })).not.toBeInTheDocument();
+
+      rerender(<PortalLinkCard {...baseProps} clientId="" />);
+      expect(screen.queryByRole('button', { name: /send portal link/i })).not.toBeInTheDocument();
+
+      rerender(<PortalLinkCard {...baseProps} role="viewer" />);
+      expect(screen.queryByRole('button', { name: /send portal link/i })).not.toBeInTheDocument();
+    });
+
+    it('enqueues over WhatsApp and confirms the sent state with the expiry', async () => {
+      render(<PortalLinkCard {...baseProps} />);
+      await userEvent.click(screen.getByRole('button', { name: /send portal link/i }));
+
+      expect(callables.sendPortalLink).toHaveBeenCalledWith({
+        workspaceId: 'wks-1',
+        projectId: 'proj-1',
+      });
+      const status = await screen.findByRole('status');
+      expect(status).toHaveTextContent(/portal link sent via whatsapp/i);
+    });
+
+    it('surfaces the opted_out result without claiming a send', async () => {
+      callables.sendPortalLink.mockResolvedValue({ status: 'opted_out' });
+      render(<PortalLinkCard {...baseProps} />);
+      await userEvent.click(screen.getByRole('button', { name: /send portal link/i }));
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        /turned off whatsapp notifications/i,
+      );
+    });
+
+    it('surfaces the no_consent result', async () => {
+      callables.sendPortalLink.mockResolvedValue({ status: 'no_consent' });
+      render(<PortalLinkCard {...baseProps} />);
+      await userEvent.click(screen.getByRole('button', { name: /send portal link/i }));
+
+      expect(await screen.findByRole('status')).toHaveTextContent(/not consented to whatsapp/i);
+    });
+
+    it('shows a retryable error when the send throws', async () => {
+      callables.sendPortalLink.mockRejectedValue(new Error('boom'));
+      render(<PortalLinkCard {...baseProps} />);
+      await userEvent.click(screen.getByRole('button', { name: /send portal link/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.t issue the link/i);
+    });
+  });
+
 });

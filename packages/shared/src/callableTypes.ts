@@ -243,6 +243,23 @@ export type TSendCollaboratorLinkResponse =
   | { status: 'opted_out' }
   | { status: 'no_consent' };
 
+/**
+ * sendPortalLink (#137, Part C): firm owner/admin/pm sends a CLIENT their
+ * project portal link over WhatsApp on demand. Mints a fresh client portal link
+ * (rotate-on-issue, per-action) and enqueues a `project_welcome` `messages` doc
+ * — the client analog of `sendCollaboratorLink`. Enqueue-only; honours
+ * opt-out / consent. Delivery depends on the dispatcher (not yet in-repo).
+ */
+export interface ISendPortalLinkRequest {
+  workspaceId: string;
+  projectId: string;
+}
+
+export type TSendPortalLinkResponse =
+  | { status: 'queued'; expiresAt: string }
+  | { status: 'opted_out' }
+  | { status: 'no_consent' };
+
 /** redeemCollabLink (#22): unauthenticated; the URL token is the credential. */
 export interface IRedeemCollabLinkRequest {
   token: string;

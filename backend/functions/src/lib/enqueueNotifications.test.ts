@@ -197,10 +197,10 @@ describe('planTaskNotifications — D8 decision table', () => {
     expect(planned[0].data).not.toHaveProperty('holdUntil');
     expect(planned[0].data).toMatchObject({
       variables: {
-        taskTitle: 'Pour foundation',
-        projectTitle: 'Bungalow Reno',
-        newStatus: 'in_progress',
-        firmName: 'Acme Builders',
+        task_title: 'Pour foundation',
+        project_title: 'Bungalow Reno',
+        new_status: 'in_progress',
+        firm_name: 'Acme Builders',
       },
     });
   });
@@ -254,5 +254,89 @@ describe('planTaskNotifications — D8 decision table', () => {
     );
     // Status-change events use auto ids.
     expect(planTaskNotifications(input())[0].id).toBeNull();
+  });
+});
+
+
+describe('templateVariables — snake_case migration + link var deferred (#137)', () => {
+  // The variable KEYS are the wire contract: they must match the approved Meta
+  // template's named variables EXACTLY. Part B (link var population) is deferred,
+  // so no portal_link / task_link is emitted on task triggers in this PR.
+  const LINK_KEYS = ['portal_link', 'task_link', 'portalLink', 'taskLink', 'portal_token'];
+
+  function varsFor(trigger: 'task_status_change' | 'task_blocked' | 'task_due_soon', taskData: Record<string, unknown>) {
+    const planned = planTaskNotifications(input({ trigger, taskData }));
+    expect(planned).toHaveLength(1);
+    return planned[0].data['variables'] as Record<string, string>;
+  }
+
+  it('task_status_change emits snake_case task_title/project_title/firm_name/new_status and NO link var', () => {
+    const variables = varsFor('task_status_change', {
+      title: 'Pour foundation',
+      status: 'in_progress',
+      sendWhatsapp: true,
+      assignees: [],
+    });
+    expect(variables).toEqual({
+      task_title: 'Pour foundation',
+      project_title: 'Bungalow Reno',
+      firm_name: 'Acme Builders',
+      new_status: 'in_progress',
+    });
+    for (const key of LINK_KEYS) {
+      expect(variables).not.toHaveProperty(key);
+    }
+  });
+
+  it('task_blocked emits snake_case blocked_reason and NO link var', () => {
+    const variables = varsFor('task_blocked', {
+      title: 'Wiring',
+      status: 'blocked',
+      sendWhatsapp: true,
+      assignees: [],
+      blockedReason: 'Waiting on materials',
+    });
+    expect(variables).toEqual({
+      task_title: 'Wiring',
+      project_title: 'Bungalow Reno',
+      firm_name: 'Acme Builders',
+      blocked_reason: 'Waiting on materials',
+    });
+    for (const key of LINK_KEYS) {
+      expect(variables).not.toHaveProperty(key);
+    }
+    // No cross-trigger key leakage.
+    expect(variables).not.toHaveProperty('new_status');
+  });
+
+  it('task_due_soon emits snake_case MYT due_date and NO link var', () => {
+    const variables = varsFor('task_due_soon', {
+      title: 'Inspection',
+      status: 'todo',
+      sendWhatsapp: true,
+      assignees: [],
+      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
+    });
+    expect(variables).toMatchObject({
+      task_title: 'Inspection',
+      project_title: 'Bungalow Reno',
+      firm_name: 'Acme Builders',
+      due_date: '2026-07-24',
+    });
+    for (const key of LINK_KEYS) {
+      expect(variables).not.toHaveProperty(key);
+    }
+    expect(variables).not.toHaveProperty('new_status');
+    expect(variables).not.toHaveProperty('blocked_reason');
+  });
+
+  it('never emits legacy camelCase keys on any wired trigger', () => {
+    const legacy = ['taskTitle', 'projectTitle', 'firmName', 'newStatus', 'blockedReason', 'dueDate'];
+    const status = varsFor('task_status_change', {
+      title: 'T', status: 'in_progress', sendWhatsapp: true, assignees: [],
+    });
+    for (const key of legacy) {
+      expect(status).not.toHaveProperty(key);
+    }
   });
 });

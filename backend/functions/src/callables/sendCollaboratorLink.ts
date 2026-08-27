@@ -60,7 +60,7 @@ export const sendCollaboratorLink = onCall(async (request) => {
 
   // Durable, reset-only (#127): reuse the collaborator's active link if any —
   // sending over WhatsApp must never rotate an existing valid URL.
-  const { url, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
+  const { token, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
     db,
     workspaceId,
     collaboratorId,
@@ -75,10 +75,14 @@ export const sendCollaboratorLink = onCall(async (request) => {
     recipientType: 'collaborator',
     recipientId: collaboratorId,
     templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+    // snake_case, token-only (#137, Finding 1/2): keys must match the approved
+    // Meta template's named variables; the value is the bare
+    // `{shortCode}_{secret}` token — the static `https://siapp.app/t/` prefix
+    // is baked into the template body, so no full URL is emitted here.
     variables: {
-      firmName,
-      collaboratorName,
-      accessLink: url,
+      firm_name: firmName,
+      collaborator_name: collaboratorName,
+      access_token: token,
     },
     status: 'queued',
     trigger: 'collab_access_link',

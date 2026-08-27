@@ -26,6 +26,7 @@ import type {
   ISetMemberDepartmentsRequest,
   ISetMemberDepartmentsResponse,
   ISendCollaboratorLinkRequest,
+  ISendPortalLinkRequest,
   ISetProjectLifecycleRequest,
   ISetProjectLifecycleResponse,
   ISubmitCollabUpdateRequest,
@@ -34,6 +35,7 @@ import type {
   IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
   TSendCollaboratorLinkResponse,
+  TSendPortalLinkResponse,
 } from '@siapp/shared';
 
 import { functions } from './firebase.ts';
@@ -153,6 +155,21 @@ export async function sendCollaboratorLink(
   const call = httpsCallable<ISendCollaboratorLinkRequest, TSendCollaboratorLinkResponse>(
     functions,
     'sendCollaboratorLink',
+  );
+  return (await call(data)).data;
+}
+
+/**
+ * Sends a client their project portal link over WhatsApp (#137, Part C). Mints
+ * a fresh link per action and honours opt-out / consent; delivery depends on the
+ * dispatcher (enqueue-only).
+ */
+export async function sendPortalLink(
+  data: ISendPortalLinkRequest,
+): Promise<TSendPortalLinkResponse> {
+  const call = httpsCallable<ISendPortalLinkRequest, TSendPortalLinkResponse>(
+    functions,
+    'sendPortalLink',
   );
   return (await call(data)).data;
 }
