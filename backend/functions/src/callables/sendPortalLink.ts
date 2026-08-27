@@ -9,10 +9,11 @@
  * button already triggers — so the message captures a FRESH, working URL at send
  * time. No durable-link storage and no at-rest-secret change (Part B, deferred).
  *
- * DELIVERY DEPENDENCY: the WA send stack is a queue-only path today. This
- * callable writes the `messages` record — it does NOT deliver. It honours the
- * same opt-out / consent gates as `sendCollaboratorLink`, so a firm never
- * queues to a recipient who declined.
+ * DELIVERY: this callable enqueues a `messages` doc which the scheduled dispatch
+ * sweep (`sweepMessageQueue`, #133) delivers over WhatsApp once Twilio config is
+ * present (absent creds → `selectProvider` falls back to NoopProvider). It
+ * honours the same opt-out / consent gates as `sendCollaboratorLink`, so a firm
+ * never queues to a recipient who declined.
  */
 
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
@@ -106,7 +107,15 @@ export const sendPortalLink = onCall(async (request) => {
     return { status: 'no_consent' as const };
   }
 
+  // Fail-soft when the client has no phone on file: WhatsApp cannot deliver, and
+  // `selectDispatchable` filters empty phones — so enqueueing would strand an
+  // undeliverable doc showing "queued". Return BEFORE the rotate-on-issue mint
+  // and BEFORE enqueue, mirroring the opt-out / consent gates above.
   const phone = typeof client['phone'] === 'string' ? client['phone'] : '';
+  if (phone === '') {
+    return { status: 'no_phone' as const };
+  }
+
   const clientName = typeof client['name'] === 'string' ? client['name'] : '';
   const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
   const projectTitle = typeof projectSnap.get('name') === 'string' ? projectSnap.get('name') : '';

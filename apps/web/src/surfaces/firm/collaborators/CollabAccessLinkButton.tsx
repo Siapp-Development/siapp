@@ -38,6 +38,7 @@ type TLinkState =
   | { status: 'sent'; expiresAt: string }
   | { status: 'opted_out' }
   | { status: 'no_consent' }
+  | { status: 'no_phone' }
   | { status: 'error' };
 
 const ICON_BUTTON_CLASS =
@@ -68,6 +69,8 @@ function statusMessage(state: TLinkState): string {
       return 'This collaborator has turned off WhatsApp notifications, so no message was sent.';
     case 'no_consent':
       return 'This collaborator has not consented to WhatsApp, so no message was sent.';
+    case 'no_phone':
+      return 'This collaborator has no phone number on file, so no message was sent.';
     case 'error':
       return 'Something went wrong. Please try again.';
     default:
@@ -118,6 +121,8 @@ export function CollabAccessLinkButton({
         setState({ status: 'sent', expiresAt: result.expiresAt });
       } else if (result.status === 'opted_out') {
         setState({ status: 'opted_out' });
+      } else if (result.status === 'no_phone') {
+        setState({ status: 'no_phone' });
       } else {
         setState({ status: 'no_consent' });
       }
@@ -128,7 +133,10 @@ export function CollabAccessLinkButton({
 
   const message = statusMessage(state);
   const isError =
-    state.status === 'error' || state.status === 'opted_out' || state.status === 'no_consent';
+    state.status === 'error' ||
+    state.status === 'opted_out' ||
+    state.status === 'no_consent' ||
+    state.status === 'no_phone';
 
   if (variant === 'chip') {
     return (

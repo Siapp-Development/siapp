@@ -160,6 +160,17 @@ describe('CollabAccessLinkButton — card variant (Collaborators page)', () => {
     expect(await screen.findByText(/not consented to WhatsApp/i)).toBeInTheDocument();
   });
 
+  it('Send surfaces the no-phone result when the collaborator has no phone on file', async () => {
+    callables.sendCollaboratorLink.mockResolvedValue({ status: 'no_phone' });
+    renderCard();
+    await userEvent.click(
+      screen.getByRole('button', { name: `Send ${NAME}'s access link via WhatsApp` }),
+    );
+    expect(await screen.findByText(/no phone number on file/i)).toBeInTheDocument();
+    // Fail-soft, not a success: the "sent via WhatsApp" confirmation must not show.
+    expect(screen.queryByText(/sent via WhatsApp/i)).not.toBeInTheDocument();
+  });
+
   it('has no detectable accessibility violations (idle)', async () => {
     const { container } = renderCard();
     const results = await axe.run(container, {

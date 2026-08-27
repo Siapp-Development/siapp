@@ -161,6 +161,29 @@ describe('sendCollaboratorLink — gates', () => {
     expect(mintFn).not.toHaveBeenCalled();
   });
 
+  it('returns no_phone and neither mints nor enqueues for a collaborator with no phone', async () => {
+    const { db, writes } = makeDb({
+      collaborator: { name: 'Lim', phone: '', waConsent: { granted: true } },
+      workspace: WORKSPACE,
+    });
+    hoisted.db = db;
+    expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_phone' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
+    expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing phone field the same as no_phone', async () => {
+    const { db, writes } = makeDb({
+      collaborator: { name: 'Lim', waConsent: { granted: true } },
+      workspace: WORKSPACE,
+    });
+    hoisted.db = db;
+    expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_phone' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
+  });
+
   it('returns no_consent and enqueues nothing without a waConsent grant', async () => {
     const { db, writes } = makeDb({
       collaborator: { name: 'Lim', phone: '+60123' },
@@ -169,6 +192,20 @@ describe('sendCollaboratorLink — gates', () => {
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_consent' });
     expect(writes.messages).toHaveLength(0);
+  });
+
+  // Gate-ORDER guards: no_phone must sit AFTER opt-out and consent. The opted_out
+  // case above already uses a phone-LESS collaborator (proving opt-out wins over
+  // no_phone); this pins the same precedence for the consent gate.
+  it('reports no_consent (not no_phone) for a phone-less collaborator without consent', async () => {
+    const { db, writes } = makeDb({
+      collaborator: { name: 'Lim', phone: '' },
+      workspace: WORKSPACE,
+    });
+    hoisted.db = db;
+    expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_consent' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
   });
 });
 

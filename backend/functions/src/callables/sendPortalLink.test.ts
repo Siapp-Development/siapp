@@ -244,6 +244,35 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
+  it('returns no_phone and neither mints nor enqueues for a client with no phone', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '', waConsent: { granted: true } },
+    });
+    hoisted.db = db;
+
+    const result = await sendPortalLink.run(request());
+
+    expect(result).toEqual({ status: 'no_phone' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
+    expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing phone field the same as no_phone', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', waConsent: { granted: true } },
+    });
+    hoisted.db = db;
+
+    expect(await sendPortalLink.run(request())).toEqual({ status: 'no_phone' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
+  });
+
   it('treats a granted:false refusal record as no_consent', async () => {
     const { db, writes } = makeDb({
       project: PUBLISHED_PROJECT,
@@ -253,6 +282,33 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     hoisted.db = db;
     expect(await sendPortalLink.run(request())).toEqual({ status: 'no_consent' });
     expect(writes.messages).toHaveLength(0);
+  });
+
+  // Gate-ORDER guards: the no_phone gate must sit AFTER opt-out and consent, so a
+  // phone-less recipient who ALSO declined must still report the decline (never
+  // no_phone). A phone-less client is used in both cases; the earlier gate wins.
+  it('reports opted_out (not no_phone) for a phone-less client who opted out', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '', notificationsOptOut: true },
+    });
+    hoisted.db = db;
+    expect(await sendPortalLink.run(request())).toEqual({ status: 'opted_out' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
+  });
+
+  it('reports no_consent (not no_phone) for a phone-less client without consent', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '' },
+    });
+    hoisted.db = db;
+    expect(await sendPortalLink.run(request())).toEqual({ status: 'no_consent' });
+    expect(writes.messages).toHaveLength(0);
+    expect(mintFn).not.toHaveBeenCalled();
   });
 });
 

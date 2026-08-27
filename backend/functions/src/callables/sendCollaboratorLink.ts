@@ -4,10 +4,11 @@
  * doc using the `collab_access_link_v1` template. Durable/reset-only: sending
  * never rotates a still-valid link — the same URL is re-surfaced every time.
  *
- * DELIVERY DEPENDENCY: the WA send stack is a no-op stub today (no #19
- * dispatcher, no Twilio). This callable only writes the queue record — it does
- * NOT deliver. It honours the same opt-out / consent gates as
- * enqueueNotifications so a firm never queues to a recipient who declined.
+ * DELIVERY: this callable enqueues a `messages` doc which the scheduled dispatch
+ * sweep (`sweepMessageQueue`, #133) delivers over WhatsApp once Twilio config is
+ * present (absent creds → `selectProvider` falls back to NoopProvider). It
+ * honours the same opt-out / consent gates as enqueueNotifications so a firm
+ * never queues to a recipient who declined.
  */
 
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
@@ -54,7 +55,15 @@ export const sendCollaboratorLink = onCall(async (request) => {
     return { status: 'no_consent' as const };
   }
 
+  // Fail-soft when the collaborator has no phone on file: WhatsApp cannot
+  // deliver, and `selectDispatchable` filters empty phones — so enqueueing would
+  // strand an undeliverable doc showing "queued". Return BEFORE get-or-create
+  // and BEFORE enqueue, mirroring the opt-out / consent gates above.
   const phone = typeof collaborator['phone'] === 'string' ? collaborator['phone'] : '';
+  if (phone === '') {
+    return { status: 'no_phone' as const };
+  }
+
   const collaboratorName = typeof collaborator['name'] === 'string' ? collaborator['name'] : '';
   const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
 

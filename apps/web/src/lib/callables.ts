@@ -147,7 +147,8 @@ export async function issueCollaboratorLink(
 
 /**
  * Enqueues the collaborator's access link over WhatsApp (#127, Q-WA). Honours
- * opt-out / consent; delivery depends on the #19 dispatcher (enqueue-only).
+ * opt-out / consent; the scheduled dispatch sweep (#133) delivers it over
+ * WhatsApp when Twilio config is present (absent creds → NoopProvider, no send).
  */
 export async function sendCollaboratorLink(
   data: ISendCollaboratorLinkRequest,
@@ -161,8 +162,9 @@ export async function sendCollaboratorLink(
 
 /**
  * Sends a client their project portal link over WhatsApp (#137, Part C). Mints
- * a fresh link per action and honours opt-out / consent; delivery depends on the
- * dispatcher (enqueue-only).
+ * a fresh link per action and honours opt-out / consent; the scheduled dispatch
+ * sweep (#133) delivers it over WhatsApp when Twilio config is present (absent
+ * creds → NoopProvider, no send).
  */
 export async function sendPortalLink(
   data: ISendPortalLinkRequest,

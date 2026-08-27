@@ -20,6 +20,7 @@ type TLinkState =
   | { status: 'sent'; expiresAt: string }
   | { status: 'opted_out' }
   | { status: 'no_consent' }
+  | { status: 'no_phone' }
   | { status: 'error' };
 
 const EXPIRY_FORMAT = new Intl.DateTimeFormat('en-MY', {
@@ -92,6 +93,8 @@ export function PortalLinkCard({
         setState({ status: 'sent', expiresAt: result.expiresAt });
       } else if (result.status === 'opted_out') {
         setState({ status: 'opted_out' });
+      } else if (result.status === 'no_phone') {
+        setState({ status: 'no_phone' });
       } else {
         setState({ status: 'no_consent' });
       }
@@ -187,6 +190,11 @@ export function PortalLinkCard({
             {state.status === 'no_consent' && (
               <p role="status" className="text-sm text-destructive">
                 This client has not consented to WhatsApp, so no message was sent.
+              </p>
+            )}
+            {state.status === 'no_phone' && (
+              <p role="status" className="text-sm text-destructive">
+                This client has no phone number on file, so no message was sent.
               </p>
             )}
             {state.status === 'error' && (

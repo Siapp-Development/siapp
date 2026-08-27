@@ -231,7 +231,8 @@ export interface IIssueCollaboratorLinkResponse {
  * sendCollaboratorLink (#127, Q-WA): enqueue-only — get-or-creates the
  * collaborator's ONE durable access link (never rotates a still-valid one) and
  * writes a `messages` doc for WhatsApp delivery via the `collab_access_link_v1`
- * template. Delivery depends on the #19 dispatcher (not yet in-repo).
+ * template. Delivery is handled by the scheduled dispatch sweep (#133) when
+ * Twilio config is present (absent creds → NoopProvider, no send).
  */
 export interface ISendCollaboratorLinkRequest {
   workspaceId: string;
@@ -241,14 +242,16 @@ export interface ISendCollaboratorLinkRequest {
 export type TSendCollaboratorLinkResponse =
   | { status: 'queued'; expiresAt: string }
   | { status: 'opted_out' }
-  | { status: 'no_consent' };
+  | { status: 'no_consent' }
+  | { status: 'no_phone' };
 
 /**
  * sendPortalLink (#137, Part C): firm owner/admin/pm sends a CLIENT their
  * project portal link over WhatsApp on demand. Mints a fresh client portal link
  * (rotate-on-issue, per-action) and enqueues a `project_welcome` `messages` doc
  * — the client analog of `sendCollaboratorLink`. Enqueue-only; honours
- * opt-out / consent. Delivery depends on the dispatcher (not yet in-repo).
+ * opt-out / consent. Delivery is handled by the scheduled dispatch sweep (#133)
+ * when Twilio config is present (absent creds → NoopProvider, no send).
  */
 export interface ISendPortalLinkRequest {
   workspaceId: string;
@@ -258,7 +261,8 @@ export interface ISendPortalLinkRequest {
 export type TSendPortalLinkResponse =
   | { status: 'queued'; expiresAt: string }
   | { status: 'opted_out' }
-  | { status: 'no_consent' };
+  | { status: 'no_consent' }
+  | { status: 'no_phone' };
 
 /** redeemCollabLink (#22): unauthenticated; the URL token is the credential. */
 export interface IRedeemCollabLinkRequest {

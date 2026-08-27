@@ -142,6 +142,16 @@ describe('PortalLinkCard', () => {
       expect(await screen.findByRole('status')).toHaveTextContent(/not consented to whatsapp/i);
     });
 
+    it('surfaces the no_phone result when the client has no phone on file', async () => {
+      callables.sendPortalLink.mockResolvedValue({ status: 'no_phone' });
+      render(<PortalLinkCard {...baseProps} />);
+      await userEvent.click(screen.getByRole('button', { name: /send portal link/i }));
+
+      expect(await screen.findByRole('status')).toHaveTextContent(/no phone number on file/i);
+      // Fail-soft, not a success: the "sent via WhatsApp" confirmation must not show.
+      expect(screen.queryByText(/portal link sent via whatsapp/i)).not.toBeInTheDocument();
+    });
+
     it('shows a retryable error when the send throws', async () => {
       callables.sendPortalLink.mockRejectedValue(new Error('boom'));
       render(<PortalLinkCard {...baseProps} />);
