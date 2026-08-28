@@ -156,11 +156,12 @@ describe('ProjectsListPage', () => {
     };
     renderPage();
 
-    // The row is present, but nothing is rendered for the absent description.
-    expect(screen.getByRole('link', { name: 'No-description project' })).toBeInTheDocument();
-    expect(
-      screen.queryByText('Full east-wing renovation with new wiring.'),
-    ).not.toBeInTheDocument();
+    // Scope to the project's row and assert the description paragraph itself is
+    // not rendered (the `line-clamp-2` class is unique to it), so an empty
+    // description node would still fail this test.
+    const row = screen.getByRole('link', { name: 'No-description project' }).closest('li');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('p.line-clamp-2')).toBeNull();
   });
 
   it('hides deleted and archived projects by default, revealing archived via the Filters pill', async () => {

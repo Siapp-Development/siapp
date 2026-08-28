@@ -274,7 +274,8 @@ describe('ProjectDetailPage', () => {
     });
   });
 
-  it('maps stable project error codes to friendly messages', async () => {    const err = new Error('boom');
+  it('maps stable project error codes to friendly messages', async () => {
+    const err = new Error('boom');
     mockCallables.setProjectLifecycle.mockRejectedValue(err);
     mockCallables.projectErrorCode.mockReturnValue('project/forbidden-transition');
     renderPage('owner');
