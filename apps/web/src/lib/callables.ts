@@ -26,6 +26,7 @@ import type {
   ISetMemberDepartmentsRequest,
   ISetMemberDepartmentsResponse,
   ISendCollaboratorLinkRequest,
+  ISendPortalLinkRequest,
   ISetProjectLifecycleRequest,
   ISetProjectLifecycleResponse,
   ISubmitCollabUpdateRequest,
@@ -34,6 +35,7 @@ import type {
   IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
   TSendCollaboratorLinkResponse,
+  TSendPortalLinkResponse,
 } from '@siapp/shared';
 
 import { functions } from './firebase.ts';
@@ -145,7 +147,8 @@ export async function issueCollaboratorLink(
 
 /**
  * Enqueues the collaborator's access link over WhatsApp (#127, Q-WA). Honours
- * opt-out / consent; delivery depends on the #19 dispatcher (enqueue-only).
+ * opt-out / consent; the scheduled dispatch sweep (#133) delivers it over
+ * WhatsApp when Twilio config is present (absent creds → NoopProvider, no send).
  */
 export async function sendCollaboratorLink(
   data: ISendCollaboratorLinkRequest,
@@ -153,6 +156,22 @@ export async function sendCollaboratorLink(
   const call = httpsCallable<ISendCollaboratorLinkRequest, TSendCollaboratorLinkResponse>(
     functions,
     'sendCollaboratorLink',
+  );
+  return (await call(data)).data;
+}
+
+/**
+ * Sends a client their project portal link over WhatsApp (#137, Part C). Mints
+ * a fresh link per action and honours opt-out / consent; the scheduled dispatch
+ * sweep (#133) delivers it over WhatsApp when Twilio config is present (absent
+ * creds → NoopProvider, no send).
+ */
+export async function sendPortalLink(
+  data: ISendPortalLinkRequest,
+): Promise<TSendPortalLinkResponse> {
+  const call = httpsCallable<ISendPortalLinkRequest, TSendPortalLinkResponse>(
+    functions,
+    'sendPortalLink',
   );
   return (await call(data)).data;
 }

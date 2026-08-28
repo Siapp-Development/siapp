@@ -20,7 +20,12 @@ export interface IProjectWelcomeVars extends IBaseTemplateVars {
   clientFullName: string;
   projectTitle: string;
   projectDueDate: string;
-  portalLink: string;
+  /**
+   * #137: token-only — the bare `{shortCode}_{secret}` portal token, NOT a full
+   * URL. The static `https://siapp.app/p/` prefix is baked into the template
+   * body; the emitted `variables` map uses the snake_case key `portal_token`.
+   */
+  portalToken: string;
 }
 
 export interface ITaskAssignedVars extends IBaseTemplateVars {
@@ -74,7 +79,12 @@ export interface IInboundAutoReplyVars extends IBaseTemplateVars {
 export interface ICollabAccessLinkVars extends IBaseTemplateVars {
   trigger: 'collab_access_link';
   collaboratorName: string;
-  accessLink: string;
+  /**
+   * #137: token-only — the bare `{shortCode}_{secret}` access token, NOT a full
+   * URL. The static `https://siapp.app/t/` prefix is baked into the template
+   * body; the emitted `variables` map uses the snake_case key `access_token`.
+   */
+  accessToken: string;
 }
 
 export type TTemplateVars =

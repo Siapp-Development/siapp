@@ -44,6 +44,20 @@ const TEMPLATE_NAMES: Record<TTaskTrigger, string> = {
   task_due_soon: 'task_due_soon_v1',
 };
 
+/**
+ * #137 Part D: `task_due_soon` always targets the task's INTERNAL assignees
+ * (firm members) and NEVER the client, independent of the workspace
+ * toClient/toInternal toggles. Every other trigger honours the persisted config
+ * unchanged. Returns a fresh object — the stored config is never mutated, and
+ * status-change/blocked routing is byte-for-byte identical (the same reference).
+ */
+function effectiveNotifyFor(trigger: TTaskTrigger, notify: ITaskNotifyConfig): ITaskNotifyConfig {
+  if (trigger === 'task_due_soon') {
+    return { ...notify, toClient: false, toInternal: true };
+  }
+  return notify;
+}
+
 export interface IPlannedMessage {
   /** Deterministic doc id (due-soon dedupe, D5); null = auto id. */
   id: string | null;
@@ -144,25 +158,28 @@ function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNoti
 function templateVariables(input: IPlanTaskNotificationsInput): Record<string, string> {
   const title = input.taskData['title'];
   const projectName = input.projectData?.['name'];
+  // snake_case keys (#137 Part A): these ARE the wire contract — they must match
+  // the approved Meta template's NAMED variables exactly (Finding 1). No link
+  // variable is emitted yet (portal_link/task_link population is deferred Part B).
   const variables: Record<string, string> = {
-    taskTitle: typeof title === 'string' ? title : '',
-    projectTitle: typeof projectName === 'string' ? projectName : '',
-    firmName: input.firmName,
+    task_title: typeof title === 'string' ? title : '',
+    project_title: typeof projectName === 'string' ? projectName : '',
+    firm_name: input.firmName,
   };
   if (input.trigger === 'task_status_change') {
     const status = input.taskData['status'];
-    variables['newStatus'] = typeof status === 'string' ? status : '';
+    variables['new_status'] = typeof status === 'string' ? status : '';
   }
   if (input.trigger === 'task_blocked') {
-    // #22 (D-d): the need-help reason lands in the task_blocked_v1 template.
+    // #22 (D-d): the need-help reason lands in the task_blocked template.
     const reason = input.taskData['blockedReason'];
-    variables['blockedReason'] = typeof reason === 'string' ? reason : '';
+    variables['blocked_reason'] = typeof reason === 'string' ? reason : '';
   }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
     // Format in MYT — quiet-hours/dedupe semantics are Malaysia time (D6),
     // and a UTC date would show the wrong calendar day near midnight.
-    variables['dueDate'] =
+    variables['due_date'] =
       typeof dueDate?.toDate === 'function' ? mytDateString(dueDate.toDate()) : '';
   }
   return variables;
@@ -180,6 +197,9 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
   if (!notify[TRIGGER_TO_NOTIFY_KEY[input.trigger]]) {
     return [];
   }
+  // Part D: due-soon fans out to members only regardless of config; the
+  // dueSoon enablement gate above still uses the real config.
+  const effectiveNotify = effectiveNotifyFor(input.trigger, notify);
 
   const lifecycle = input.projectData?.['lifecycle'];
   const published = lifecycle === 'published';
@@ -187,7 +207,7 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
   const holdUntil = holdUntilFor(input.now, input.quietHours);
   const dedupeDate = mytDateString(input.now);
 
-  return resolveRecipients(input, notify).map((recipient) => {
+  return resolveRecipients(input, effectiveNotify).map((recipient) => {
     const suppressedReason = input.billingReadOnly === true
       ? 'billing'
       : !published
@@ -257,6 +277,9 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
   if (!notify[TRIGGER_TO_NOTIFY_KEY[trigger]]) {
     return 0;
   }
+  // Part D: recipient reads must follow the same internal-only override as
+  // planning so due-soon always resolves member profiles (never the client).
+  const effectiveNotify = effectiveNotifyFor(trigger, notify);
 
   const db = getFirestore();
   const workspaceSnap = await db.doc(`workspaces/${workspaceId}`).get();
@@ -264,12 +287,12 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
 
   const clientId = projectData?.['clientId'];
   const clientSnap =
-    notify.toClient && typeof clientId === 'string' && clientId !== ''
+    effectiveNotify.toClient && typeof clientId === 'string' && clientId !== ''
       ? await db.doc(`workspaces/${workspaceId}/clients/${clientId}`).get()
       : null;
 
   const memberProfiles = new Map<string, Record<string, unknown> | undefined>();
-  if (notify.toInternal) {
+  if (effectiveNotify.toInternal) {
     const assignees = taskData['assignees'];
     const uids = new Set<string>();
     for (const entry of Array.isArray(assignees) ? assignees : []) {

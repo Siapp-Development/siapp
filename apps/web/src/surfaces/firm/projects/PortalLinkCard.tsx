@@ -2,7 +2,7 @@ import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
 import { Button, Card, CardContent, CardHeader } from '@siapp/ui';
 import { useState } from 'react';
 
-import { issuePortalLink } from '@/lib/callables.ts';
+import { issuePortalLink, sendPortalLink } from '@/lib/callables.ts';
 
 export interface IPortalLinkCardProps {
   workspaceId: string;
@@ -17,6 +17,10 @@ type TLinkState =
   | { status: 'working' }
   | { status: 'copied'; expiresAt: string }
   | { status: 'reset'; url: string; expiresAt: string }
+  | { status: 'sent'; expiresAt: string }
+  | { status: 'opted_out' }
+  | { status: 'no_consent' }
+  | { status: 'no_phone' }
   | { status: 'error' };
 
 const EXPIRY_FORMAT = new Intl.DateTimeFormat('en-MY', {
@@ -34,7 +38,9 @@ function formatExpiry(iso: string): string {
  * Firm-side portal link controls (#21, D2) in the project Details tab.
  * Every issue rotates the link (only the secret's hash is at rest), so
  * "Copy" both mints and invalidates earlier links; "Reset" is the explicit,
- * confirm-guarded variant that audit-logs as portal_link.reset.
+ * confirm-guarded variant that audit-logs as portal_link.reset. "Send portal
+ * link" (#137, Part C) mints a fresh link and enqueues it over WhatsApp,
+ * honouring the client's opt-out / consent.
  */
 export function PortalLinkCard({
   workspaceId,
@@ -55,6 +61,8 @@ export function PortalLinkCard({
         ? 'Link a client to the project first.'
         : null;
 
+  const working = state.status === 'working';
+
   async function issue(reset: boolean): Promise<void> {
     setState({ status: 'working' });
     setConfirmingReset(false);
@@ -70,6 +78,25 @@ export function PortalLinkCard({
       } catch {
         // Clipboard denied (permissions/insecure context) — show the URL.
         setState({ status: 'reset', url, expiresAt });
+      }
+    } catch {
+      setState({ status: 'error' });
+    }
+  }
+
+  async function send(): Promise<void> {
+    setState({ status: 'working' });
+    setConfirmingReset(false);
+    try {
+      const result = await sendPortalLink({ workspaceId, projectId });
+      if (result.status === 'queued') {
+        setState({ status: 'sent', expiresAt: result.expiresAt });
+      } else if (result.status === 'opted_out') {
+        setState({ status: 'opted_out' });
+      } else if (result.status === 'no_phone') {
+        setState({ status: 'no_phone' });
+      } else {
+        setState({ status: 'no_consent' });
       }
     } catch {
       setState({ status: 'error' });
@@ -93,10 +120,19 @@ export function PortalLinkCard({
               <Button
                 type="button"
                 size="sm"
-                disabled={state.status === 'working'}
+                disabled={working}
                 onClick={() => void issue(false)}
               >
                 Copy portal link
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={working}
+                onClick={() => void send()}
+              >
+                Send portal link
               </Button>
               {confirmingReset ? (
                 <>
@@ -104,7 +140,7 @@ export function PortalLinkCard({
                     type="button"
                     size="sm"
                     variant="destructive"
-                    disabled={state.status === 'working'}
+                    disabled={working}
                     onClick={() => void issue(true)}
                   >
                     Confirm reset
@@ -123,7 +159,7 @@ export function PortalLinkCard({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={state.status === 'working'}
+                  disabled={working}
                   onClick={() => setConfirmingReset(true)}
                 >
                   Reset link
@@ -139,6 +175,26 @@ export function PortalLinkCard({
               <p role="status" className="break-all text-sm">
                 New link (valid until {formatExpiry(state.expiresAt)}):{' '}
                 <span className="font-mono">{state.url}</span>
+              </p>
+            )}
+            {state.status === 'sent' && (
+              <p role="status" className="text-sm text-primary">
+                Portal link sent via WhatsApp — valid until {formatExpiry(state.expiresAt)}.
+              </p>
+            )}
+            {state.status === 'opted_out' && (
+              <p role="status" className="text-sm text-destructive">
+                This client has turned off WhatsApp notifications, so no message was sent.
+              </p>
+            )}
+            {state.status === 'no_consent' && (
+              <p role="status" className="text-sm text-destructive">
+                This client has not consented to WhatsApp, so no message was sent.
+              </p>
+            )}
+            {state.status === 'no_phone' && (
+              <p role="status" className="text-sm text-destructive">
+                This client has no phone number on file, so no message was sent.
               </p>
             )}
             {state.status === 'error' && (

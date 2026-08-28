@@ -4,10 +4,11 @@
  * doc using the `collab_access_link_v1` template. Durable/reset-only: sending
  * never rotates a still-valid link — the same URL is re-surfaced every time.
  *
- * DELIVERY DEPENDENCY: the WA send stack is a no-op stub today (no #19
- * dispatcher, no Twilio). This callable only writes the queue record — it does
- * NOT deliver. It honours the same opt-out / consent gates as
- * enqueueNotifications so a firm never queues to a recipient who declined.
+ * DELIVERY: this callable enqueues a `messages` doc which the scheduled dispatch
+ * sweep (`sweepMessageQueue`, #133) delivers over WhatsApp once Twilio config is
+ * present (absent creds → `selectProvider` falls back to NoopProvider). It
+ * honours the same opt-out / consent gates as enqueueNotifications so a firm
+ * never queues to a recipient who declined.
  */
 
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
@@ -54,13 +55,21 @@ export const sendCollaboratorLink = onCall(async (request) => {
     return { status: 'no_consent' as const };
   }
 
+  // Fail-soft when the collaborator has no phone on file: WhatsApp cannot
+  // deliver, and `selectDispatchable` filters empty phones — so enqueueing would
+  // strand an undeliverable doc showing "queued". Return BEFORE get-or-create
+  // and BEFORE enqueue, mirroring the opt-out / consent gates above.
   const phone = typeof collaborator['phone'] === 'string' ? collaborator['phone'] : '';
+  if (phone === '') {
+    return { status: 'no_phone' as const };
+  }
+
   const collaboratorName = typeof collaborator['name'] === 'string' ? collaborator['name'] : '';
   const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
 
   // Durable, reset-only (#127): reuse the collaborator's active link if any —
   // sending over WhatsApp must never rotate an existing valid URL.
-  const { url, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
+  const { token, expiresAt, linkId, created } = await getOrCreateCollaboratorLink(
     db,
     workspaceId,
     collaboratorId,
@@ -75,10 +84,14 @@ export const sendCollaboratorLink = onCall(async (request) => {
     recipientType: 'collaborator',
     recipientId: collaboratorId,
     templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+    // snake_case, token-only (#137, Finding 1/2): keys must match the approved
+    // Meta template's named variables; the value is the bare
+    // `{shortCode}_{secret}` token — the static `https://siapp.app/t/` prefix
+    // is baked into the template body, so no full URL is emitted here.
     variables: {
-      firmName,
-      collaboratorName,
-      accessLink: url,
+      firm_name: firmName,
+      collaborator_name: collaboratorName,
+      access_token: token,
     },
     status: 'queued',
     trigger: 'collab_access_link',
