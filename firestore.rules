@@ -316,6 +316,7 @@ service cloud.firestore {
       return d.name is string
         && d.name.size() > 0
         && d.name.size() <= 120
+        && (!('description' in d) || (d.description is string && d.description.size() <= 5000))
         && (!('code' in d) || (d.code is string && d.code.size() <= 20))
         && d.status in ['planning', 'active', 'on_hold', 'completed', 'archived']
         && d.clientId is string
@@ -812,7 +813,7 @@ service cloud.firestore {
             'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
             'startDate', 'targetEndDate', 'actualEndDate',
             'summary', 'visibility', 'tags', 'createdAt', 'updatedAt', 'createdBy',
-            'duplicatedFromProjectId'
+            'duplicatedFromProjectId', 'description'
           ])
           && validProjectFields()
           // #15 duplicate provenance — create-only (immutable via the update
@@ -847,7 +848,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'name', 'code', 'clientId', 'clientNameDenorm', 'status',
             'startDate', 'targetEndDate', 'actualEndDate', 'visibility',
-            'tags', 'updatedAt'
+            'tags', 'updatedAt', 'description'
           ])
           && validProjectFields()
           && collabCountOf(request.resource.data) == collabCountOf(resource.data)

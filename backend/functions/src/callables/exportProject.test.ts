@@ -85,7 +85,6 @@ function baseSource(overrides: Partial<IExportSource> = {}): IExportSource {
     exportedAt: new Date('2026-07-24T08:00:00.000Z'),
     project: { id: 'p1', data: { name: 'Bungalow', createdAt: fakeTimestamp('2026-06-01T00:00:00.000Z') } },
     phases: [],
-    milestones: [],
     tasks: [],
     activity: [],
     documents: [],

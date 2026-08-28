@@ -58,6 +58,7 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
   return {
     id: 'p1',
     name: 'Bungalow build',
+    description: '',
     code: 'BB-1',
     vertical: 'construction',
     lifecycle: 'draft',
@@ -134,6 +135,33 @@ describe('ProjectsListPage', () => {
     );
     expect(screen.getByText(/2 overdue/)).toBeInTheDocument();
     expect(screen.getByText(/Ahmad Corp/)).toBeInTheDocument();
+  });
+
+  it('renders a project description under the row when present (#138)', () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [projectRow({ description: 'Full east-wing renovation with new wiring.' })],
+    };
+    renderPage();
+
+    expect(
+      screen.getByText('Full east-wing renovation with new wiring.'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no description text for a project without one (#138)', () => {
+    projectsData.state = {
+      status: 'ready',
+      rows: [projectRow({ name: 'No-description project', description: '' })],
+    };
+    renderPage();
+
+    // Scope to the project's row and assert the description paragraph itself is
+    // not rendered (the `line-clamp-2` class is unique to it), so an empty
+    // description node would still fail this test.
+    const row = screen.getByRole('link', { name: 'No-description project' }).closest('li');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('p.line-clamp-2')).toBeNull();
   });
 
   it('hides deleted and archived projects by default, revealing archived via the Filters pill', async () => {

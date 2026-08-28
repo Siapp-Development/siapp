@@ -431,6 +431,8 @@ export interface IProjectVisibility {
 export interface IProjectDoc {
   id: string;
   name: string;
+  /** Optional free-text project description (≤5000 chars). */
+  description?: string;
   code?: string;
   vertical: TProjectVertical;
   lifecycle: TProjectLifecycle;

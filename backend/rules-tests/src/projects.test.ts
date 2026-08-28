@@ -415,6 +415,87 @@ describe('project delete', () => {
   });
 });
 
+// #138: optional free-text `description` — allow-listed on create and the main
+// update branch, validated as a string <= 5000 chars; the tags-only branch
+// stays narrow and must reject a description change.
+describe('project description (#138)', () => {
+  it('allows creating a project with a valid description', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-desc`),
+        validProject('proj-desc', { description: 'A tidy little renovation.' }),
+      ),
+    );
+  });
+
+  it('allows setting and clearing the description on update', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        description: 'Now with a summary.',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        description: deleteField(),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies a description over 5000 characters on create and update', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-long`),
+        validProject('proj-long', { description: 'x'.repeat(5001) }),
+      ),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), PROJ_PATH), {
+        description: 'x'.repeat(5001),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies a non-string description on create and update', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-bad`),
+        validProject('proj-bad', { description: 42 }),
+      ),
+    );
+    await assertFails(
+      updateDoc(doc(dbAs('owner'), PROJ_PATH), {
+        description: 42,
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('keeps the tags-only update branch from being widened to description', async () => {
+    // A starter project missing `startDate` cannot pass validProjectFields, so
+    // the main update branch never applies — only the narrow tags-only branch.
+    const starterPath = `workspaces/${WKS_A}/projects/proj-starter`;
+    const starter = validProject('proj-starter');
+    delete starter['startDate'];
+    await seedDoc(testEnv, starterPath, starter);
+
+    // Tagging such a doc still works through the tags-only branch…
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), starterPath), { tags: ['t1'], updatedAt: Timestamp.now() }),
+    );
+    // …but slipping a description change through that branch must be rejected.
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), starterPath), {
+        tags: ['t2'],
+        description: 'sneaky',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+});
+
 // #15 duplicate project (D-031): provenance is create-only and the copy is a
 // plain batched client write — the same rules as manual creation apply, so a
 // caller can never copy a task they couldn't see.

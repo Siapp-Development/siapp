@@ -23,6 +23,7 @@ import { db } from '@/lib/firebase.ts';
 export interface IProjectRow {
   id: string;
   name: string;
+  description: string;
   code: string;
   vertical: TProjectVertical;
   lifecycle: TProjectLifecycle;
@@ -70,6 +71,7 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
   return {
     id,
     name: String(data['name'] ?? ''),
+    description: typeof data['description'] === 'string' ? data['description'] : '',
     code: typeof data['code'] === 'string' ? data['code'] : '',
     vertical: (data['vertical'] ?? 'other') as TProjectVertical,
     lifecycle: (data['lifecycle'] ?? 'draft') as TProjectLifecycle,
@@ -137,6 +139,7 @@ export function useProject(workspaceId: string, projectId: string): TProjectStat
 
 export interface IProjectFormValues {
   name: string;
+  description: string;
   code: string;
   vertical: TProjectVertical;
   status: TProjectStatus;
@@ -165,6 +168,7 @@ export async function createProject(
   await setDoc(ref, {
     id: ref.id,
     name: values.name,
+    ...(values.description !== '' ? { description: values.description } : {}),
     ...(values.code !== '' ? { code: values.code } : {}),
     vertical: values.vertical,
     lifecycle: 'draft',
@@ -195,6 +199,7 @@ export async function updateProject(
 ): Promise<void> {
   await updateDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}`), {
     name: values.name,
+    description: values.description !== '' ? values.description : deleteField(),
     code: values.code !== '' ? values.code : deleteField(),
     status: values.status,
     clientId: values.clientId,

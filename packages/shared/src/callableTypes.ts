@@ -392,7 +392,6 @@ export interface IExportProjectResponse {
   projectId: string;
   project: TExportRecord;
   phases: TExportRecord[];
-  milestones: TExportRecord[];
   tasks: IExportTaskRecord[];
   activity: TExportRecord[];
   documents: IExportDocumentRecord[];

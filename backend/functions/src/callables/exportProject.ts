@@ -2,7 +2,7 @@
  * exportProject (#25): owner/admin-only per-project data export.
  *
  * Assembles a complete, versioned JSON snapshot of one project (project doc,
- * phases, milestones, tasks with nested update streams, activity feed and
+ * phases, tasks with nested update streams, activity feed and
  * documents metadata) via the Admin SDK. Rules are bypassed, so the claims
  * check below re-asserts owner/admin membership on {workspaceId} before any
  * read — same posture as deleteTask. Restricted tasks are included: export
@@ -78,7 +78,6 @@ export interface IExportProjectPayload {
   projectId: string;
   project: TExportRecord;
   phases: TExportRecord[];
-  milestones: TExportRecord[];
   tasks: IExportTaskRecord[];
   activity: TExportRecord[];
   documents: IExportDocumentRecord[];
@@ -130,7 +129,6 @@ export interface IExportSource {
   exportedAt: Date;
   project: IRawDoc;
   phases: IRawDoc[];
-  milestones: IRawDoc[];
   tasks: Array<IRawDoc & { updates: IRawDoc[] }>;
   activity: IRawDoc[];
   documents: IRawDoc[];
@@ -193,7 +191,6 @@ export function serializeExport(source: IExportSource): IExportProjectPayload {
     projectId: source.projectId,
     project: toRecord(source.project),
     phases: [...source.phases].sort(byOrder).map(toRecord),
-    milestones: [...source.milestones].sort((a, b) => a.id.localeCompare(b.id)).map(toRecord),
     tasks,
     activity: [...source.activity]
       .sort((a, b) => timeField(b.data, 'at') - timeField(a.data, 'at') || a.id.localeCompare(b.id))
@@ -241,9 +238,8 @@ export const exportProject = onCall(async (request) => {
     throw new HttpsError('not-found', 'Project not found.');
   }
 
-  const [phasesSnap, milestonesSnap, tasksSnap, activitySnap, documentsSnap] = await Promise.all([
+  const [phasesSnap, tasksSnap, activitySnap, documentsSnap] = await Promise.all([
     projectRef.collection('phases').get(),
-    projectRef.collection('milestones').get(),
     projectRef.collection('tasks').get(),
     projectRef.collection('activity').get(),
     projectRef.collection('documents').get(),
@@ -268,7 +264,6 @@ export const exportProject = onCall(async (request) => {
     exportedAt: new Date(),
     project: { id: projectSnap.id, data: projectSnap.data() as Record<string, unknown> },
     phases: phasesSnap.docs.map(rawDoc),
-    milestones: milestonesSnap.docs.map(rawDoc),
     tasks,
     activity: activitySnap.docs.map(rawDoc),
     documents: documentsSnap.docs.map(rawDoc),
@@ -290,7 +285,6 @@ export const exportProject = onCall(async (request) => {
       activityCount: payload.activity.length,
       documentCount: payload.documents.length,
       phaseCount: payload.phases.length,
-      milestoneCount: payload.milestones.length,
     },
     ...callableRequestMeta(request),
   });

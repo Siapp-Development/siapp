@@ -39,6 +39,35 @@ describe('PublishProjectDialog', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('shows a decorative Send icon inside the Publish button (#138)', () => {
+    renderDialog();
+
+    const button = screen.getByRole('button', { name: 'Publish' });
+    const icon = button.querySelector('svg');
+    expect(icon).not.toBeNull();
+    // Icon is decorative so it never changes the button's accessible name.
+    expect(icon).toHaveAttribute('aria-hidden');
+  });
+
+  it('explains the publish consequences in the confirm dialog (#138)', async () => {
+    callables.setProjectLifecycle.mockResolvedValue({
+      lifecycle: 'draft',
+      publishPreview: { waCount: 2, estimatedCostMyr: 1 },
+    });
+    renderDialog();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    const dialog = await screen.findByRole('dialog', { name: /publish this project/i });
+
+    expect(
+      within(dialog).getByText(/client gains access to the project portal/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/welcome message and task notifications are sent/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/can.t be undone/i)).toBeInTheDocument();
+  });
+
   it('runs a dry-run on open and shows the WhatsApp preview', async () => {
     callables.setProjectLifecycle.mockResolvedValue({
       lifecycle: 'draft',
