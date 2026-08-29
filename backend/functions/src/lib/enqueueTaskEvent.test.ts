@@ -8,7 +8,7 @@
  * following the pattern in dispatchQueue.test.ts / assignedTasksMirror.test.ts.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 // Shared mutable store the fake Firestore reads/writes. `vi.hoisted` runs before
 // the (hoisted) `vi.mock` factory.
@@ -60,8 +60,29 @@ vi.mock('firebase-admin/firestore', () => {
   };
 });
 
+// #142 (Part B): status_change/blocked resolve the durable client portal link
+// via getOrCreateClientPortalLink. Its durable/idempotent semantics are
+// unit-tested in issuePortalLink.test.ts; here we stub it to a STABLE token so
+// these read-gating tests assert the token flows into `portal_token` (and that
+// a system actor is used), without needing a magicLinks-capable fake.
+const DURABLE_TOKEN = 'shortcode123_c2VjcmV0LXZhbHVl';
+const resolveMock = vi.hoisted(() => ({
+  getOrCreateClientPortalLink: vi.fn(() =>
+    Promise.resolve({
+      url: `https://siapp.app/p/${'shortcode123_c2VjcmV0LXZhbHVl'}`,
+      token: 'shortcode123_c2VjcmV0LXZhbHVl',
+      expiresAt: { toDate: () => new Date('2026-10-01T00:00:00.000Z') },
+      linkId: 'link1',
+      rotated: false,
+      created: true,
+    }),
+  ),
+}));
+vi.mock('../callables/issuePortalLink.js', () => resolveMock);
+
 // Imported AFTER the mock so it binds the faked firebase-admin/firestore.
 import { enqueueTaskEvent, type IEnqueueTaskEventParams } from './enqueueNotifications.js';
+const resolveFn = resolveMock.getOrCreateClientPortalLink as unknown as Mock;
 
 // 12:00 UTC = 20:00 MYT — outside the default 21:00–08:00 quiet window.
 const OUTSIDE_QUIET = new Date('2026-07-23T12:00:00Z');
@@ -122,6 +143,7 @@ describe('enqueueTaskEvent — #137 Part D read-gating (Case A, fake db)', () =>
     store.reads = [];
     store.writes = [];
     store.created.clear();
+    resolveFn.mockClear();
     seedWorkspace();
   });
 
@@ -176,6 +198,10 @@ describe('enqueueTaskEvent — #137 Part D read-gating (Case A, fake db)', () =>
     expect(datas[0]['recipientType']).toBe('client');
     expect(datas[0]['recipientId']).toBe('client1');
     expect(datas[0]['trigger']).toBe('task_status_change');
+    // #142: the durable link is resolved with a SYSTEM actor and the bare token
+    // is embedded as portal_token for the client-facing template.
+    expect(resolveFn).toHaveBeenCalledWith(expect.anything(), 'w1', 'p1', 'client1', 'system');
+    expect((datas[0]['variables'] as Record<string, string>)['portal_token']).toBe(DURABLE_TOKEN);
   });
 
   it('task_blocked (default config) routes to the client at the read layer too', async () => {
@@ -188,7 +214,45 @@ describe('enqueueTaskEvent — #137 Part D read-gating (Case A, fake db)', () =>
     expect(store.reads).toContain('workspaces/w1/clients/client1');
     expect(store.reads.some((p) => p === 'users/u1' || p === 'users/u2')).toBe(false);
     expect(written).toBe(1);
+    const blockedVars = writesByType()[0]['variables'] as Record<string, string>;
     expect(writesByType()[0]['recipientType']).toBe('client');
+    // #142 Q2: task_blocked KEEPS blocked_reason AND gains the durable portal_token.
+    expect(blockedVars['blocked_reason']).toBe('Waiting on materials');
+    expect(blockedVars['portal_token']).toBe(DURABLE_TOKEN);
+  });
+
+  it('#142 D-042: two consecutive status_change events embed the SAME portal_token', async () => {
+    const first = await enqueueTaskEvent(
+      params({ trigger: 'task_status_change', taskData: dueSoonTaskData() }),
+    );
+    const tokenA = (writesByType()[0]['variables'] as Record<string, string>)['portal_token'];
+    // Simulate a second event on the same (project, client): clear write-dedupe
+    // state but keep the durable resolver returning its stable token.
+    store.writes = [];
+    store.created.clear();
+    const second = await enqueueTaskEvent(
+      params({ trigger: 'task_status_change', taskData: dueSoonTaskData() }),
+    );
+    const tokenB = (writesByType()[0]['variables'] as Record<string, string>)['portal_token'];
+    expect(first).toBe(1);
+    expect(second).toBe(1);
+    expect(tokenB).toBe(tokenA);
+  });
+
+  it('#142: a draft status_change does NOT resolve a link — empty portal_token, suppressed', async () => {
+    const written = await enqueueTaskEvent(
+      params({
+        trigger: 'task_status_change',
+        taskData: dueSoonTaskData(),
+        projectData: { name: 'P', lifecycle: 'draft', clientId: 'client1' },
+      }),
+    );
+    expect(written).toBe(1);
+    // No mint on a non-published project (D-027): resolver never called.
+    expect(resolveFn).not.toHaveBeenCalled();
+    const data = writesByType()[0];
+    expect(data).toMatchObject({ suppressed: true, suppressedReason: 'lifecycle:draft' });
+    expect((data['variables'] as Record<string, string>)['portal_token']).toBe('');
   });
 
   it('re-running the same due_soon event dedupes via ALREADY_EXISTS (writes nothing the second time)', async () => {

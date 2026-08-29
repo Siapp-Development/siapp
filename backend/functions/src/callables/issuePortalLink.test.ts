@@ -20,7 +20,12 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-import { PORTAL_ISSUABLE_LIFECYCLES, issueBlocker, mintClientPortalLink } from './issuePortalLink.js';
+import {
+  PORTAL_ISSUABLE_LIFECYCLES,
+  getOrCreateClientPortalLink,
+  issueBlocker,
+  mintClientPortalLink,
+} from './issuePortalLink.js';
 
 describe('issueBlocker', () => {
   it('allows published and completed projects with a linked client', () => {
@@ -134,16 +139,132 @@ describe('mintClientPortalLink (rotate-on-issue, #137 extraction)', () => {
     expect(result.rotated).toBe(true);
   });
 
-  it('never persists the plaintext token/secret — only its SHA-256 hash at rest', async () => {
+  it('persists the durable plaintext token (rules-denied) but NEVER the bare secret (#142)', async () => {
     const { db, created } = makeMintDb([]);
 
     const result = await mintClientPortalLink(db, 'w1', 'p1', 'c1', 'u-owner');
 
     const stored = created[0].data;
     expect(typeof stored['secretHash']).toBe('string');
-    expect(stored).not.toHaveProperty('token');
+    // Durable (#142, Part B): the raw URL token is now stored so get-or-create
+    // can re-surface the SAME url. magicLinks is rules-denied to all clients.
+    expect(stored['token']).toBe(result.token);
+    // The bare secret is never stored on its own; secretHash stays the only
+    // value compared on redeem, so the stored token cannot weaken auth.
     expect(stored).not.toHaveProperty('secret');
-    // The stored hash is not the raw secret (Part B durable storage deferred).
     expect(stored['secretHash']).not.toBe(result.token);
+  });
+});
+
+interface IQueryDoc {
+  id: string;
+  get: (field: string) => unknown;
+}
+
+function queryDoc(id: string, opts: { token: unknown; expiresMs: number | null }): IQueryDoc {
+  return {
+    id,
+    get: (field: string) =>
+      field === 'expiresAt'
+        ? opts.expiresMs == null
+          ? undefined
+          : { toMillis: () => opts.expiresMs as number }
+        : field === 'token'
+          ? opts.token
+          : undefined,
+  };
+}
+
+function makeGocDb(opts: { queryDocs: IQueryDoc[]; txDocs?: IActiveDoc[] }) {
+  const created: { id: string; data: Record<string, unknown> }[] = [];
+  let auto = 0;
+  const chain = {
+    where: () => chain,
+    get: () => Promise.resolve({ docs: opts.queryDocs }),
+  };
+  const linksRef = {
+    where: () => chain,
+    doc: () => ({ id: `newlink${(auto += 1)}` }),
+  };
+  const txDocs = opts.txDocs ?? [];
+  const tx = {
+    get: () => Promise.resolve({ docs: txDocs, empty: txDocs.length === 0 }),
+    update: (ref: { updates: Record<string, unknown>[] }, data: Record<string, unknown>) => {
+      ref.updates.push(data);
+    },
+    set: (ref: { id: string }, data: Record<string, unknown>) => {
+      created.push({ id: ref.id, data });
+    },
+  };
+  const db = {
+    collection: () => linksRef,
+    runTransaction: (fn: (t: typeof tx) => Promise<boolean>) => fn(tx),
+  } as never;
+  return { db, created };
+}
+
+describe('getOrCreateClientPortalLink (#142 durable, idempotent)', () => {
+  it('reuses an active, unexpired, tokenful link — SAME url, no mint (D-042)', async () => {
+    const { db, created } = makeGocDb({
+      queryDocs: [queryDoc('link-existing', { token: 'reused_token_abc', expiresMs: Date.now() + 60_000 })],
+    });
+
+    const result = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+
+    expect(result.created).toBe(false);
+    expect(result.linkId).toBe('link-existing');
+    expect(result.token).toBe('reused_token_abc');
+    expect(result.url).toMatch(/\/p\/reused_token_abc$/);
+    expect(created).toHaveLength(0);
+  });
+
+  it('returns the SAME token on repeated calls (in-flight WhatsApp links never 404)', async () => {
+    const { db } = makeGocDb({
+      queryDocs: [queryDoc('link-existing', { token: 'reused_token_abc', expiresMs: Date.now() + 60_000 })],
+    });
+
+    const first = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+    const second = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+
+    expect(second.token).toBe(first.token);
+    expect(second.created).toBe(false);
+  });
+
+  it('mints a fresh durable link with createdBy:system when none exists (created:true)', async () => {
+    const { db, created } = makeGocDb({ queryDocs: [], txDocs: [] });
+
+    const result = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+
+    expect(result.created).toBe(true);
+    expect(created).toHaveLength(1);
+    expect(created[0].data).toMatchObject({ audience: 'client', createdBy: 'system' });
+    // The durable plaintext token is stored so future calls re-surface it.
+    expect(created[0].data['token']).toBe(result.token);
+  });
+
+  it('mints fresh AND revokes the prior when the active link is expired', async () => {
+    const stale = activeDoc('old-expired');
+    const { db, created } = makeGocDb({
+      queryDocs: [queryDoc('old-expired', { token: 'stale', expiresMs: Date.now() - 60_000 })],
+      txDocs: [stale],
+    });
+
+    const result = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+
+    expect(result.created).toBe(true);
+    expect(created).toHaveLength(1);
+    expect(stale.ref.updates[0]).toMatchObject({ revoked: true });
+  });
+
+  it('mints fresh when the active link has no re-surfaceable token', async () => {
+    const { db, created } = makeGocDb({
+      queryDocs: [queryDoc('link-tokenless', { token: '', expiresMs: Date.now() + 60_000 })],
+      txDocs: [],
+    });
+
+    const result = await getOrCreateClientPortalLink(db, 'w1', 'p1', 'c1', 'system');
+
+    expect(result.created).toBe(true);
+    expect(created).toHaveLength(1);
   });
 });

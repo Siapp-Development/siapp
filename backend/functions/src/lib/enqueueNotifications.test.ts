@@ -58,15 +58,22 @@ describe('planTaskNotifications — D8 decision table', () => {
     expect(planTaskNotifications(input({ taskData, trigger: 'task_blocked' }))).toHaveLength(1);
   });
 
-  it('writes no record when the recipient side is off', () => {
+  it('#142 Q4: status_change ignores toClient/toInternal config — always client-only', () => {
+    // Even with BOTH recipient toggles off, the client-facing status_change and
+    // blocked templates force effective {toClient:true, toInternal:false}. The
+    // per-trigger enablement bool (statusChange/blocked) is the real off switch.
     const taskData = {
       title: 'T',
       status: 'in_progress',
       sendWhatsapp: true,
-      assignees: [],
+      assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
       notify: { statusChange: true, dueSoon: true, blocked: true, toClient: false, toInternal: false },
     };
-    expect(planTaskNotifications(input({ taskData }))).toEqual([]);
+    const planned = planTaskNotifications(
+      input({ taskData, memberProfiles: new Map([['u1', { phone: '+60122222222' }]]) }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data).toMatchObject({ recipientType: 'client', recipientId: 'client1' });
   });
 
   it('writes the D-027 preview record (suppressed lifecycle:<state>) on a draft project', () => {
@@ -137,15 +144,22 @@ describe('planTaskNotifications — D8 decision table', () => {
   });
 
   it('suppresses with no_phone for a member assignee without a profile phone (D7)', () => {
+    // #142 Q4: member routing now lives on task_due_soon (the internal-only
+    // trigger); status_change/blocked are client-only.
     const taskData = {
       title: 'T',
-      status: 'in_progress',
+      status: 'todo',
       sendWhatsapp: true,
       assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
       notify: { statusChange: true, dueSoon: true, blocked: true, toClient: false, toInternal: true },
     };
     const planned = planTaskNotifications(
-      input({ taskData, memberProfiles: new Map([['u1', { displayName: 'Alice' }]]) }),
+      input({
+        trigger: 'task_due_soon',
+        taskData,
+        memberProfiles: new Map([['u1', { displayName: 'Alice' }]]),
+      }),
     );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({
@@ -157,16 +171,22 @@ describe('planTaskNotifications — D8 decision table', () => {
   });
 
   it('exempts firm members from the consent gate (#26 D2 contract basis)', () => {
+    // #142 Q4: member routing is exercised via task_due_soon (internal-only).
     const taskData = {
       title: 'T',
-      status: 'in_progress',
+      status: 'todo',
       sendWhatsapp: true,
       assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+      dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
       notify: { statusChange: true, dueSoon: true, blocked: true, toClient: false, toInternal: true },
     };
     // Member profile has a phone but no waConsent — still queued.
     const planned = planTaskNotifications(
-      input({ taskData, memberProfiles: new Map([['u1', { phone: '+60122222222' }]]) }),
+      input({
+        trigger: 'task_due_soon',
+        taskData,
+        memberProfiles: new Map([['u1', { phone: '+60122222222' }]]),
+      }),
     );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({ status: 'queued', recipientType: 'member' });
@@ -205,7 +225,9 @@ describe('planTaskNotifications — D8 decision table', () => {
     });
   });
 
-  it('fans out one record per resolved recipient when toClient and toInternal are both on', () => {
+  it('#142 Q4: status_change with toClient+toInternal BOTH on STILL routes client-only', () => {
+    // Members are excluded from the client-facing status_change/blocked templates
+    // regardless of toInternal — they must never receive a client portal_token.
     const taskData = {
       title: 'T',
       status: 'in_progress',
@@ -213,7 +235,6 @@ describe('planTaskNotifications — D8 decision table', () => {
       assignees: [
         { type: 'user', id: 'u1', name: 'Alice' },
         { type: 'user', id: 'u2', name: 'Sam' },
-        { type: 'collaborator', id: 'col1', name: 'Lim', phone: '+60111111111' },
       ],
       notify: { statusChange: true, dueSoon: true, blocked: true, toClient: true, toInternal: true },
     };
@@ -226,15 +247,42 @@ describe('planTaskNotifications — D8 decision table', () => {
         ]),
       }),
     );
-    // Client + two members; collaborator assignees are out of scope for these
-    // triggers at MVP (#18 risk note).
-    expect(planned).toHaveLength(3);
+    expect(planned).toHaveLength(1);
     expect(planned.map((m) => (m.data as { recipientType: string }).recipientType)).toEqual([
       'client',
-      'member',
-      'member',
     ]);
   });
+
+  // #142 Q4 (Tester gap): the workspace toggles are inverted — toInternal:true,
+  // toClient:false. A naive router would fan out to members ONLY. The client-only
+  // override must ignore both toggles: the member never receives status_change /
+  // blocked (they'd otherwise get a client portal_token), and the client is the
+  // sole recipient even though toClient is OFF.
+  for (const trigger of ['task_status_change', 'task_blocked'] as const) {
+    it(`#142 Q4: ${trigger} with toInternal:true,toClient:false STILL routes client-only (member excluded)`, () => {
+      const taskData = {
+        title: 'T',
+        status: trigger === 'task_blocked' ? 'blocked' : 'in_progress',
+        sendWhatsapp: true,
+        blockedReason: 'Waiting on materials',
+        assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+        notify: { statusChange: true, dueSoon: true, blocked: true, toClient: false, toInternal: true },
+      };
+      const planned = planTaskNotifications(
+        input({
+          trigger,
+          taskData,
+          memberProfiles: new Map([['u1', { phone: '+60122222222' }]]),
+        }),
+      );
+      expect(planned).toHaveLength(1);
+      expect(planned[0].data).toMatchObject({ recipientType: 'client', recipientId: 'client1' });
+      // No member record was produced despite toInternal:true.
+      expect(planned.some((m) => (m.data as { recipientType: string }).recipientType === 'member')).toBe(
+        false,
+      );
+    });
+  }
 
   it('uses deterministic dedupe ids for task_due_soon only (D5)', () => {
     // #137 Part D: due-soon is internal-only, so the deterministic id keys off
@@ -478,11 +526,11 @@ describe('planTaskNotifications — #137 Part D: task_due_soon is INTERNAL-ONLY'
 });
 
 
-describe('templateVariables — snake_case migration + link var deferred (#137)', () => {
+describe('templateVariables — snake_case wire contract (#137/#142)', () => {
   // The variable KEYS are the wire contract: they must match the approved Meta
-  // template's named variables EXACTLY. Part B (link var population) is deferred,
-  // so no portal_link / task_link is emitted on task triggers in this PR.
-  const LINK_KEYS = ['portal_link', 'task_link', 'portalLink', 'taskLink', 'portal_token'];
+  // template's named variables EXACTLY. #142 (Part B): status_change/blocked now
+  // emit the bare durable `portal_token`; NO full-URL link var is ever emitted.
+  const LINK_KEYS = ['portal_link', 'task_link', 'portalLink', 'taskLink'];
 
   function varsFor(
     trigger: 'task_status_change' | 'task_blocked' | 'task_due_soon',
@@ -496,37 +544,68 @@ describe('templateVariables — snake_case migration + link var deferred (#137)'
     return planned[0].data['variables'] as Record<string, string>;
   }
 
-  it('task_status_change emits snake_case task_title/project_title/firm_name/new_status and NO link var', () => {
-    const variables = varsFor('task_status_change', {
-      title: 'Pour foundation',
-      status: 'in_progress',
-      sendWhatsapp: true,
-      assignees: [],
-    });
+  it('task_status_change emits snake_case vars incl. the bare portal_token (#142)', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_status_change',
+        taskData: {
+          title: 'Pour foundation',
+          status: 'in_progress',
+          sendWhatsapp: true,
+          assignees: [],
+        },
+        clientPortalToken: 'abcdEFGH2345_c2VjcmV0',
+      }),
+    );
+    expect(planned).toHaveLength(1);
+    const variables = planned[0].data['variables'] as Record<string, string>;
     expect(variables).toEqual({
       task_title: 'Pour foundation',
       project_title: 'Bungalow Reno',
       firm_name: 'Acme Builders',
       new_status: 'in_progress',
+      portal_token: 'abcdEFGH2345_c2VjcmV0',
     });
+    // Bare token, never a full URL.
+    expect(variables['portal_token']).not.toMatch(/^https?:/);
+    expect(variables['portal_token']).not.toContain('/p/');
     for (const key of LINK_KEYS) {
       expect(variables).not.toHaveProperty(key);
     }
   });
 
-  it('task_blocked emits snake_case blocked_reason and NO link var', () => {
-    const variables = varsFor('task_blocked', {
-      title: 'Wiring',
-      status: 'blocked',
+  it('task_status_change emits an EMPTY portal_token when unresolved (suppressed/draft never sends)', () => {
+    const variables = varsFor('task_status_change', {
+      title: 'T',
+      status: 'in_progress',
       sendWhatsapp: true,
       assignees: [],
-      blockedReason: 'Waiting on materials',
     });
+    expect(variables['portal_token']).toBe('');
+  });
+
+  it('task_blocked emits snake_case blocked_reason AND the bare portal_token (#142 Q2 keeps blocked_reason)', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_blocked',
+        taskData: {
+          title: 'Wiring',
+          status: 'blocked',
+          sendWhatsapp: true,
+          assignees: [],
+          blockedReason: 'Waiting on materials',
+        },
+        clientPortalToken: 'abcdEFGH2345_c2VjcmV0',
+      }),
+    );
+    expect(planned).toHaveLength(1);
+    const variables = planned[0].data['variables'] as Record<string, string>;
     expect(variables).toEqual({
       task_title: 'Wiring',
       project_title: 'Bungalow Reno',
       firm_name: 'Acme Builders',
       blocked_reason: 'Waiting on materials',
+      portal_token: 'abcdEFGH2345_c2VjcmV0',
     });
     for (const key of LINK_KEYS) {
       expect(variables).not.toHaveProperty(key);
@@ -558,6 +637,8 @@ describe('templateVariables — snake_case migration + link var deferred (#137)'
     for (const key of LINK_KEYS) {
       expect(variables).not.toHaveProperty(key);
     }
+    // #142: task_due_soon stays link-less — no portal_token (Part D unchanged).
+    expect(variables).not.toHaveProperty('portal_token');
     expect(variables).not.toHaveProperty('new_status');
     expect(variables).not.toHaveProperty('blocked_reason');
   });

@@ -105,6 +105,20 @@ beforeAll(async () => {
     restrictedToDepartments: [],
     at: Timestamp.now(),
   });
+  // #142 (Part B): the client durable portal link now stores the plaintext token
+  // on its magicLink doc. Rules must keep magicLinks fully server-only.
+  await seedDoc(testEnv, `workspaces/${WKS_A}/magicLinks/clientlink1`, {
+    id: 'clientlink1',
+    shortCode: 'clientlink12',
+    secretHash: 'deadbeef',
+    token: 'clientlink12_supersecretclienttokenvalue1234567890',
+    audience: 'client',
+    scopeType: 'project',
+    scopeId: PROJ_PUB,
+    subjectId: CLIENT_ID,
+    revoked: false,
+    expiresAt: Timestamp.fromMillis(Date.now() + 1_000_000),
+  });
 });
 
 afterAll(async () => {
@@ -181,6 +195,21 @@ describe('portal project reads', () => {
     await assertFails(getDoc(doc(dbAsPortal(), `workspaces/${WKS_A}`)));
     await assertFails(getDoc(doc(dbAsPortal(), `workspaces/${WKS_A}/clients/${CLIENT_ID}`)));
     await assertFails(getDoc(doc(dbAsPortal(), `workspaces/${WKS_A}/magicLinks/link1`)));
+  });
+
+  it('keeps a client token-bearing magicLink doc fully server-only — read + write denied (#142)', async () => {
+    const path = `workspaces/${WKS_A}/magicLinks/clientlink1`;
+    // The portal principal cannot read its own durable link doc or list them.
+    await assertFails(getDoc(doc(dbAsPortal(), path)));
+    await assertFails(getDocs(collection(dbAsPortal(), `workspaces/${WKS_A}/magicLinks`)));
+    // Nor write/tamper with the stored token or revoke flag.
+    await assertFails(setDoc(doc(dbAsPortal(), path), { token: 'attacker' }));
+    await assertFails(updateDoc(doc(dbAsPortal(), path), { revoked: true }));
+    // Every firm role is denied too (token material never leaves the Admin SDK).
+    for (const role of ['owner', 'admin', 'pm', 'viewer'] as const) {
+      await assertFails(getDoc(doc(dbAs(role), path)));
+      await assertFails(getDocs(collection(dbAs(role), `workspaces/${WKS_A}/magicLinks`)));
+    }
   });
 
   it('denies portal writes to its own project', async () => {
