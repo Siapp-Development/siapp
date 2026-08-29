@@ -2,19 +2,24 @@
  * issuePortalLink (#21, D2): firm owner/admin/pm mints a client portal magic
  * link for a published/completed project (D-027 gate) with a linked client.
  *
- * One active link per (project, client): raw secrets are never at rest
- * (only their SHA-256), so an existing link's URL can never be re-surfaced —
- * every call revokes any active link for the pair and mints a fresh one.
- * `reset: true` records the rotation as an explicit 'portal_link.reset'
- * audit entry (vs 'portal_link.issue'). Revocation is soft (Q1): it blocks
+ * One active link per (project, client). Revocation is soft (Q1): it blocks
  * re-redemption; already-signed-in sessions are bounded by the lifecycle
- * re-check in rules.
+ * re-check in rules. `reset: true` records the rotation as an explicit
+ * 'portal_link.reset' audit entry (vs 'portal_link.issue' on first mint).
  *
- * #137: the rotate-on-issue mint is extracted into an exported
- * `mintClientPortalLink()` so the on-demand `sendPortalLink` callable can reuse
- * the SAME behaviour (fresh token captured at send time). This is a
- * behaviour-preserving refactor — no durability change (Part B, deferred): the
- * plaintext token is NOT persisted; it is only surfaced in-memory to the caller.
+ * #142 (Part B): the client portal link is now DURABLE, mirroring the #127
+ * collaborator model. The default path is GET-OR-CREATE
+ * (`getOrCreateClientPortalLink`): while an active, unexpired link with a
+ * re-surfaceable token exists it returns the SAME url/token every time, so
+ * in-flight WhatsApp links never 404 (D-042). The raw URL token is persisted
+ * plaintext on the `audience=='client'` magicLink doc — which firestore.rules
+ * denies to ALL clients (`magicLinks` allow read, write: if false) — so the url
+ * can be re-surfaced without rotation. Redemption still verifies ONLY against
+ * `secretHash`, so the stored token never weakens auth. `reset: true` remains
+ * the explicit ROTATE path (revoke prior + mint fresh), audited
+ * 'portal_link.reset'. The enqueue path (system actor, no user uid) calls
+ * `getOrCreateClientPortalLink` with `createdBy: 'system'` to obtain the stable
+ * token embedded in automated client notifications.
  */
 
 import {
@@ -100,11 +105,12 @@ export interface IMintedClientPortalLink {
 }
 
 /**
- * Revokes every active client portal link for the (project, client) pair and
- * mints a fresh one atomically — the one-active-link invariant. Rotate-on-issue
- * (D2): only `secretHash` is persisted; the raw token is returned in-memory to
- * the caller (Part B durable storage is deferred). Assumes the caller has
- * already authorized the actor and validated the project/client.
+ * ROTATE path: revokes every active client portal link for the (project,
+ * client) pair and mints a fresh one atomically — the one-active-link
+ * invariant. #142 (Part B): the raw URL `token` is now persisted plaintext on
+ * the doc (rules-denied) so `getOrCreateClientPortalLink` can re-surface it;
+ * `secretHash` remains the ONLY value compared on redeem. Assumes the caller
+ * has already authorized the actor and validated the project/client.
  */
 export async function mintClientPortalLink(
   db: Firestore,
@@ -144,6 +150,11 @@ export async function mintClientPortalLink(
       id: linkRef.id,
       shortCode,
       secretHash: hashSecret(secret),
+      // Durable (#142, Part B): the raw URL token is retained so get-or-create /
+      // Copy / Send can re-surface the SAME url. magicLinks is denied to all
+      // clients in firestore.rules, so this never leaves the Admin SDK.
+      // Redemption still verifies against `secretHash`, never this field.
+      token,
       audience: 'client',
       scopeType: 'project',
       scopeId: projectId,
@@ -164,6 +175,59 @@ export async function mintClientPortalLink(
     linkId: linkRef.id,
     rotated,
   };
+}
+
+export interface IResolvedClientPortalLink extends IMintedClientPortalLink {
+  /** True when a fresh link was minted; false when an existing one was reused. */
+  created: boolean;
+}
+
+/**
+ * GET-OR-CREATE (#142, durable/reset-only): returns the (project, client)
+ * pair's active, unexpired link url unchanged when one with a re-surfaceable
+ * token exists; otherwise mints a fresh one (which also revokes any
+ * stale/tokenless active links). Never rotates a still-valid link — that is
+ * Reset's job — so in-flight WhatsApp links keep resolving (D-042). The enqueue
+ * path passes `issuerUid: 'system'` for the automated first mint.
+ */
+export async function getOrCreateClientPortalLink(
+  db: Firestore,
+  workspaceId: string,
+  projectId: string,
+  clientId: string,
+  issuerUid: string,
+): Promise<IResolvedClientPortalLink> {
+  const linksRef = db.collection(`workspaces/${workspaceId}/magicLinks`);
+  const nowMs = Date.now();
+
+  const active = await linksRef
+    .where('audience', '==', 'client')
+    .where('scopeType', '==', 'project')
+    .where('scopeId', '==', projectId)
+    .where('subjectId', '==', clientId)
+    .where('revoked', '==', false)
+    .get();
+
+  for (const snap of active.docs) {
+    const expiresAt = snap.get('expiresAt') as Timestamp | undefined;
+    const token = snap.get('token');
+    const expiresMs = typeof expiresAt?.toMillis === 'function' ? expiresAt.toMillis() : 0;
+    if (expiresMs > nowMs && typeof token === 'string' && token !== '') {
+      return {
+        url: buildPortalUrl(portalOrigin.value(), token),
+        token,
+        expiresAt: expiresAt as Timestamp,
+        linkId: snap.id,
+        rotated: false,
+        created: false,
+      };
+    }
+  }
+
+  // No re-surfaceable link: the transactional mint revokes any stale/tokenless
+  // active links and sets the fresh durable one (one-active-link invariant).
+  const minted = await mintClientPortalLink(db, workspaceId, projectId, clientId, issuerUid);
+  return { ...minted, created: true };
 }
 
 export const issuePortalLink = onCall(async (request) => {
@@ -199,23 +263,47 @@ export const issuePortalLink = onCall(async (request) => {
   }
   const clientId = projectSnap.get('clientId') as string;
 
-  const { url, expiresAt, linkId, rotated } = await mintClientPortalLink(
+  if (reset) {
+    // ROTATE: revoke the active link and mint a fresh one (explicit Reset).
+    const { url, expiresAt, linkId } = await mintClientPortalLink(
+      db,
+      workspaceId,
+      projectId,
+      clientId,
+      uid,
+    );
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: uid,
+      action: 'portal_link.reset',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
+      ...callableRequestMeta(request),
+    });
+    return { url, expiresAt: expiresAt.toDate().toISOString() };
+  }
+
+  // GET-OR-CREATE: idempotent Copy — reuse the active durable link if present.
+  const { url, expiresAt, linkId, created } = await getOrCreateClientPortalLink(
     db,
     workspaceId,
     projectId,
     clientId,
     uid,
   );
-
-  await writeAuditLog(workspaceId, {
-    actorType: 'user',
-    actorId: uid,
-    action: reset || rotated ? 'portal_link.reset' : 'portal_link.issue',
-    targetType: 'magicLink',
-    targetId: linkId,
-    after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
-    ...callableRequestMeta(request),
-  });
+  if (created) {
+    // Only first-ever creation is audited; re-surfacing is not (lightweight).
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: uid,
+      action: 'portal_link.issue',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
+      ...callableRequestMeta(request),
+    });
+  }
 
   return {
     url,

@@ -42,6 +42,13 @@ export interface ITaskStatusChangeVars extends IBaseTemplateVars {
   taskTitle: string;
   newStatus: string;
   projectTitle: string;
+  /**
+   * #142 (Part B): token-only — the bare `{shortCode}_{secret}` durable client
+   * portal token, NOT a full URL. The static `https://siapp.app/p/` prefix is
+   * baked into the template body; the emitted `variables` map uses the
+   * snake_case key `portal_token`.
+   */
+  portalToken: string;
 }
 
 export interface ITaskDueSoonVars extends IBaseTemplateVars {
@@ -56,6 +63,15 @@ export interface ITaskBlockedVars extends IBaseTemplateVars {
   trigger: 'task_blocked';
   taskTitle: string;
   projectTitle: string;
+  /** #22 (D-d): the client-facing "on hold" reason (emitted key `blocked_reason`). */
+  blockedReason: string;
+  /**
+   * #142 (Part B): token-only — the bare `{shortCode}_{secret}` durable client
+   * portal token, NOT a full URL. The static `https://siapp.app/p/` prefix is
+   * baked into the template body; the emitted `variables` map uses the
+   * snake_case key `portal_token`.
+   */
+  portalToken: string;
 }
 
 export interface INeedHelpVars extends IBaseTemplateVars {
