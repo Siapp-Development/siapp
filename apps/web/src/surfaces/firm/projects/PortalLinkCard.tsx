@@ -35,12 +35,17 @@ function formatExpiry(iso: string): string {
 }
 
 /**
- * Firm-side portal link controls (#21, D2) in the project Details tab.
- * Every issue rotates the link (only the secret's hash is at rest), so
- * "Copy" both mints and invalidates earlier links; "Reset" is the explicit,
- * confirm-guarded variant that audit-logs as portal_link.reset. "Send portal
- * link" (#137, Part C) mints a fresh link and enqueues it over WhatsApp,
- * honouring the client's opt-out / consent.
+ * Firm-side portal link controls (#21, D2) in the project Details tab for a
+ * project's ONE durable, client-scoped portal link.
+ *
+ * Durable, reset-only: "Copy" and "Send portal link" (#137, Part C) are
+ * idempotent — they get-or-create and re-surface the SAME link every time, so
+ * earlier links keep working (no rotation or invalidation per press). Only the
+ * explicit, confirm-guarded "Reset link" rotates (audit-logged as
+ * portal_link.reset). The reusable link token lives on the server-only client
+ * magicLink doc, which stays rules-denied (magicLinks: read/write false).
+ * "Send portal link" also enqueues the link over WhatsApp, honouring the
+ * client's opt-out / consent.
  */
 export function PortalLinkCard({
   workspaceId,
@@ -114,7 +119,7 @@ export function PortalLinkCard({
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              Links last 90 days. Copying issues a fresh link — earlier links stop working.
+              Links last 90 days. Copy and Send re-surface the same link — earlier links keep working. Only Reset rotates it.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
