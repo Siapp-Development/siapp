@@ -25,6 +25,7 @@ import { isOptedOut } from './optOut.js';
 import { hasWaConsent } from './pdpa.js';
 import { holdUntilFor, mytDateString, resolveQuietHours, type IQuietHours } from './quietHours.js';
 import { resolveNotify, type ITaskNotifyConfig } from './notifyConfig.js';
+import { getOrCreateClientPortalLink } from '../callables/issuePortalLink.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
 // NodeNext build cannot consume) — pm_ux/plans/21-cost-estimation.md §2.8.
@@ -45,17 +46,22 @@ const TEMPLATE_NAMES: Record<TTaskTrigger, string> = {
 };
 
 /**
- * #137 Part D: `task_due_soon` always targets the task's INTERNAL assignees
- * (firm members) and NEVER the client, independent of the workspace
- * toClient/toInternal toggles. Every other trigger honours the persisted config
- * unchanged. Returns a fresh object — the stored config is never mutated, and
- * status-change/blocked routing is byte-for-byte identical (the same reference).
+ * Routing overrides that ignore the workspace toClient/toInternal toggles for
+ * the trigger-scoped decisions locked in #137/#142. Returns a fresh object — the
+ * stored config is never mutated.
+ *
+ * - `task_due_soon` (#137 Part D): INTERNAL-only — always the task's member
+ *   assignees, never the client (link-less).
+ * - `task_status_change` / `task_blocked` (#142 Part B, Q4): CLIENT-only — these
+ *   carry the client durable portal link, so force toInternal OFF (a firm member
+ *   must never receive a client-portal-link template with an empty/em-dash
+ *   `portal_token`) and toClient ON.
  */
 function effectiveNotifyFor(trigger: TTaskTrigger, notify: ITaskNotifyConfig): ITaskNotifyConfig {
   if (trigger === 'task_due_soon') {
     return { ...notify, toClient: false, toInternal: true };
   }
-  return notify;
+  return { ...notify, toClient: true, toInternal: false };
 }
 
 export interface IPlannedMessage {
@@ -78,6 +84,14 @@ export interface IPlanTaskNotificationsInput {
   firmName: string;
   /** #24 D2: read-only workspace — every record suppressed 'billing'. */
   billingReadOnly?: boolean;
+  /**
+   * #142 (Part B): the resolved durable client portal token
+   * (`{shortCode}_{secret}`) embedded as `portal_token` for the CLIENT-facing
+   * `task_status_change` / `task_blocked` templates. Resolved ONCE per event by
+   * `enqueueTaskEvent` (system actor) only when the project is published and a
+   * sendable client exists; undefined/empty otherwise (those records never send).
+   */
+  clientPortalToken?: string;
   now: Date;
 }
 
@@ -159,8 +173,10 @@ function templateVariables(input: IPlanTaskNotificationsInput): Record<string, s
   const title = input.taskData['title'];
   const projectName = input.projectData?.['name'];
   // snake_case keys (#137 Part A): these ARE the wire contract — they must match
-  // the approved Meta template's NAMED variables exactly (Finding 1). No link
-  // variable is emitted yet (portal_link/task_link population is deferred Part B).
+  // the approved Meta template's NAMED variables exactly (Finding 1). #142
+  // (Part B): the CLIENT-facing status_change/blocked templates also emit the
+  // bare durable `portal_token` (resolved in enqueueTaskEvent, empty when the
+  // record is suppressed/draft — those never send).
   const variables: Record<string, string> = {
     task_title: typeof title === 'string' ? title : '',
     project_title: typeof projectName === 'string' ? projectName : '',
@@ -169,11 +185,15 @@ function templateVariables(input: IPlanTaskNotificationsInput): Record<string, s
   if (input.trigger === 'task_status_change') {
     const status = input.taskData['status'];
     variables['new_status'] = typeof status === 'string' ? status : '';
+    // #142 (Part B): bare durable client portal token; empty when unresolved.
+    variables['portal_token'] = input.clientPortalToken ?? '';
   }
   if (input.trigger === 'task_blocked') {
     // #22 (D-d): the need-help reason lands in the task_blocked template.
     const reason = input.taskData['blockedReason'];
     variables['blocked_reason'] = typeof reason === 'string' ? reason : '';
+    // #142 (Part B): bare durable client portal token; empty when unresolved.
+    variables['portal_token'] = input.clientPortalToken ?? '';
   }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
@@ -310,17 +330,43 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
   }
 
   const firmName = typeof workspaceData?.['name'] === 'string' ? workspaceData['name'] : '';
+  const clientData = clientSnap?.data();
+
+  // #142 (Part B): resolve the client's ONE durable portal link ONCE per event
+  // for the CLIENT-facing status_change/blocked templates — ONLY when the
+  // project is published, the workspace can send, and a consented, phone-bearing
+  // client exists (a suppressed record would never send, so no link is minted).
+  // Get-or-create reuses the existing link, so two events for the same (project,
+  // client) embed the SAME token (D-042). System actor (Q5): createdBy 'system',
+  // no extra audit entry from the enqueue path.
+  let clientPortalToken: string | undefined;
+  if (
+    (trigger === 'task_status_change' || trigger === 'task_blocked') &&
+    projectData?.['lifecycle'] === 'published' &&
+    workspaceData?.['billingStatus'] !== 'read_only' &&
+    typeof clientId === 'string' &&
+    clientId !== '' &&
+    clientData !== undefined &&
+    !isOptedOut(clientData) &&
+    hasWaConsent(clientData) &&
+    phoneOf(clientData) !== null
+  ) {
+    const link = await getOrCreateClientPortalLink(db, workspaceId, projectId, clientId, 'system');
+    clientPortalToken = link.token;
+  }
+
   const planned = planTaskNotifications({
     trigger,
     projectId,
     taskId,
     taskData,
     projectData,
-    clientData: clientSnap?.data(),
+    clientData,
     memberProfiles,
     quietHours: resolveQuietHours(workspaceData),
     firmName,
     billingReadOnly: workspaceData?.['billingStatus'] === 'read_only',
+    clientPortalToken,
     now,
   });
 
