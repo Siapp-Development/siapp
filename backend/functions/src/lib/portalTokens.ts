@@ -88,6 +88,30 @@ export function buildPortalUrl(origin: string, token: string): string {
   return `${base}/p/${token}`;
 }
 
+/**
+ * Deterministic get-or-create anchor doc id for a client portal link, keyed by
+ * the `(workspaceId, projectId, clientId)` triple (#142, Part B concurrency
+ * fix). Every mint for the same triple derives the SAME id, so all concurrent
+ * `getOrCreateClientPortalLink` transactions read ONE deterministic docRef and
+ * contend on it — Firestore serializes those reads, aborting+retrying all but
+ * one, which guarantees a single active link (empty-result QUERIES do not
+ * serialize; a specific-docRef read does). The anchor is a pointer doc stored
+ * INSIDE the rules-denied `magicLinks` collection; it carries no `shortCode`,
+ * `audience`, `subjectId` or `revoked` field, so the redeem collection-group
+ * lookup and the deletePersonalData / revoke sweeps never match it. The
+ * `anchor_` prefix + SHA-256 hex keeps it disjoint from 20-char auto-ids.
+ */
+export function portalLinkAnchorId(
+  workspaceId: string,
+  projectId: string,
+  clientId: string,
+): string {
+  const digest = createHash('sha256')
+    .update(`${workspaceId}:${projectId}:${clientId}`)
+    .digest('hex');
+  return `anchor_${digest}`;
+}
+
 /** Mirrors COLLAB_LINK_TTL_DAYS in @siapp/shared (#22). */
 export const COLLAB_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
