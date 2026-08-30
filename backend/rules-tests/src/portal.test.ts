@@ -119,6 +119,16 @@ beforeAll(async () => {
     revoked: false,
     expiresAt: Timestamp.fromMillis(Date.now() + 1_000_000),
   });
+  // #142 (Part B, concurrency fix): the deterministic per-triple get-or-create
+  // anchor is a pointer doc stored INSIDE the same rules-denied magicLinks
+  // collection. It must be fully server-only too (it exposes the active linkId).
+  await seedDoc(testEnv, `workspaces/${WKS_A}/magicLinks/anchor_portaltriplehash`, {
+    kind: 'portal-anchor',
+    activeLinkId: 'clientlink1',
+    workspaceId: WKS_A,
+    projectId: PROJ_PUB,
+    clientId: CLIENT_ID,
+  });
 });
 
 afterAll(async () => {
@@ -209,6 +219,18 @@ describe('portal project reads', () => {
     for (const role of ['owner', 'admin', 'pm', 'viewer'] as const) {
       await assertFails(getDoc(doc(dbAs(role), path)));
       await assertFails(getDocs(collection(dbAs(role), `workspaces/${WKS_A}/magicLinks`)));
+    }
+  });
+
+  it('keeps the get-or-create anchor pointer doc server-only — read + write denied (#142)', async () => {
+    const path = `workspaces/${WKS_A}/magicLinks/anchor_portaltriplehash`;
+    // The anchor lives in the already-denied magicLinks collection, so no rules
+    // change was needed; this asserts the pointer doc is covered by that deny.
+    await assertFails(getDoc(doc(dbAsPortal(), path)));
+    await assertFails(setDoc(doc(dbAsPortal(), path), { activeLinkId: 'attacker' }));
+    await assertFails(updateDoc(doc(dbAsPortal(), path), { activeLinkId: 'attacker' }));
+    for (const role of ['owner', 'admin', 'pm', 'viewer'] as const) {
+      await assertFails(getDoc(doc(dbAs(role), path)));
     }
   });
 
