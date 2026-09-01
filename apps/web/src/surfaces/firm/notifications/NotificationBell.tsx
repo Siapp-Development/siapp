@@ -39,7 +39,7 @@ export function NotificationBell({ workspaceId, workspaceSlug, uid }: Notificati
   );
 
   return (
-    <Popover open={open} onClose={() => setOpen(false)} trigger={trigger} align="end" className="p-0">
+    <Popover open={open} onClose={() => setOpen(false)} trigger={trigger} align="start" className="p-0">
       <NotificationPanel
         workspaceId={workspaceId}
         workspaceSlug={workspaceSlug}
