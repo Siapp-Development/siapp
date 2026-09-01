@@ -29,6 +29,7 @@ import { useTags, type ITagEntry } from '../tags/useTags.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import { TaskStatusRing } from './TaskStatusRing.tsx';
 import { TimelineView } from './TimelineView.tsx';
+import { useCollapsedTaskGroups } from './useCollapsedTaskGroups.ts';
 import {
   createPhase,
   createTask,
@@ -372,7 +373,7 @@ export function TasksSection({
   const taskTags = useTags(workspaceId, 'task');
 
   const [view, setView] = useState<'list' | 'timeline'>('list');
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { collapsed, setCollapsed } = useCollapsedTaskGroups(projectId);
   const [selectedId, setSelectedId] = useState<string | null>(deepLinkedTaskId);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [reorderPendingByGroup, setReorderPendingByGroup] = useState<ReadonlySet<string>>(new Set());
@@ -469,7 +470,15 @@ export function TasksSection({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [deepLinkedTaskId, taskRows, phaseIds, onSelectedTaskChange, tasksState.status, phasesState.status]);
+  }, [
+    deepLinkedTaskId,
+    taskRows,
+    phaseIds,
+    onSelectedTaskChange,
+    tasksState.status,
+    phasesState.status,
+    setCollapsed,
+  ]);
 
   useEffect(() => {
     if (activeDrag === null) {
