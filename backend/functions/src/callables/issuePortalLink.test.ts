@@ -20,7 +20,12 @@ vi.mock('firebase-admin/firestore', () => ({
   },
 }));
 
-import { PORTAL_ISSUABLE_LIFECYCLES, issueBlocker, mintClientPortalLink } from './issuePortalLink.js';
+import {
+  PORTAL_ISSUABLE_LIFECYCLES,
+  getOrCreateClientPortalLink,
+  issueBlocker,
+  mintClientPortalLink,
+} from './issuePortalLink.js';
 
 describe('issueBlocker', () => {
   it('allows published and completed projects with a linked client', () => {
@@ -63,87 +68,166 @@ describe('issueBlocker', () => {
 });
 
 
-interface IActiveDoc {
-  ref: { id: string; updates: Record<string, unknown>[] };
-}
+import { makeFakeMagicLinksDb } from './__fixtures__/fakeMagicLinksDb.js';
 
-function activeDoc(id: string): IActiveDoc {
-  const updates: Record<string, unknown>[] = [];
-  return { ref: { id, updates } };
-}
+const WID = 'w1';
+const PID = 'p1';
+const CID = 'c1';
 
-function makeMintDb(activeDocs: IActiveDoc[]) {
-  const created: { id: string; data: Record<string, unknown> }[] = [];
-  let auto = 0;
-  const query = { where: () => query };
-  const linksRef = {
-    where: () => query,
-    doc: () => ({ id: `newlink${(auto += 1)}` }),
-  };
-  const tx = {
-    get: () => Promise.resolve({ docs: activeDocs, empty: activeDocs.length === 0 }),
-    update: (ref: { updates: Record<string, unknown>[] }, data: Record<string, unknown>) => {
-      ref.updates.push(data);
-    },
-    set: (ref: { id: string }, data: Record<string, unknown>) => {
-      created.push({ id: ref.id, data });
-    },
-  };
-  const db = {
-    collection: () => linksRef,
-    runTransaction: (fn: (t: typeof tx) => Promise<boolean>) => fn(tx),
-  } as never;
-  return { db, created };
-}
-
-describe('mintClientPortalLink (rotate-on-issue, #137 extraction)', () => {
-  it('mints a fresh, one-active link when none exists (rotated:false)', async () => {
-    const { db, created } = makeMintDb([]);
-
-    const result = await mintClientPortalLink(db, 'w1', 'p1', 'c1', 'u-owner');
-
-    expect(created).toHaveLength(1);
-    expect(created[0].data).toMatchObject({
+/** A seeded active, unexpired, tokenful client link doc + its anchor pointer. */
+function seedActiveLink(
+  id: string,
+  overrides: Record<string, unknown> = {},
+): { id: string; data: Record<string, unknown> } {
+  return {
+    id,
+    data: {
+      id,
+      shortCode: `${id}shortcode`,
+      secretHash: 'hash',
+      token: `${id}shortcode_secretvalue`,
       audience: 'client',
       scopeType: 'project',
-      scopeId: 'p1',
-      subjectId: 'c1',
+      scopeId: PID,
+      subjectId: CID,
+      revoked: false,
+      expiresAt: { toMillis: () => Date.now() + 1_000_000, toDate: () => new Date() },
+      ...overrides,
+    },
+  };
+}
+
+/**
+ * Seeds the deterministic anchor pointer for the (WID, PID, CID) triple so
+ * get-or-create / reset resolve the seeded active link. Mirrors what a prior
+ * mint would have written.
+ */
+async function anchorFor(activeLinkId: string): Promise<{ id: string; data: Record<string, unknown> }> {
+  const { portalLinkAnchorId } = await import('../lib/portalTokens.js');
+  return {
+    id: portalLinkAnchorId(WID, PID, CID),
+    data: { kind: 'portal-anchor', activeLinkId, workspaceId: WID, projectId: PID, clientId: CID },
+  };
+}
+
+describe('mintClientPortalLink (rotate-on-issue, anchor transaction #142)', () => {
+  it('mints a fresh, one-active link when no anchor exists (rotated:false)', async () => {
+    const { db, store, activeClientLinks } = makeFakeMagicLinksDb();
+
+    const result = await mintClientPortalLink(db, WID, PID, CID, 'u-owner');
+
+    const active = activeClientLinks();
+    expect(active).toHaveLength(1);
+    expect(active[0].data).toMatchObject({
+      audience: 'client',
+      scopeType: 'project',
+      scopeId: PID,
+      subjectId: CID,
       revoked: false,
       createdBy: 'u-owner',
     });
     expect(result.rotated).toBe(false);
-    expect(result.linkId).toBe(created[0].id);
+    expect(result.linkId).toBe(active[0].id);
     // A fresh, non-empty bare token — {shortCode}_{secret}, never a URL.
     expect(result.token).toMatch(/^[a-zA-Z0-9]{12}_/);
     expect(result.token).not.toMatch(/^https?:/);
-    // The full URL wraps that same token on the /p portal path (origin comes
-    // from the PORTAL_ORIGIN param, unset in the unit env).
     expect(result.url).toMatch(new RegExp(`/p/${result.token}$`));
+    // The anchor now points at the freshly minted link.
+    const { portalLinkAnchorId } = await import('../lib/portalTokens.js');
+    expect(store.get(portalLinkAnchorId(WID, PID, CID))?.data['activeLinkId']).toBe(result.linkId);
   });
 
-  it('preserves rotate semantics: revokes EVERY prior active link (rotated:true)', async () => {
-    const a = activeDoc('old1');
-    const b = activeDoc('old2');
-    const { db, created } = makeMintDb([a, b]);
+  it('rotate revokes the anchor\'s prior active link (rotated:true)', async () => {
+    const prior = seedActiveLink('old1');
+    const { db, activeClientLinks, store } = makeFakeMagicLinksDb({
+      links: [prior, await anchorFor('old1')],
+    });
 
-    const result = await mintClientPortalLink(db, 'w1', 'p1', 'c1', 'u-owner');
+    const result = await mintClientPortalLink(db, WID, PID, CID, 'u-owner');
 
-    expect(a.ref.updates[0]).toMatchObject({ revoked: true, revokedBy: 'u-owner' });
-    expect(b.ref.updates[0]).toMatchObject({ revoked: true, revokedBy: 'u-owner' });
-    expect(created).toHaveLength(1);
+    expect(store.get('old1')?.data).toMatchObject({ revoked: true, revokedBy: 'u-owner' });
+    const active = activeClientLinks();
+    expect(active).toHaveLength(1);
+    expect(active[0].id).not.toBe('old1');
     expect(result.rotated).toBe(true);
   });
 
-  it('never persists the plaintext token/secret — only its SHA-256 hash at rest', async () => {
-    const { db, created } = makeMintDb([]);
+  it('persists the durable plaintext token (rules-denied) but NEVER the bare secret (#142)', async () => {
+    const { db, activeClientLinks } = makeFakeMagicLinksDb();
 
-    const result = await mintClientPortalLink(db, 'w1', 'p1', 'c1', 'u-owner');
+    const result = await mintClientPortalLink(db, WID, PID, CID, 'u-owner');
 
-    const stored = created[0].data;
+    const stored = activeClientLinks()[0].data;
     expect(typeof stored['secretHash']).toBe('string');
-    expect(stored).not.toHaveProperty('token');
+    expect(stored['token']).toBe(result.token);
     expect(stored).not.toHaveProperty('secret');
-    // The stored hash is not the raw secret (Part B durable storage deferred).
     expect(stored['secretHash']).not.toBe(result.token);
+  });
+});
+
+describe('getOrCreateClientPortalLink (#142 durable, idempotent, anchored)', () => {
+  it('reuses the anchored active, unexpired, tokenful link — SAME url, no mint (D-042)', async () => {
+    const existing = seedActiveLink('link-existing');
+    const { db, store } = makeFakeMagicLinksDb({ links: [existing, await anchorFor('link-existing')] });
+    const before = store.size;
+
+    const result = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+
+    expect(result.created).toBe(false);
+    expect(result.linkId).toBe('link-existing');
+    expect(result.token).toBe('link-existingshortcode_secretvalue');
+    expect(result.url).toMatch(/\/p\/link-existingshortcode_secretvalue$/);
+    expect(store.size).toBe(before); // no new doc minted
+  });
+
+  it('returns the SAME token on repeated calls (in-flight WhatsApp links never 404)', async () => {
+    const existing = seedActiveLink('link-existing');
+    const { db } = makeFakeMagicLinksDb({ links: [existing, await anchorFor('link-existing')] });
+
+    const first = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+    const second = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+
+    expect(second.token).toBe(first.token);
+    expect(second.created).toBe(false);
+  });
+
+  it('mints a fresh durable link with createdBy:system when no anchor exists (created:true)', async () => {
+    const { db, activeClientLinks } = makeFakeMagicLinksDb();
+
+    const result = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+
+    expect(result.created).toBe(true);
+    const active = activeClientLinks();
+    expect(active).toHaveLength(1);
+    expect(active[0].data).toMatchObject({ audience: 'client', createdBy: 'system' });
+    expect(active[0].data['token']).toBe(result.token);
+  });
+
+  it('mints fresh AND revokes the prior when the anchored link is expired', async () => {
+    const stale = seedActiveLink('old-expired', {
+      expiresAt: { toMillis: () => Date.now() - 60_000, toDate: () => new Date() },
+    });
+    const { db, store, activeClientLinks } = makeFakeMagicLinksDb({
+      links: [stale, await anchorFor('old-expired')],
+    });
+
+    const result = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+
+    expect(result.created).toBe(true);
+    expect(store.get('old-expired')?.data['revoked']).toBe(true);
+    expect(activeClientLinks()).toHaveLength(1);
+    expect(activeClientLinks()[0].id).toBe(result.linkId);
+  });
+
+  it('mints fresh when the anchored link has no re-surfaceable token', async () => {
+    const tokenless = seedActiveLink('link-tokenless', { token: '' });
+    const { db, activeClientLinks } = makeFakeMagicLinksDb({
+      links: [tokenless, await anchorFor('link-tokenless')],
+    });
+
+    const result = await getOrCreateClientPortalLink(db, WID, PID, CID, 'system');
+
+    expect(result.created).toBe(true);
+    expect(activeClientLinks()[0].id).toBe(result.linkId);
   });
 });

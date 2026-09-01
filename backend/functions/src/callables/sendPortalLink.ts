@@ -4,10 +4,11 @@
  * it mints the client portal link and ENQUEUES a `messages` doc using the
  * `project_welcome` trigger (template `siapp_project_welcome_v1_en`).
  *
- * Per-action mint (C-6): reuses the EXISTING rotate-on-issue mint
- * (`mintClientPortalLink`) — the same behaviour the firm-app "Copy portal link"
- * button already triggers — so the message captures a FRESH, working URL at send
- * time. No durable-link storage and no at-rest-secret change (Part B, deferred).
+ * Durable link (#142, C-6): resolves the client's ONE durable portal link via
+ * `getOrCreateClientPortalLink` — the SAME stable url the firm-app "Copy portal
+ * link" button and the automated task notifications surface — so the send no
+ * longer rotates the link on each press (rotation is now an explicit `reset` on
+ * `issuePortalLink`). In-flight WhatsApp links keep resolving (D-042).
  *
  * DELIVERY: this callable enqueues a `messages` doc which the scheduled dispatch
  * sweep (`sweepMessageQueue`, #133) delivers over WhatsApp once Twilio config is
@@ -24,7 +25,11 @@ import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { isOptedOut } from '../lib/optOut.js';
 import { hasWaConsent } from '../lib/pdpa.js';
 import { mytDateString } from '../lib/quietHours.js';
-import { issueBlocker, mintClientPortalLink, requirePortalLinkIssuer } from './issuePortalLink.js';
+import {
+  getOrCreateClientPortalLink,
+  issueBlocker,
+  requirePortalLinkIssuer,
+} from './issuePortalLink.js';
 
 /** Mirrors WA_UTILITY_COST_MYR in @siapp/shared. */
 const WA_UTILITY_COST_MYR = 0.1;
@@ -121,9 +126,10 @@ export const sendPortalLink = onCall(async (request) => {
   const projectTitle = typeof projectSnap.get('name') === 'string' ? projectSnap.get('name') : '';
   const projectDueDate = projectDueDateOf(projectSnap.get('targetEndDate'));
 
-  // Per-action mint (C-6): capture a FRESH working token at send time — the same
-  // rotate-on-issue behaviour the "Copy portal link" button already triggers.
-  const { token, expiresAt, linkId, rotated } = await mintClientPortalLink(
+  // Durable get-or-create (C-6): re-surface the client's ONE stable portal link
+  // (never rotates a still-valid link) so this send matches the automated
+  // notifications and earlier links keep working.
+  const { token, expiresAt, linkId, created } = await getOrCreateClientPortalLink(
     db,
     workspaceId,
     projectId,
@@ -157,22 +163,24 @@ export const sendPortalLink = onCall(async (request) => {
     createdAt: Timestamp.now(),
   });
 
-  // Mirror issuePortalLink audit: a rotation (a prior active link revoked) is
-  // portal_link.reset; a first-ever mint is portal_link.issue.
-  await writeAuditLog(workspaceId, {
-    actorType: 'user',
-    actorId: uid,
-    action: rotated ? 'portal_link.reset' : 'portal_link.issue',
-    targetType: 'magicLink',
-    targetId: linkId,
-    after: {
-      projectId,
-      clientId,
-      channel: 'whatsapp',
-      expiresAt: expiresAt.toDate().toISOString(),
-    },
-    ...callableRequestMeta(request),
-  });
+  // Mirror sendCollaboratorLink audit: only a first-ever mint is audited
+  // ('portal_link.issue'); re-surfacing an existing durable link is not.
+  if (created) {
+    await writeAuditLog(workspaceId, {
+      actorType: 'user',
+      actorId: uid,
+      action: 'portal_link.issue',
+      targetType: 'magicLink',
+      targetId: linkId,
+      after: {
+        projectId,
+        clientId,
+        channel: 'whatsapp',
+        expiresAt: expiresAt.toDate().toISOString(),
+      },
+      ...callableRequestMeta(request),
+    });
+  }
 
   return { status: 'queued' as const, expiresAt: expiresAt.toDate().toISOString() };
 });

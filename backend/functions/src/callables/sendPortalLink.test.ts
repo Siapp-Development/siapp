@@ -2,9 +2,9 @@
  * sendPortalLink (#137, Part C): the on-demand "Send portal link" callable —
  * the client analog of sendCollaboratorLink. Exercised through the onCall
  * handler (`.run`) against an in-memory Firestore fake so the full gate chain
- * (role → D-027 → opt-out/consent → per-action mint → enqueue → audit) is
- * covered without emulators. The rotate-on-issue mint is stubbed here (its own
- * semantics are unit-tested in issuePortalLink's mint tests) so these assert the
+ * (role → D-027 → opt-out/consent → durable get-or-create → enqueue → audit) is
+ * covered without emulators. The durable get-or-create is stubbed here (its own
+ * semantics are unit-tested in issuePortalLink's link tests) so these assert the
  * ENQUEUE contract: the snake_case, token-only `variables` map.
  */
 
@@ -35,14 +35,14 @@ vi.mock('../lib/auditLog.js', () => ({
 }));
 
 // Keep the real role gate (requirePortalLinkIssuer) and D-027 gate
-// (issueBlocker); stub only the mint so we assert the enqueue passes the fresh
-// token straight through to `portal_token`.
+// (issueBlocker); stub only the durable get-or-create so we assert the enqueue
+// passes the resolved token straight through to `portal_token`.
 vi.mock('./issuePortalLink.js', async (importActual) => {
   const actual = await importActual<typeof import('./issuePortalLink.js')>();
-  return { ...actual, mintClientPortalLink: vi.fn() };
+  return { ...actual, getOrCreateClientPortalLink: vi.fn() };
 });
 
-import { mintClientPortalLink } from './issuePortalLink.js';
+import { getOrCreateClientPortalLink } from './issuePortalLink.js';
 import { mytDateString } from '../lib/quietHours.js';
 import { PROJECT_WELCOME_TEMPLATE, sendPortalLink } from './sendPortalLink.js';
 
@@ -123,16 +123,17 @@ function request(
   } as unknown as CallableRequest;
 }
 
-const mintFn = mintClientPortalLink as unknown as Mock;
+const resolveFn = getOrCreateClientPortalLink as unknown as Mock;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mintFn.mockResolvedValue({
+  resolveFn.mockResolvedValue({
     url: `https://siapp.app/p/${MINTED_TOKEN}`,
     token: MINTED_TOKEN,
     expiresAt: EXPIRES,
     linkId: 'link1',
     rotated: false,
+    created: true,
   });
 });
 
@@ -224,7 +225,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     expect(result).toEqual({ status: 'opted_out' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -240,7 +241,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     expect(result).toEqual({ status: 'no_consent' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -256,7 +257,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     expect(result).toEqual({ status: 'no_phone' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
@@ -270,7 +271,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     expect(await sendPortalLink.run(request())).toEqual({ status: 'no_phone' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
   });
 
   it('treats a granted:false refusal record as no_consent', async () => {
@@ -296,7 +297,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     hoisted.db = db;
     expect(await sendPortalLink.run(request())).toEqual({ status: 'opted_out' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
   });
 
   it('reports no_consent (not no_phone) for a phone-less client without consent', async () => {
@@ -308,7 +309,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     hoisted.db = db;
     expect(await sendPortalLink.run(request())).toEqual({ status: 'no_consent' });
     expect(writes.messages).toHaveLength(0);
-    expect(mintFn).not.toHaveBeenCalled();
+    expect(resolveFn).not.toHaveBeenCalled();
   });
 });
 
@@ -323,8 +324,8 @@ describe('sendPortalLink — happy path enqueue shape', () => {
 
     const result = await sendPortalLink.run(request());
 
-    // Fresh, per-action mint against the correct (workspace, project, client).
-    expect(mintFn).toHaveBeenCalledWith(db, WID, PID, CID, 'u-owner');
+    // Durable get-or-create against the correct (workspace, project, client).
+    expect(resolveFn).toHaveBeenCalledWith(db, WID, PID, CID, 'u-owner');
 
     expect(result).toEqual({
       status: 'queued',
@@ -423,26 +424,27 @@ describe('sendPortalLink — happy path enqueue shape', () => {
     );
   });
 
-  it('audits a rotation as portal_link.reset when a prior link was revoked', async () => {
-    mintFn.mockResolvedValue({
+  it('does NOT audit when re-surfacing an existing durable link (created:false, C-6)', async () => {
+    resolveFn.mockResolvedValue({
       url: `https://siapp.app/p/${MINTED_TOKEN}`,
       token: MINTED_TOKEN,
       expiresAt: EXPIRES,
       linkId: 'link2',
-      rotated: true,
+      rotated: false,
+      created: false,
     });
-    const { db } = makeDb({
+    const { db, writes } = makeDb({
       project: PUBLISHED_PROJECT,
       workspace: WORKSPACE,
       client: CONSENTED_CLIENT,
     });
     hoisted.db = db;
 
-    await sendPortalLink.run(request());
+    const result = await sendPortalLink.run(request());
 
-    expect(auditMock.writeAuditLog).toHaveBeenCalledWith(
-      WID,
-      expect.objectContaining({ action: 'portal_link.reset', targetId: 'link2' }),
-    );
+    // Still enqueues the message (same stable link), but no audit on reuse.
+    expect(result).toMatchObject({ status: 'queued' });
+    expect(writes.messages).toHaveLength(1);
+    expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 });
