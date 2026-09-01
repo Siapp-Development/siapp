@@ -89,6 +89,13 @@ describe('FirmShell', () => {
     expect(screen.getByText('Alice Tan')).toBeInTheDocument();
   });
 
+  it('stacks the sidebar above page content so its popovers are not covered (#134)', () => {
+    const { container } = renderShell('/acme');
+
+    const sidebar = container.querySelector('aside');
+    expect(sidebar).toHaveClass('z-30');
+  });
+
   it('renders the projects list at /projects', () => {
     renderShell('/acme/projects');
 
