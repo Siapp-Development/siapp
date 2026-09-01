@@ -52,6 +52,17 @@ describe('NotificationBell', () => {
     );
   });
 
+  it('anchors the panel to the left of the bell so it opens into the content area, not off-screen (#134 regression)', async () => {
+    const user = userEvent.setup();
+    render(<NotificationBell workspaceId="wksA" workspaceSlug="acme" uid="me" />);
+
+    await user.click(screen.getByRole('button'));
+
+    const panelContainer = screen.getByTestId('panel').parentElement;
+    expect(panelContainer).toHaveClass('left-0');
+    expect(panelContainer).not.toHaveClass('right-0');
+  });
+
   it('closes on Escape and restores focus to the bell', async () => {
     const user = userEvent.setup();
     render(<NotificationBell workspaceId="wksA" workspaceSlug="acme" uid="me" />);

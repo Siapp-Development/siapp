@@ -151,7 +151,7 @@ export function FirmShell() {
       <SkipLink />
       <aside
         className={cn(
-          'on-dark sticky top-0 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none',
+          'on-dark sticky top-0 z-30 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none',
           collapsed ? 'w-16 px-2' : 'w-60 px-4',
         )}
       >

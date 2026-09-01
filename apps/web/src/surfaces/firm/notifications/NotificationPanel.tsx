@@ -177,7 +177,7 @@ function NotificationGroup({
       <h3 className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {heading}
       </h3>
-      <ul>
+      <ul className="space-y-1">
         {rows.map((row) => (
           <NotificationItem
             key={row.id}

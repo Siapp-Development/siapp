@@ -133,6 +133,9 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset persisted phase-group collapse state (useCollapsedTaskGroups) so it
+  // doesn't leak between tests. Guarded: some runtimes expose no localStorage.
+  window.localStorage?.clear();
   milestonesData.state = { status: 'ready', rows: [] };
   tasksData.phasesState = {
     status: 'ready',

@@ -118,6 +118,18 @@ describe('NotificationPanel', () => {
     expect(screen.queryByRole('button', { name: /load more/i })).not.toBeInTheDocument();
   });
 
+  it('renders notification rows with vertical spacing between them', () => {
+    hook.state = {
+      status: 'ready',
+      rows: [row({ id: 'a' }), row({ id: 'b' })],
+      hasMore: false,
+      loadingMore: false,
+    };
+    renderPanel();
+    const list = screen.getByRole('list');
+    expect(list).toHaveClass('space-y-1');
+  });
+
   it('renders a dialog with an accessible label', () => {
     hook.state = { status: 'ready', rows: [row()], hasMore: false, loadingMore: false };
     renderPanel();
