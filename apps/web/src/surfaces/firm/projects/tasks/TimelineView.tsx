@@ -223,7 +223,7 @@ function TimelineTaskRow({
         onClick={onSelect}
         aria-label={`${row.title} — ${TASK_STATUS_LABELS[row.status]}${overdue ? ', overdue' : ''}${dueLabel}${assigneeLabel}`}
         className={cn(
-          'absolute top-1/2 h-5 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
+          'absolute top-1/2 h-6 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
           'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
           hasBar
             ? (overdue ? 'bg-accent' : BAR_STATUS_CLASSES[row.status])
