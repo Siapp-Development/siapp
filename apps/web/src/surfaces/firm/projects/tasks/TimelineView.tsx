@@ -223,7 +223,7 @@ function TimelineTaskRow({
         onClick={onSelect}
         aria-label={`${row.title} — ${TASK_STATUS_LABELS[row.status]}${overdue ? ', overdue' : ''}${dueLabel}${assigneeLabel}`}
         className={cn(
-          'absolute top-1/2 h-4 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
+          'absolute top-1/2 h-5 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
           'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
           hasBar
             ? (overdue ? 'bg-accent' : BAR_STATUS_CLASSES[row.status])
@@ -252,11 +252,11 @@ function TimelineTaskRow({
               seed={assignee.id}
               photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
               aria-hidden="true"
-              className="ring-2 ring-card"
+              className="h-4 w-4 text-[0.5rem] ring-1 ring-card"
             />
           ))}
           {overflow > 0 && (
-            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[0.625rem] font-semibold text-muted-foreground ring-2 ring-card">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[0.5rem] font-semibold text-muted-foreground ring-1 ring-card">
               +{overflow}
             </span>
           )}
