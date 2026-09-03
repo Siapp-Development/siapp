@@ -217,14 +217,23 @@ describe('TimelineView (render)', () => {
     expect(bar.className).not.toContain('bg-accent');
   });
 
-  it('paints an in-progress (not overdue) bar with the primary color', () => {
+  it('paints an in-progress (not overdue) bar with the warning color to match its status ring', () => {
     renderTimeline([
       taskRow({ status: 'in_progress', startDate: day('2099-01-10'), dueDate: day('2099-01-20') }),
     ]);
 
     const bar = screen.getByRole('button', { name: /Draft plans — In progress/ });
-    expect(bar.className).toContain('bg-primary');
+    expect(bar.className).toContain('bg-warning');
     expect(bar.className).not.toContain('bg-accent');
+  });
+
+  it('paints a blocked bar with the danger color to match its status ring', () => {
+    renderTimeline([
+      taskRow({ status: 'blocked', startDate: day('2099-01-10'), dueDate: day('2099-01-20') }),
+    ]);
+
+    const bar = screen.getByRole('button', { name: /Draft plans — Blocked/ });
+    expect(bar.className).toContain('bg-danger');
   });
 
   it('re-scales the axis when the granularity changes (Days is denser than Months)', async () => {

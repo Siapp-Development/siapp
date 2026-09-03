@@ -27,6 +27,8 @@ import type { IPhaseRow, TTaskListRow } from './useTasks.ts';
 
 const LABEL_COL_PX = 224;
 const MAX_TIMELINE_AVATARS = 3;
+/** Gap (px) between the avatar stack's right edge and the bar's right edge, so avatars sit inside the bar. */
+const AVATAR_INSET_PX = 6;
 
 const GRANULARITY_OPTIONS: ReadonlyArray<{ value: TTimelineGranularity; label: string }> = [
   { value: 'day', label: 'Days' },
@@ -68,10 +70,11 @@ function isOverdue(status: TTaskStatus, dueDate: Date | null): boolean {
   return dueDate !== null && status !== 'done' && dueDate.getTime() < Date.now();
 }
 
+// Bar colors mirror the TaskStatusRing tokens so a bar matches its list-row status circle.
 const BAR_STATUS_CLASSES: Record<TTaskStatus, string> = {
   todo: 'bg-slate-300',
-  in_progress: 'bg-primary',
-  blocked: 'bg-warning',
+  in_progress: 'bg-warning',
+  blocked: 'bg-danger',
   done: 'bg-success',
 };
 
@@ -238,8 +241,8 @@ function TimelineTaskRow({
       {hasBar && assignees.length > 0 && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 flex -translate-y-1/2 items-center -space-x-1.5"
-          style={{ left: LABEL_COL_PX + left + width + 4 }}
+          className="pointer-events-none absolute top-1/2 flex -translate-x-full -translate-y-1/2 items-center -space-x-1.5"
+          style={{ left: LABEL_COL_PX + left + width - AVATAR_INSET_PX }}
         >
           {visibleAssignees.map((assignee) => (
             <Avatar
