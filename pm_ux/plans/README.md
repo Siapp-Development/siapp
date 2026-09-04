@@ -13,6 +13,7 @@ All non-code, decision-shaping documents for Siapp live here. See [.github/instr
 | [04-product-strengths.md](./04-product-strengths.md) | Differentiation, moats, objections, what we won't build |
 | [05-business-model.md](./05-business-model.md) | Revenue streams, unit economics, costs, acquisition motion |
 | [06-pricing-model.md](./06-pricing-model.md) | Tiers, overages, add-ons, discounts, experiments |
+| [25-pricing-model-market-fit.md](./25-pricing-model-market-fit.md) | Market-fit pricing proposal: flat-tier + seat band, grounded in current COGS; MVP single tier + post-MVP split (refreshes 06) |
 | [07-gtm-strategy.md](./07-gtm-strategy.md) | Positioning, phased plan, launch tactics, sales playbook |
 
 ### Company & brand
@@ -36,6 +37,7 @@ All non-code, decision-shaping documents for Siapp live here. See [.github/instr
 | [19-open-questions.md](./19-open-questions.md) | Outstanding questions with owners + due dates; blockers before sprint 1 |
 | [20-access-control-departments.md](./20-access-control-departments.md) | Internal access control via Departments (D-025); resolves internal half of Q11 |
 | [21-cost-estimation.md](./21-cost-estimation.md) | Product & service cost model (infra + 3rd-party only, no people): per-workspace COGS, scale projections, and reconciliation with pricing model |
+| [24-cost-estimation-current.md](./24-cost-estimation-current.md) | **Refresh of 21** — cost model grounded in the *actual deployed* stack (Sept 2026): lower fixed floor, all-utility WhatsApp, updated per-workspace COGS & scale projections |
 | [22-wireframe-review.md](./22-wireframe-review.md) | UX review of `designs/screens-wireframes.excalidraw` — issues, fixes, missing flows before hi-fi |
 | [23-design-system-research.md](./23-design-system-research.md) | Component library / design system evaluation — shadcn/ui + Radix + Tailwind recommended, with decision matrix and companion libs |
 | [decisions-log.md](./decisions-log.md) | Append-only record of resolved decisions; supersedes question rows when closed |
