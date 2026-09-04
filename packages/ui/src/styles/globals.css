@@ -171,8 +171,11 @@
   }
 
   /* Status chips and timeline bars encode meaning with fill color — make
-     browsers print those backgrounds instead of dropping them. */
-  * {
+     browsers print those backgrounds instead of dropping them. Scoped to the
+     portal print-only subtree (`.print-layout`, #151) so WebKit/iOS can still
+     drop backgrounds on the rest of the page (fixes slow iOS Print). */
+  .print-layout,
+  .print-layout * {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
