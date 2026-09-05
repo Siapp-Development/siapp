@@ -103,5 +103,7 @@ describe('PortalPrintLayout', () => {
     // PortalTaskTimeline uses the real clock here (no `now` prop), so assert
     // the bar exists and names the task without pinning a time-dependent status.
     expect(screen.getByRole('img', { name: /Kickoff —/, hidden: true })).toBeInTheDocument();
+    // Print path renders no granularity switcher (fitToWidth hides it).
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 });

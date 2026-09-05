@@ -35,13 +35,6 @@ vi.mock('../../collaborators/useCollaborators.ts', () => ({
   useCollaborators: () => ({ status: 'ready', rows: [] }),
 }));
 
-const milestonesData = vi.hoisted(() => ({
-  state: { status: 'ready', rows: [] } as unknown,
-}));
-vi.mock('../milestones/useMilestones.ts', () => ({
-  useMilestones: () => milestonesData.state,
-}));
-
 vi.mock('./TaskDetailPanel.tsx', () => ({
   TaskDetailPanel: (props: { task: { id: string } }) => (
     <div data-testid="task-detail-panel" data-task-id={props.task.id} />
@@ -133,10 +126,11 @@ function renderSection(overrides: Partial<Parameters<typeof TasksSection>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // jsdom has no layout engine; the timeline's auto-center effect calls scrollTo.
+  Element.prototype.scrollTo = vi.fn();
   // Reset persisted phase-group collapse state (useCollapsedTaskGroups) so it
   // doesn't leak between tests. Guarded: some runtimes expose no localStorage.
   window.localStorage?.clear();
-  milestonesData.state = { status: 'ready', rows: [] };
   tasksData.phasesState = {
     status: 'ready',
     rows: [
@@ -747,7 +741,7 @@ describe('TasksSection', () => {
     expect(screen.getByTestId('current-task-param')).toHaveTextContent('t2');
   });
 
-  it('switches to the timeline view with bars, milestones and a today line', async () => {
+  it('switches to the timeline view with bars, a granularity switcher and a today line', async () => {
     const due = new Date();
     due.setDate(due.getDate() + 10);
     tasksData.tasksState = {
@@ -762,10 +756,6 @@ describe('TasksSection', () => {
         }),
       ],
     };
-    milestonesData.state = {
-      status: 'ready',
-      rows: [{ id: 'm1', name: 'Handover', targetDate: due, completedAt: null, order: 1 }],
-    };
     renderSection();
 
     await userEvent.click(screen.getByRole('button', { name: 'Timeline' }));
@@ -774,7 +764,9 @@ describe('TasksSection', () => {
     expect(
       screen.getByRole('button', { name: /pour foundation — in progress/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /milestone: handover/i })).toBeInTheDocument();
+    // The milestone lane has been removed (#147); a granularity switcher takes its place.
+    expect(screen.getByRole('radiogroup', { name: 'Timeline granularity' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /milestone/i })).not.toBeInTheDocument();
     expect(screen.getByTestId('timeline-today')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '→ Today' })).toBeInTheDocument();
     // Editing affordances live in the list view only.

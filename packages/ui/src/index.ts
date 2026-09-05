@@ -14,6 +14,12 @@ export { Input, type TInputProps } from './components/Input.tsx';
 export { Label, type TLabelProps } from './components/Label.tsx';
 export { Popover, type IPopoverProps } from './components/Popover.tsx';
 export { Progress, type IProgressProps } from './components/Progress.tsx';
+export {
+  SegmentedControl,
+  segmentVariants,
+  type ISegmentedControlProps,
+  type ISegmentedOption,
+} from './components/SegmentedControl.tsx';
 export { Separator, type ISeparatorProps } from './components/Separator.tsx';
 export { cn } from './lib/cn.ts';
 export {
@@ -29,3 +35,16 @@ export {
   type ITagColorClasses,
   type TTagColorKey,
 } from './lib/tagColor.ts';
+export {
+  TIMELINE_DAY_PX,
+  TIMELINE_GRANULARITIES,
+  TIMELINE_PAD_DAYS,
+  buildTimelineTicks,
+  paddedTimelineAxis,
+  timelineAddDays,
+  timelineDayStart,
+  timelineDiffDays,
+  type ITimelineAxis,
+  type ITimelineTick,
+  type TTimelineGranularity,
+} from './lib/timeline.ts';

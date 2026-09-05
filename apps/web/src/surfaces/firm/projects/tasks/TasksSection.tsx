@@ -21,7 +21,6 @@ import {
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
-import { useMilestones } from '../milestones/useMilestones.ts';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TaskProgressRing } from './TaskProgressRing.tsx';
 import { TagChipList } from '../tags/TagChipList.tsx';
@@ -369,7 +368,6 @@ export function TasksSection({
   const membersState = useMembers(workspaceId);
   const departmentsState = useDepartments(workspaceId);
   const collaboratorsState = useCollaborators(workspaceId);
-  const milestonesState = useMilestones(workspaceId, projectId);
   const taskTags = useTags(workspaceId, 'task');
 
   const [view, setView] = useState<'list' | 'timeline'>('list');
@@ -803,7 +801,7 @@ export function TasksSection({
           phases={phases}
           grouped={grouped}
           noPhaseKey={NO_PHASE}
-          milestones={milestonesState.status === 'ready' ? milestonesState.rows : []}
+          memberPhotos={memberPhotos}
           projectStart={projectStartDate}
           projectEnd={projectTargetDate}
           selectedId={selectedId}

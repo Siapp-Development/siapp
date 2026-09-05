@@ -1,110 +1,89 @@
 /**
  * Gantt-style timeline for the project board (wireframe A3, D-033): task
- * bars grouped by phase, a vertical "today" line, milestone diamonds, and
- * overdue bars in the warm accent color. Bars are buttons that open the
- * task-detail drawer; a "→ Today" control scrolls the viewport to now.
+ * bars grouped by phase, a vertical "today" line, and overdue bars in the
+ * warm accent color. A Day/Week/Month granularity switcher rescales the axis
+ * (default Months) and the view auto-centers on today. Bars are buttons that
+ * open the task-detail drawer and carry an overlapping assignee avatar stack;
+ * a "→ Today" control scrolls the viewport to now.
  */
 
-import { Button, cn } from '@siapp/ui';
+import {
+  Avatar,
+  Button,
+  SegmentedControl,
+  TIMELINE_DAY_PX,
+  buildTimelineTicks,
+  cn,
+  paddedTimelineAxis,
+  timelineDayStart,
+  timelineDiffDays,
+} from '@siapp/ui';
+import type { ITimelineAxis, TTimelineGranularity } from '@siapp/ui';
 import type { TTaskStatus } from '@siapp/shared';
-import { useMemo, useRef, type DragEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 
-import type { IMilestoneRow } from '../milestones/useMilestones.ts';
 import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import type { IPhaseRow, TTaskListRow } from './useTasks.ts';
 
-const DAY_PX = 6;
 const LABEL_COL_PX = 224;
-const MS_PER_DAY = 86_400_000;
+const MAX_TIMELINE_AVATARS = 3;
+/** Gap (px) between the avatar stack's right edge and the bar's right edge, so avatars sit inside the bar. */
+const AVATAR_INSET_PX = 6;
 
-function dayStart(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
-
-function diffDays(from: number, to: number): number {
-  return Math.round((to - from) / MS_PER_DAY);
-}
-
-export interface ITimelineRange {
-  /** Midnight timestamp of the first visible day. */
-  start: number;
-  /** Total days rendered. */
-  days: number;
-}
+const GRANULARITY_OPTIONS: ReadonlyArray<{ value: TTimelineGranularity; label: string }> = [
+  { value: 'day', label: 'Days' },
+  { value: 'week', label: 'Weeks' },
+  { value: 'month', label: 'Months' },
+];
 
 /**
- * Visible range: everything dated (project bounds, task bars, milestones)
- * plus a week of lead-in and two weeks of run-out, always including today.
+ * Visible range delegated to the shared padded axis: union of everything dated
+ * (project bounds + task bars) and today, padded generously per granularity so
+ * today is scrollable-to-center with empty past/future to scroll into.
  */
 export function timelineRange(
   rows: readonly TTaskListRow[],
-  milestones: readonly IMilestoneRow[],
   projectStart: Date | null,
   projectEnd: Date | null,
+  granularity: TTimelineGranularity,
   today: Date = new Date(),
-): ITimelineRange {
-  const dates: number[] = [dayStart(today)];
+): ITimelineAxis {
+  const dates: number[] = [];
   if (projectStart !== null) {
-    dates.push(dayStart(projectStart));
+    dates.push(timelineDayStart(projectStart));
   }
   if (projectEnd !== null) {
-    dates.push(dayStart(projectEnd));
+    dates.push(timelineDayStart(projectEnd));
   }
   for (const row of rows) {
     if (!row.restricted && row.startDate !== null) {
-      dates.push(dayStart(row.startDate));
+      dates.push(timelineDayStart(row.startDate));
     }
     if (row.dueDate !== null) {
-      dates.push(dayStart(row.dueDate));
+      dates.push(timelineDayStart(row.dueDate));
     }
   }
-  for (const milestone of milestones) {
-    if (milestone.targetDate !== null) {
-      dates.push(dayStart(milestone.targetDate));
-    }
-  }
-  const start = Math.min(...dates) - 7 * MS_PER_DAY;
-  const end = Math.max(...dates) + 14 * MS_PER_DAY;
-  return { start, days: diffDays(start, end) };
-}
-
-interface IMonthTick {
-  label: string;
-  offsetDays: number;
-}
-
-function monthTicks(range: ITimelineRange): IMonthTick[] {
-  const ticks: IMonthTick[] = [];
-  const cursor = new Date(range.start);
-  cursor.setDate(1);
-  if (dayStart(cursor) < range.start) {
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  while (dayStart(cursor) <= range.start + range.days * MS_PER_DAY) {
-    ticks.push({
-      label: cursor.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
-      offsetDays: diffDays(range.start, dayStart(cursor)),
-    });
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return ticks;
+  return paddedTimelineAxis(dates, granularity, today);
 }
 
 function isOverdue(status: TTaskStatus, dueDate: Date | null): boolean {
   return dueDate !== null && status !== 'done' && dueDate.getTime() < Date.now();
 }
 
+// Bar colors mirror the TaskStatusRing tokens so a bar matches its list-row status circle.
 const BAR_STATUS_CLASSES: Record<TTaskStatus, string> = {
   todo: 'bg-slate-300',
-  in_progress: 'bg-primary',
-  blocked: 'bg-warning',
+  in_progress: 'bg-warning',
+  blocked: 'bg-danger',
   done: 'bg-success',
 };
 
 interface ITimelineTaskRowProps {
   groupKey: string;
   row: TTaskListRow;
-  range: ITimelineRange;
+  range: ITimelineAxis;
+  dayPx: number;
+  memberPhotos: ReadonlyMap<string, string>;
   selected: boolean;
   showDragHandle: boolean;
   dragEnabled: boolean;
@@ -124,6 +103,8 @@ function TimelineTaskRow({
   groupKey,
   row,
   range,
+  dayPx,
+  memberPhotos,
   selected,
   showDragHandle,
   dragEnabled,
@@ -139,13 +120,24 @@ function TimelineTaskRow({
   const startDate = row.restricted ? row.dueDate : (row.startDate ?? row.dueDate);
   const endDate = row.dueDate ?? startDate;
   const hasBar = startDate !== null && endDate !== null;
-  const left = hasBar ? diffDays(range.start, dayStart(startDate)) * DAY_PX : 0;
+  const left = hasBar ? timelineDiffDays(range.start, timelineDayStart(startDate)) * dayPx : 0;
   const width = hasBar
-    ? Math.max((diffDays(dayStart(startDate), dayStart(endDate)) + 1) * DAY_PX, 12)
+    ? Math.max((timelineDiffDays(timelineDayStart(startDate), timelineDayStart(endDate)) + 1) * dayPx, 12)
     : 0;
   const overdue = isOverdue(row.status, row.dueDate);
   const dueLabel =
     row.dueDate !== null ? ` — due ${row.dueDate.toLocaleDateString()}` : '';
+
+  // Restricted header rows carry no assignees; only real task rows do.
+  const assignees = row.restricted ? [] : row.assignees;
+  const visibleAssignees = assignees.slice(0, MAX_TIMELINE_AVATARS);
+  const overflow = assignees.length - visibleAssignees.length;
+  const assigneeLabel =
+    assignees.length > 0
+      ? `, assigned to ${visibleAssignees.map((assignee) => assignee.name).join(', ')}${
+          overflow > 0 ? ` +${overflow}` : ''
+        }`
+      : '';
 
   return (
     <div
@@ -229,9 +221,9 @@ function TimelineTaskRow({
       <button
         type="button"
         onClick={onSelect}
-        aria-label={`${row.title} — ${TASK_STATUS_LABELS[row.status]}${overdue ? ', overdue' : ''}${dueLabel}`}
+        aria-label={`${row.title} — ${TASK_STATUS_LABELS[row.status]}${overdue ? ', overdue' : ''}${dueLabel}${assigneeLabel}`}
         className={cn(
-          'absolute top-1/2 h-4 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
+          'absolute top-1/2 h-6 -translate-y-1/2 cursor-pointer rounded-full transition duration-150 hover:brightness-95 hover:shadow-sm',
           'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
           hasBar
             ? (overdue ? 'bg-accent' : BAR_STATUS_CLASSES[row.status])
@@ -246,6 +238,30 @@ function TimelineTaskRow({
         }
         title={hasBar ? undefined : `${row.title} (no dates)`}
       />
+      {hasBar && assignees.length > 0 && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 flex -translate-x-full -translate-y-1/2 items-center -space-x-1.5"
+          style={{ left: LABEL_COL_PX + left + width - AVATAR_INSET_PX }}
+        >
+          {visibleAssignees.map((assignee) => (
+            <Avatar
+              key={`${assignee.type}-${assignee.id}`}
+              size="xs"
+              name={assignee.name}
+              seed={assignee.id}
+              photoUrl={assignee.type === 'user' ? memberPhotos.get(assignee.id) : undefined}
+              aria-hidden="true"
+              className="h-4 w-4 text-[0.5rem] ring-1 ring-card"
+            />
+          ))}
+          {overflow > 0 && (
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[0.5rem] font-semibold text-muted-foreground ring-1 ring-card">
+              +{overflow}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -255,7 +271,7 @@ export interface ITimelineViewProps {
   /** Phase id (or null-phase key) → rows, same grouping as the list view. */
   grouped: ReadonlyMap<string, TTaskListRow[]>;
   noPhaseKey: string;
-  milestones: readonly IMilestoneRow[];
+  memberPhotos: ReadonlyMap<string, string>;
   projectStart: Date | null;
   projectEnd: Date | null;
   selectedId: string | null;
@@ -279,7 +295,7 @@ export function TimelineView({
   phases,
   grouped,
   noPhaseKey,
-  milestones,
+  memberPhotos,
   projectStart,
   projectEnd,
   selectedId,
@@ -295,26 +311,35 @@ export function TimelineView({
   onDragEndTask,
 }: ITimelineViewProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [granularity, setGranularity] = useState<TTimelineGranularity>('month');
+  const dayPx = TIMELINE_DAY_PX[granularity];
 
   const allRows = useMemo(() => [...grouped.values()].flat(), [grouped]);
   const range = useMemo(
-    () => timelineRange(allRows, milestones, projectStart, projectEnd),
-    [allRows, milestones, projectStart, projectEnd],
+    () => timelineRange(allRows, projectStart, projectEnd, granularity),
+    [allRows, projectStart, projectEnd, granularity],
   );
-  const chartWidth = LABEL_COL_PX + range.days * DAY_PX;
-  const todayOffset = diffDays(range.start, dayStart(new Date())) * DAY_PX;
-  const ticks = useMemo(() => monthTicks(range), [range]);
-  const datedMilestones = milestones.filter((m) => m.targetDate !== null);
+  const chartWidth = LABEL_COL_PX + range.days * dayPx;
+  const todayOffset = timelineDiffDays(range.start, timelineDayStart(new Date())) * dayPx;
+  const ticks = useMemo(() => buildTimelineTicks(range, granularity), [range, granularity]);
 
-  function scrollToToday(): void {
-    const container = scrollRef.current;
-    if (container !== null) {
-      container.scrollTo({
-        left: Math.max(0, LABEL_COL_PX + todayOffset - container.clientWidth / 2),
-        behavior: 'smooth',
-      });
-    }
-  }
+  const centerToday = useCallback(
+    (instant: boolean): void => {
+      const container = scrollRef.current;
+      if (container !== null) {
+        container.scrollTo({
+          left: Math.max(0, LABEL_COL_PX + todayOffset - container.clientWidth / 2),
+          behavior: instant ? 'auto' : 'smooth',
+        });
+      }
+    },
+    [todayOffset],
+  );
+
+  // Center on today on mount and whenever the granularity (and thus axis) changes.
+  useEffect(() => {
+    centerToday(true);
+  }, [centerToday]);
 
   const groups: Array<{ key: string; label: string; rows: TTaskListRow[] }> = [
     ...phases.map((phase) => ({
@@ -331,8 +356,15 @@ export function TimelineView({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={scrollToToday}>
+      <div className="flex items-center justify-between gap-3">
+        <SegmentedControl
+          aria-label="Timeline granularity"
+          value={granularity}
+          onChange={setGranularity}
+          options={GRANULARITY_OPTIONS}
+          size="sm"
+        />
+        <Button type="button" variant="outline" size="sm" onClick={() => centerToday(false)}>
           → Today
         </Button>
       </div>
@@ -344,48 +376,18 @@ export function TimelineView({
         tabIndex={0}
       >
         <div className="relative" style={{ width: chartWidth, minWidth: '100%' }}>
-          {/* Month ticks */}
+          {/* Axis ticks */}
           <div className="relative h-7 border-b border-border" aria-hidden="true">
             {ticks.map((tick) => (
               <span
                 key={tick.label + String(tick.offsetDays)}
                 className="absolute top-1.5 border-l border-border pl-1.5 text-[11px] text-muted-foreground"
-                style={{ left: LABEL_COL_PX + tick.offsetDays * DAY_PX }}
+                style={{ left: LABEL_COL_PX + tick.offsetDays * dayPx }}
               >
                 {tick.label}
               </span>
             ))}
           </div>
-
-          {/* Milestone lane */}
-          {datedMilestones.length > 0 && (
-            <div className="relative h-8 border-b border-border">
-              <span
-                className="sticky left-0 z-10 inline-flex h-full items-center border-r border-border bg-card pr-3 pl-6 text-xs font-medium text-muted-foreground"
-                style={{ width: LABEL_COL_PX }}
-              >
-                Milestones
-              </span>
-              {datedMilestones.map((milestone) => (
-                <span
-                  key={milestone.id}
-                  role="img"
-                  aria-label={`Milestone: ${milestone.name}, ${milestone.targetDate?.toLocaleDateString() ?? ''}`}
-                  title={milestone.name}
-                  data-testid="timeline-milestone"
-                  className={cn(
-                    'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45',
-                    milestone.completedAt !== null ? 'bg-success' : 'bg-accent',
-                  )}
-                  style={{
-                    left:
-                      LABEL_COL_PX +
-                      diffDays(range.start, dayStart(milestone.targetDate as Date)) * DAY_PX,
-                  }}
-                />
-              ))}
-            </div>
-          )}
 
           {/* Phase groups */}
           {groups.map((group) => (
@@ -404,6 +406,8 @@ export function TimelineView({
                   groupKey={group.key}
                   row={row}
                   range={range}
+                  dayPx={dayPx}
+                  memberPhotos={memberPhotos}
                   selected={row.id === selectedId}
                   showDragHandle={canEdit && !row.restricted}
                   dragEnabled={canEdit && !row.restricted && !reorderPendingByGroup.has(group.key)}
