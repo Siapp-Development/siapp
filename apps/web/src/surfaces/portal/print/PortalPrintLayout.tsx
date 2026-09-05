@@ -43,7 +43,7 @@ export function PortalPrintLayout({
   const progress = Math.min(100, Math.max(0, Math.round(project.progressPct)));
 
   return (
-    <div className="hidden print:block" aria-hidden="true">
+    <div className="print-layout hidden print:block" aria-hidden="true">
       <header className="flex items-start justify-between gap-6 border-b border-border pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
