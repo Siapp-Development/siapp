@@ -6,6 +6,8 @@ updated: 2026-06-27
 
 # Pricing Model
 
+> **Proposed refresh (Sept 2026):** a market-fit alternative (flat-tier + seat band, grounded in updated COGS) is proposed in [25-pricing-model-market-fit.md](./25-pricing-model-market-fit.md). This per-seat doc remains the current draft-of-record until that proposal is accepted.
+
 > **MVP scope (D-030):** MVP launches with a **single tier** — all paying firms are on the same plan, with logo + primary colour only. **No custom domain, no white-label, no advanced theming, no per-tier branding differentiation** in MVP. The Trial → Standard → Business split below is the post-MVP plan once we have ≥ 10 paying firms and a real signal on which Business features matter.
 
 ## Principles

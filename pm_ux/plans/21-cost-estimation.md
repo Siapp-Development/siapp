@@ -6,6 +6,8 @@ updated: 2026-06-27
 
 # Cost Estimation — Product & Service Costs
 
+> **⚠️ Refreshed (Sept 2026):** see [24-cost-estimation-current.md](./24-cost-estimation-current.md) for the cost model grounded in the *actual deployed* stack. This June doc is retained as the conservative planned-architecture baseline.
+
 Bottom-up **product and service** cost model for the v1 in [11-mvp-scope.md](./11-mvp-scope.md) on the stack in [13-tech-architecture.md](./13-tech-architecture.md). Sized to validate the COGS rows in [06-pricing-model.md](./06-pricing-model.md).
 
 This document deliberately **excludes**:
