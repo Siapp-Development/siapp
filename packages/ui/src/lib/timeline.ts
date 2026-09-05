@@ -49,6 +49,17 @@ export function timelineDiffDays(fromMs: number, toMs: number): number {
   return Math.round((toMs - fromMs) / MS_PER_DAY);
 }
 
+/**
+ * Add `days` calendar days to a timestamp, returning the local-midnight of the
+ * result. DST-safe: uses `Date` component math (which normalises 23h/25h days)
+ * instead of fixed-millisecond stepping, so the calendar date never drifts
+ * across a spring-forward/fall-back boundary.
+ */
+export function timelineAddDays(ms: number, days: number): number {
+  const date = new Date(ms);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days).getTime();
+}
+
 /** Snap a timestamp down to the start of its granularity bucket. */
 function snapDown(ms: number, granularity: TTimelineGranularity): number {
   const date = new Date(ms);
@@ -92,8 +103,8 @@ export function paddedTimelineAxis(
 ): ITimelineAxis {
   const pad = TIMELINE_PAD_DAYS[granularity];
   const dates = [...datedMsDayStarts, timelineDayStart(today)];
-  const rawStart = Math.min(...dates) - pad * MS_PER_DAY;
-  const rawEnd = Math.max(...dates) + pad * MS_PER_DAY;
+  const rawStart = timelineAddDays(Math.min(...dates), -pad);
+  const rawEnd = timelineAddDays(Math.max(...dates), pad);
   const start = snapDown(rawStart, granularity);
   const end = snapUp(rawEnd, granularity);
   return { start, days: Math.max(timelineDiffDays(start, end), 1) };
@@ -111,7 +122,9 @@ export function buildTimelineTicks(
   granularity: TTimelineGranularity,
 ): ITimelineTick[] {
   const ticks: ITimelineTick[] = [];
-  const end = axis.start + axis.days * MS_PER_DAY;
+  // Calendar-based end boundary (DST-safe): the local midnight `axis.days`
+  // calendar days after `axis.start`, matching how the axis span was measured.
+  const end = timelineAddDays(axis.start, axis.days);
   const cursor = new Date(axis.start);
 
   if (granularity === 'month') {

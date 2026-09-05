@@ -41,6 +41,7 @@ export {
   TIMELINE_PAD_DAYS,
   buildTimelineTicks,
   paddedTimelineAxis,
+  timelineAddDays,
   timelineDayStart,
   timelineDiffDays,
   type ITimelineAxis,

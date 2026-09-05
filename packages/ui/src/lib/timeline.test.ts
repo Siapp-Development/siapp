@@ -84,6 +84,21 @@ describe('paddedTimelineAxis', () => {
     expect(axis.start).toBeLessThanOrEqual(early - pad * MS_PER_DAY);
     expect(end).toBeGreaterThanOrEqual(late + pad * MS_PER_DAY);
   });
+
+  it('pads by calendar days across a DST boundary (no fixed-ms drift)', () => {
+    // today + 30 days crosses the US "fall back" (2026-11-01, a 25h day). Fixed
+    // millisecond padding would land at 23:00 the day before and snap back to
+    // 2026-11-18; calendar-day padding must reach exactly 2026-11-19 midnight.
+    const nearFallBack = day('2026-10-20');
+    const axis = paddedTimelineAxis([], 'day', nearFallBack);
+
+    const endDate = new Date(axis.start);
+    endDate.setDate(endDate.getDate() + axis.days);
+    expect(endDate.getFullYear()).toBe(2026);
+    expect(endDate.getMonth()).toBe(10); // November (0-based)
+    expect(endDate.getDate()).toBe(19);
+    expect(endDate.getHours()).toBe(0);
+  });
 });
 
 describe('buildTimelineTicks', () => {
