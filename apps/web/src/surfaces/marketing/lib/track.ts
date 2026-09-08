@@ -4,14 +4,7 @@
  * without touching components, and log in dev for verification. No cookies,
  * no network, so no consent banner is required.
  */
-export type TMarketingEvent =
-  | 'early_access_cta_clicked'
-  | 'product_demo_started'
-  | 'product_demo_completed'
-  | 'industry_view_construction'
-  | 'industry_view_legal'
-  | 'faq_opened'
-  | 'client_portal_preview_viewed';
+export type TMarketingEvent = 'early_access_cta_clicked' | 'faq_opened';
 
 export function track(event: TMarketingEvent, props?: Record<string, string>): void {
   if (import.meta.env.DEV) {
