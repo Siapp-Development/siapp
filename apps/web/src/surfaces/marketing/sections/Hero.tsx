@@ -11,7 +11,7 @@ export function Hero() {
 
   return (
     <section className="mx-auto max-w-[var(--mk-container)] px-4 pt-14 pb-[var(--mk-section-y)] sm:px-6 lg:pt-20">
-      <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,42fr)_minmax(0,58fr)]">
+      <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,36fr)_minmax(0,64fr)]">
         <div>
           <p className="text-sm font-semibold tracking-wide text-accent-deep uppercase">
             Client-facing project management for Southeast Asian firms
