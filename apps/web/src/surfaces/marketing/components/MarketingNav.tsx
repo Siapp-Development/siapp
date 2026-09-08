@@ -13,10 +13,7 @@ interface INavLink {
 }
 
 const NAV_LINKS: INavLink[] = [
-  { href: '#product', label: 'Product' },
   { href: '#how-it-works', label: 'How it works' },
-  { href: '#industries', label: 'Industries' },
-  { href: '#client-portal', label: 'Client portal' },
   { href: '#faq', label: 'FAQ' },
 ];
 

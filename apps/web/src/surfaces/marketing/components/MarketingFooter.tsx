@@ -25,23 +25,8 @@ export function MarketingFooter() {
           <nav aria-label="Footer">
             <ul className="grid grid-cols-2 gap-x-12 gap-y-2 text-sm">
               <li>
-                <a href="#product" className="text-muted-foreground hover:text-foreground">
-                  Product
-                </a>
-              </li>
-              <li>
                 <a href="#how-it-works" className="text-muted-foreground hover:text-foreground">
                   How it works
-                </a>
-              </li>
-              <li>
-                <a href="#industries" className="text-muted-foreground hover:text-foreground">
-                  Industries
-                </a>
-              </li>
-              <li>
-                <a href="#client-portal" className="text-muted-foreground hover:text-foreground">
-                  Client portal
                 </a>
               </li>
               <li>

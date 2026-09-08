@@ -28,7 +28,18 @@ describe('MarketingFooter', () => {
   it('keeps the existing section anchor links', () => {
     renderFooter();
 
-    expect(screen.getByRole('link', { name: 'Product' })).toHaveAttribute('href', '#product');
+    expect(screen.getByRole('link', { name: 'How it works' })).toHaveAttribute(
+      'href',
+      '#how-it-works',
+    );
     expect(screen.getByRole('link', { name: 'FAQ' })).toHaveAttribute('href', '#faq');
+  });
+
+  it('no longer links to the removed Product / Industries / Client portal sections', () => {
+    renderFooter();
+
+    expect(screen.queryByRole('link', { name: /product/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /industries/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /client portal/i })).not.toBeInTheDocument();
   });
 });
