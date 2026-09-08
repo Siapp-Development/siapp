@@ -49,7 +49,7 @@ describe('Hero', () => {
     expect(screen.queryByRole('button', { name: /mark task done/i })).not.toBeInTheDocument();
   });
 
-  it('autoplays the looping muted video when motion is allowed', () => {
+  it('autoplays the looping muted video with controls when motion is allowed', () => {
     mockedUseReducedMotion.mockReturnValue(false);
 
     const { container } = render(<Hero />);
@@ -57,12 +57,14 @@ describe('Hero', () => {
     const video = container.querySelector('video');
     expect(video).not.toBeNull();
     expect(video?.autoplay).toBe(true);
-    expect(video?.hasAttribute('controls')).toBe(false);
+    // Native controls are always exposed so users can pause the looping
+    // video (WCAG 2.2.2), regardless of motion preference.
+    expect(video?.hasAttribute('controls')).toBe(true);
     expect(video?.loop).toBe(true);
     expect(video?.muted).toBe(true);
   });
 
-  it('shows native controls and does not autoplay when reduced motion is preferred', () => {
+  it('exposes native controls and does not autoplay when reduced motion is preferred', () => {
     mockedUseReducedMotion.mockReturnValue(true);
 
     const { container } = render(<Hero />);

@@ -18,7 +18,7 @@ export function Hero() {
           loop
           muted
           playsInline
-          controls={reducedMotion}
+          controls
           preload="metadata"
           aria-label="Siapp in action: a firm marks a project task done, the client instantly receives a WhatsApp update, and their portal progress advances with a new status entry."
         >
