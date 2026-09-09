@@ -142,7 +142,6 @@ export function TaskBulkActionsBar({
               variant="ghost"
               size="sm"
               disabled={pending}
-              aria-haspopup="dialog"
               aria-expanded={openMenu === 'assignee'}
               onClick={() => setOpenMenu((prev) => (prev === 'assignee' ? null : 'assignee'))}
             >

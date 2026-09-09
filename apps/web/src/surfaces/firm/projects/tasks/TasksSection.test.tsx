@@ -1016,7 +1016,7 @@ describe('TasksSection bulk select (#156)', () => {
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
     await userEvent.click(screen.getByRole('button', { name: 'Add assignee' }));
-    await userEvent.click(screen.getByRole('option', { name: /Alice Tan/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
 
     expect(tasksData.bulkAddAssignee).toHaveBeenCalledWith(
       'wksA',
@@ -1110,7 +1110,7 @@ describe('TasksSection bulk select (#156)', () => {
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
     await userEvent.click(screen.getByRole('button', { name: 'Add assignee' }));
-    await userEvent.click(screen.getByRole('option', { name: /Alice Tan/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
 
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent('Alice Tan added to 1 task (1 skipped)'),

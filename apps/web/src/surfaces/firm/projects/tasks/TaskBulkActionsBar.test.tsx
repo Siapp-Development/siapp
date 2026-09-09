@@ -82,7 +82,7 @@ describe('TaskBulkActionsBar', () => {
     const props = renderBar();
 
     await userEvent.click(screen.getByRole('button', { name: 'Add assignee' }));
-    await userEvent.click(screen.getByRole('option', { name: /Alice Tan/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
 
     expect(props.onAddAssignee).toHaveBeenCalledWith({
       type: 'user',

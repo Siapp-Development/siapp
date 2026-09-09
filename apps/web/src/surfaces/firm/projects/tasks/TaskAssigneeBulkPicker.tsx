@@ -3,7 +3,9 @@
  * active collaborators; picking one emits a `TTaskAssignee` shaped exactly like
  * the detail-panel selects so the bulk writer reuses the same append logic.
  * Kept local to this surface (Q3): extracting the detail-panel picker is out of
- * scope. Rendered inside a Popover panel, so it is a plain filterable listbox.
+ * scope. Rendered inside a Popover panel as a plain filterable list of buttons —
+ * no listbox/option roles, since it doesn't implement the listbox interaction
+ * model (aria-activedescendant / managed selection).
  */
 
 import { Avatar, Input } from '@siapp/ui';
@@ -61,7 +63,7 @@ export function TaskAssigneeBulkPicker({
         className="h-9"
         autoFocus
       />
-      <div className="max-h-64 overflow-y-auto" role="listbox" aria-label="Add assignee">
+      <div className="max-h-64 overflow-y-auto" role="group" aria-label="Add assignee">
         {filteredMembers.length > 0 && (
           <>
             <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Teammates</p>
@@ -69,8 +71,6 @@ export function TaskAssigneeBulkPicker({
               <button
                 key={member.uid}
                 type="button"
-                role="option"
-                aria-selected={false}
                 disabled={disabled}
                 onClick={() =>
                   onSelect({ type: 'user', id: member.uid, name: member.displayName })
@@ -95,8 +95,6 @@ export function TaskAssigneeBulkPicker({
               <button
                 key={collaborator.id}
                 type="button"
-                role="option"
-                aria-selected={false}
                 disabled={disabled}
                 onClick={() =>
                   onSelect({

@@ -471,10 +471,13 @@ export function TasksSection({
     [taskRows],
   );
   const selection = useTaskSelection(selectableIds);
-  const { clear: clearSelection, count: selectionCount } = selection;
+  const { clear: clearSelection, count: selectionCount, isSelected } = selection;
+  // Depend on the stable `isSelected` callback (memoized on the selected set),
+  // not the `selection` object which is recreated every render — otherwise this
+  // memo would recompute on every render.
   const selectedTaskRows = useMemo(
-    () => taskRows.filter((row): row is ITaskRow => isReadableTask(row) && selection.isSelected(row.id)),
-    [taskRows, selection],
+    () => taskRows.filter((row): row is ITaskRow => isReadableTask(row) && isSelected(row.id)),
+    [taskRows, isSelected],
   );
 
   const [announcement, setAnnouncement] = useState('');

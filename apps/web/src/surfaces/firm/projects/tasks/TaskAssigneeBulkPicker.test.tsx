@@ -52,8 +52,8 @@ describe('TaskAssigneeBulkPicker', () => {
       />,
     );
 
-    expect(screen.getByRole('option', { name: /Alice Tan/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Acme Co/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Alice Tan/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Acme Co/ })).toBeInTheDocument();
   });
 
   it('excludes archived collaborators', () => {
@@ -65,7 +65,7 @@ describe('TaskAssigneeBulkPicker', () => {
       />,
     );
 
-    expect(screen.queryByRole('option', { name: /Acme Co/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Acme Co/ })).not.toBeInTheDocument();
   });
 
   it('emits a user assignee when a teammate is picked', async () => {
@@ -74,7 +74,7 @@ describe('TaskAssigneeBulkPicker', () => {
       <TaskAssigneeBulkPicker members={[member()]} collaborators={[]} onSelect={onSelect} />,
     );
 
-    await userEvent.click(screen.getByRole('option', { name: /Alice Tan/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
 
     expect(onSelect).toHaveBeenCalledWith({ type: 'user', id: 'u1', name: 'Alice Tan' });
   });
@@ -85,7 +85,7 @@ describe('TaskAssigneeBulkPicker', () => {
       <TaskAssigneeBulkPicker members={[]} collaborators={[collaborator()]} onSelect={onSelect} />,
     );
 
-    await userEvent.click(screen.getByRole('option', { name: /Acme Co/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Acme Co/ }));
 
     expect(onSelect).toHaveBeenCalledWith({
       type: 'collaborator',
@@ -106,8 +106,8 @@ describe('TaskAssigneeBulkPicker', () => {
 
     await userEvent.type(screen.getByRole('textbox', { name: 'Filter people' }), 'bob');
 
-    expect(screen.queryByRole('option', { name: /Alice Tan/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /Bob Lee/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Alice Tan/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Bob Lee/ })).toBeInTheDocument();
   });
 
   it('shows an empty message when nothing matches', async () => {
@@ -123,6 +123,6 @@ describe('TaskAssigneeBulkPicker', () => {
       <TaskAssigneeBulkPicker members={[member()]} collaborators={[]} onSelect={vi.fn()} disabled />,
     );
 
-    expect(screen.getByRole('option', { name: /Alice Tan/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Alice Tan/ })).toBeDisabled();
   });
 });
