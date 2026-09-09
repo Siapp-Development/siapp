@@ -99,14 +99,15 @@ function asClientRefs(value: unknown): IProjectClientRef[] {
 
 /**
  * Resolves the multi-client fields with a legacy single-client fallback (#157,
- * D5): a doc not yet backfilled has only `clientId`/`clientNameDenorm`, which we
- * surface as a one-entry list so the firm UI is uniform.
+ * D5). When the `clientIds` array field is PRESENT it is authoritative — even if
+ * empty — so an intentionally cleared client list never re-surfaces stale legacy
+ * values. Only a not-yet-backfilled doc (no `clientIds` field) falls back to the
+ * legacy `clientId`/`clientNameDenorm`, surfaced as a one-entry list so the firm
+ * UI is uniform.
  */
 function resolveClients(data: DocumentData): { clientIds: string[]; clients: IProjectClientRef[] } {
-  const clients = asClientRefs(data['clients']);
-  const clientIds = asStringArray(data['clientIds']);
-  if (clientIds.length > 0) {
-    return { clientIds, clients };
+  if (Array.isArray(data['clientIds'])) {
+    return { clientIds: asStringArray(data['clientIds']), clients: asClientRefs(data['clients']) };
   }
   const legacyId = typeof data['clientId'] === 'string' ? data['clientId'] : '';
   if (legacyId === '') {

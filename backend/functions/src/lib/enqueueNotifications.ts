@@ -128,8 +128,12 @@ interface IRecipient {
 }
 
 function phoneOf(data: Record<string, unknown> | undefined): string | null {
+  // #157/D4: normalize once at the source so whitespace-only phones become
+  // unresolvable ('no_phone') and the queued `recipientPhone` matches the
+  // normalized de-dupe key exactly across both fan-out sites.
   const value = data?.['phone'];
-  return typeof value === 'string' && value !== '' ? value : null;
+  const normalized = normalizePhoneKey(typeof value === 'string' ? value : '');
+  return normalized !== '' ? normalized : null;
 }
 
 function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNotifyConfig): IRecipient[] {

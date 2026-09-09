@@ -282,6 +282,21 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(resolveFn).not.toHaveBeenCalled();
   });
 
+  it('treats a whitespace-only phone as no_phone (normalized before the empty gate)', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '   ', waConsent: { granted: true } },
+    });
+    hoisted.db = db;
+
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }],
+    });
+    expect(writes.messages).toHaveLength(0);
+    expect(resolveFn).not.toHaveBeenCalled();
+  });
+
   it('treats a granted:false refusal record as no_consent', async () => {
     const { db, writes } = makeDb({
       project: PUBLISHED_PROJECT,

@@ -70,13 +70,15 @@ async function main() {
   const app = initializeApp({ projectId: flags.project });
   const db = getFirestore(app);
 
-  // Collection-group scan over every project in every workspace.
-  const projects = await db.collectionGroup('projects').get();
+  // Stream the collection-group scan so docs are processed incrementally: a
+  // .get() would load every project into memory at once and can OOM on a large
+  // production dataset. BulkWriter's own flow control throttles the writes.
+  const stream = db.collectionGroup('projects').stream();
   let scanned = 0;
   let toWrite = 0;
   const writer = db.bulkWriter();
 
-  for (const projectDoc of projects.docs) {
+  for await (const projectDoc of stream) {
     // Only touch docs whose path is a real project (…/workspaces/{wid}/projects/{pid}).
     if (!/\/workspaces\/[^/]+\/projects\/[^/]+$/.test(projectDoc.ref.path)) {
       continue;

@@ -3,8 +3,11 @@
  * via `clientIds: string[]` (rules-queryable membership) + `clients: {id,name}[]`
  * (display denorm). During the migration window (#157 D5) the firm forms also
  * dual-write the legacy single `clientId`/`clientNameDenorm`, so these helpers
- * fall back to the legacy field for not-yet-backfilled docs. Pure — no Admin
- * SDK — so callers unit-test without emulators.
+ * fall back to the legacy field ONLY for not-yet-backfilled docs — i.e. when the
+ * multi-client field is ABSENT. Once the array field is present it is
+ * authoritative even when empty (an intentionally cleared client list must not
+ * re-surface stale legacy values). Pure — no Admin SDK — so callers unit-test
+ * without emulators.
  */
 
 /**
@@ -23,24 +26,22 @@ export function resolveProjectClientIds(
 }
 
 /**
- * The project's linked client display names, in link order. Prefers the
- * `clients` denorm array; falls back to the legacy `clientNameDenorm`.
+ * The project's linked client display names, in link order. When the `clients`
+ * denorm array is present it is authoritative (returned as-is, possibly empty);
+ * falls back to the legacy `clientNameDenorm` only when `clients` is absent.
  */
 export function resolveProjectClientNames(
   projectData: Record<string, unknown> | undefined,
 ): string[] {
   const list = projectData?.['clients'];
   if (Array.isArray(list)) {
-    const names = list
+    return list
       .map((entry) =>
         entry !== null && typeof entry === 'object'
           ? (entry as Record<string, unknown>)['name']
           : undefined,
       )
       .filter((name): name is string => typeof name === 'string' && name !== '');
-    if (names.length > 0) {
-      return names;
-    }
   }
   const legacy = projectData?.['clientNameDenorm'];
   return typeof legacy === 'string' && legacy !== '' ? [legacy] : [];
@@ -54,8 +55,9 @@ export interface IProjectClientRef {
 
 /**
  * The project's linked clients as aligned `{id,name}` pairs, in link order.
- * Prefers the `clients` denorm array; falls back to the legacy single
- * `clientId`/`clientNameDenorm` for not-yet-backfilled docs.
+ * When the `clients` denorm array is present it is authoritative (returned as
+ * derived, possibly empty); falls back to the legacy single
+ * `clientId`/`clientNameDenorm` only when `clients` is absent.
  */
 export function resolveProjectClients(
   projectData: Record<string, unknown> | undefined,
@@ -72,9 +74,7 @@ export function resolveProjectClients(
         }
       }
     }
-    if (refs.length > 0) {
-      return refs;
-    }
+    return refs;
   }
   const legacyId = projectData?.['clientId'];
   const legacyName = projectData?.['clientNameDenorm'];

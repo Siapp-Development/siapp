@@ -60,8 +60,11 @@ function asDate(value: unknown): Date | null {
 
 function resolvePortalClients(data: DocumentData): IPortalClientRef[] {
   const raw = data['clients'];
+  // #157 D5: when the `clients` denorm array is present it is authoritative —
+  // even if empty — so a cleared client list renders as no linked clients rather
+  // than re-surfacing stale legacy values.
   if (Array.isArray(raw)) {
-    const refs = raw.flatMap((entry): IPortalClientRef[] => {
+    return raw.flatMap((entry): IPortalClientRef[] => {
       if (entry === null || typeof entry !== 'object') {
         return [];
       }
@@ -72,9 +75,6 @@ function resolvePortalClients(data: DocumentData): IPortalClientRef[] {
       }
       return [{ id, name: typeof record['name'] === 'string' ? record['name'] : '' }];
     });
-    if (refs.length > 0) {
-      return refs;
-    }
   }
   // Legacy single-client fallback (#157, D5): a not-yet-backfilled doc has only
   // `clientId`/`clientNameDenorm`.

@@ -131,20 +131,22 @@ export const sendPortalLink = onCall(async (request) => {
       results.push({ clientId: clientRef.id, clientName, status: 'no_consent' });
       continue;
     }
-    const phone = typeof client['phone'] === 'string' ? client['phone'] : '';
+    // #157/D4: normalize the phone ONCE and use it for both the empty-phone gate
+    // and the queued `recipientPhone`, so whitespace-only values become
+    // 'no_phone' and the enqueued send matches the de-dupe key exactly.
+    const phone = normalizePhoneKey(typeof client['phone'] === 'string' ? client['phone'] : '');
     if (phone === '') {
       results.push({ clientId: clientRef.id, clientName, status: 'no_phone' });
       continue;
     }
 
-    const phoneKey = normalizePhoneKey(phone);
-    if (sentPhones.has(phoneKey)) {
+    if (sentPhones.has(phone)) {
       // D4: this number already received the link via another client on the
       // project — do not mint or enqueue a duplicate send.
       results.push({ clientId: clientRef.id, clientName, status: 'duplicate_phone' });
       continue;
     }
-    sentPhones.add(phoneKey);
+    sentPhones.add(phone);
 
     // Durable get-or-create (C-6): re-surface this client's ONE stable portal
     // link (never rotates a still-valid link).
