@@ -212,8 +212,10 @@ describe('apexRouter', () => {
       await screen.findByRole('heading', { level: 1, name: 'My Assigned Tasks' }),
     ).toBeInTheDocument();
     // The auto-selected task renders the existing task-detail surface (title h2).
+    // It appears a tick after the h1 (selection happens in an effect once tasks
+    // load), so await it to avoid a slow-runner race.
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Install signage' }),
+      await screen.findByRole('heading', { level: 2, name: 'Install signage' }),
     ).toBeInTheDocument();
     // Firm name appears in the header and again in the PDPA footer notice (#26 D5).
     expect(screen.getAllByText(/studio north/i).length).toBeGreaterThan(0);
