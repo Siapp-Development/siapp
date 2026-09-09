@@ -588,6 +588,150 @@ export async function reorderTasks(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bulk writers (#156): fan-outs of the already-authorized single-task
+// update/delete paths. Each reuses the exact write shape of updateTask (stamp
+// updatedAt/updatedBy, keep completedAt/blocked side-effects and the #127
+// assigneeCollaboratorIds projection in sync) so no rules change is needed.
+// ---------------------------------------------------------------------------
+
+/** Firestore batched-write cap (mirrors reorderTasks). */
+const BULK_BATCH_SIZE = 500;
+
+/** firestore.rules caps `assignees` at 20 entries; over-cap tasks are skipped. */
+const MAX_TASK_ASSIGNEES = 20;
+
+/** Concurrency for the delete callable fan-out (bounded to be gentle on quota). */
+const DELETE_CONCURRENCY = 8;
+
+/**
+ * Sets the same status on many tasks in chunked batches, reproducing
+ * updateTask's status side-effects per task. Needs each task's current status
+ * to decide whether to (un)set completedAt or clear the blocked reason, so it
+ * takes rows rather than ids.
+ */
+export async function bulkUpdateTaskStatus(
+  workspaceId: string,
+  projectId: string,
+  tasks: readonly ITaskRow[],
+  status: TTaskStatus,
+  uid: string,
+): Promise<void> {
+  const nowDone = status === 'done';
+  for (let start = 0; start < tasks.length; start += BULK_BATCH_SIZE) {
+    const batch = writeBatch(db);
+    for (const task of tasks.slice(start, start + BULK_BATCH_SIZE)) {
+      batch.update(
+        doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${task.id}`),
+        {
+          status,
+          ...(nowDone && task.status !== 'done' ? { completedAt: serverTimestamp() } : {}),
+          ...(!nowDone ? { completedAt: deleteField() } : {}),
+          // #22 (D-d): leaving 'blocked' clears the collaborator's help reason;
+          // moving TO blocked leaves any existing blockedBy untouched.
+          ...(status !== 'blocked'
+            ? { blockedReason: deleteField(), blockedBy: deleteField() }
+            : {}),
+          updatedAt: serverTimestamp(),
+          updatedBy: uid,
+        },
+      );
+    }
+    await batch.commit();
+  }
+}
+
+export interface IBulkAssigneeResult {
+  /** Tasks that gained the assignee. */
+  added: number;
+  /** Tasks skipped because they already had the assignee or hit the 20 cap. */
+  skipped: number;
+}
+
+/**
+ * Adds one assignee to many tasks. Tasks that already have the assignee (by
+ * type+id) or are already at the 20-assignee cap are skipped and reported. The
+ * #127 `assigneeCollaboratorIds` projection is rebuilt for every written task.
+ */
+export async function bulkAddAssignee(
+  workspaceId: string,
+  projectId: string,
+  tasks: readonly ITaskRow[],
+  assignee: TTaskAssignee,
+  uid: string,
+): Promise<IBulkAssigneeResult> {
+  const writes = tasks
+    .filter((task) => {
+      const already = task.assignees.some(
+        (entry) => entry.type === assignee.type && entry.id === assignee.id,
+      );
+      return !already && task.assignees.length < MAX_TASK_ASSIGNEES;
+    })
+    .map((task) => {
+      const nextAssignees: TTaskAssignee[] = [...task.assignees, assignee];
+      return {
+        id: task.id,
+        assignees: nextAssignees,
+        assigneeCollaboratorIds: nextAssignees
+          .filter((entry) => entry.type === 'collaborator')
+          .map((entry) => entry.id),
+      };
+    });
+
+  for (let start = 0; start < writes.length; start += BULK_BATCH_SIZE) {
+    const batch = writeBatch(db);
+    for (const write of writes.slice(start, start + BULK_BATCH_SIZE)) {
+      batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${write.id}`), {
+        assignees: write.assignees,
+        assigneeCollaboratorIds: write.assigneeCollaboratorIds,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+
+  return { added: writes.length, skipped: tasks.length - writes.length };
+}
+
+export interface IBulkDeleteResult {
+  deletedIds: string[];
+  failedIds: string[];
+}
+
+/**
+ * Deletes many tasks by looping the existing deleteTask callable (the only
+ * authorized delete path; client deletes are denied). Uses bounded-concurrency
+ * `Promise.allSettled` so a single rejection does not abort the rest — partial
+ * failures are reported back for the bar to surface.
+ */
+export async function bulkDeleteTasks(
+  workspaceId: string,
+  projectId: string,
+  taskIds: readonly string[],
+): Promise<IBulkDeleteResult> {
+  const deletedIds: string[] = [];
+  const failedIds: string[] = [];
+  for (let start = 0; start < taskIds.length; start += DELETE_CONCURRENCY) {
+    const chunk = taskIds.slice(start, start + DELETE_CONCURRENCY);
+    const results = await Promise.allSettled(
+      chunk.map((taskId) => deleteTask(workspaceId, projectId, taskId)),
+    );
+    results.forEach((result, index) => {
+      const taskId = chunk[index];
+      if (taskId === undefined) {
+        return;
+      }
+      if (result.status === 'fulfilled') {
+        deletedIds.push(taskId);
+      } else {
+        failedIds.push(taskId);
+      }
+    });
+  }
+  return { deletedIds, failedIds };
+}
+
 export interface ITaskUpdateInput {
   action: TTaskUpdateAction;
   text?: string;

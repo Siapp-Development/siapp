@@ -6,12 +6,14 @@
  * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Avatar, Badge, Button, Dialog, Input, cn } from '@siapp/ui';
+import { Alert, Avatar, Badge, Button, Checkbox, Dialog, Input, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
+import type { TTaskAssignee, TTaskStatus } from '@siapp/shared';
 import { ChevronRight, Columns3, List, Plus, X } from 'lucide-react';
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type DragEvent,
   type FormEvent,
@@ -21,6 +23,7 @@ import {
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { useCollaborators } from '../../collaborators/useCollaborators.ts';
+import { TaskBulkActionsBar } from './TaskBulkActionsBar.tsx';
 import { TaskDetailPanel } from './TaskDetailPanel.tsx';
 import { TaskProgressRing } from './TaskProgressRing.tsx';
 import { TagChipList } from '../tags/TagChipList.tsx';
@@ -29,7 +32,11 @@ import { TASK_STATUS_LABELS } from './taskLabels.ts';
 import { TaskStatusRing } from './TaskStatusRing.tsx';
 import { TimelineView } from './TimelineView.tsx';
 import { useCollapsedTaskGroups } from './useCollapsedTaskGroups.ts';
+import { useTaskSelection } from './useTaskSelection.ts';
 import {
+  bulkAddAssignee,
+  bulkDeleteTasks,
+  bulkUpdateTaskStatus,
   createPhase,
   createTask,
   reorderTasks,
@@ -45,6 +52,10 @@ const NO_PHASE = '__none__';
 const EMPTY_PHASES: readonly IPhaseRow[] = [];
 const EMPTY_TASK_ROWS: readonly TTaskListRow[] = [];
 
+function taskCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'task' : 'tasks'}`;
+}
+
 function isOverdue(task: ITaskRow): boolean {
   return task.dueDate !== null && task.status !== 'done' && task.dueDate.getTime() < Date.now();
 }
@@ -57,6 +68,11 @@ interface ITaskRowItemProps {
   selected: boolean;
   highlighted: boolean;
   onSelect: () => void;
+  /** Multi-select (#156): whether the row checkbox column is shown at all. */
+  showCheckbox: boolean;
+  /** Whether this row is currently checked in the multi-select. */
+  checkboxSelected: boolean;
+  onToggleSelect: () => void;
   showDragHandle: boolean;
   dragEnabled: boolean;
   dragging: boolean;
@@ -76,6 +92,9 @@ function TaskRowItem({
   selected,
   highlighted,
   onSelect,
+  showCheckbox,
+  checkboxSelected,
+  onToggleSelect,
   showDragHandle,
   dragEnabled,
   dragging,
@@ -104,11 +123,28 @@ function TaskRowItem({
         onDragEnd={onDragEnd ?? undefined}
         className={cn(
           'group flex items-start gap-2 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 hover:bg-muted',
+          // Panel-open highlight (bg-primary-tint) is intentionally stronger
+          // than the multi-select "checked" highlight so the two are distinct.
           selected && 'bg-primary-tint',
+          !selected && checkboxSelected && 'bg-primary-tint/40',
           dragEnabled && 'cursor-grab',
           dragging && 'cursor-grabbing opacity-60',
         )}
       >
+        {showCheckbox && (
+          <Checkbox
+            checked={checkboxSelected}
+            onChange={onToggleSelect}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`Select ${task.title}`}
+            className={cn(
+              'mt-1 transition-opacity',
+              // Reveal on hover/focus like the drag handle; stay visible when checked.
+              'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+              checkboxSelected && 'opacity-100',
+            )}
+          />
+        )}
         {showDragHandle && (
           <button
             type="button"
@@ -427,6 +463,91 @@ export function TasksSection({
   }, [taskRows, phaseIds]);
   const selectedRow = taskRows.find((row) => row.id === selectedId) ?? null;
 
+  // --- Multi-select (#156) -------------------------------------------------
+  // Selection is keyed by task id over the readable rows; restricted rows are
+  // never selectable. Only meaningful while the caller can edit.
+  const selectableIds = useMemo(
+    () => taskRows.filter(isReadableTask).map((row) => row.id),
+    [taskRows],
+  );
+  const selection = useTaskSelection(selectableIds);
+  const { clear: clearSelection, count: selectionCount } = selection;
+  const selectedTaskRows = useMemo(
+    () => taskRows.filter((row): row is ITaskRow => isReadableTask(row) && selection.isSelected(row.id)),
+    [taskRows, selection],
+  );
+
+  const [announcement, setAnnouncement] = useState('');
+  const prevSelectionCountRef = useRef(0);
+
+  // Announce selection-count changes for screen readers (polite live region).
+  // Suppressed right after a bulk action clears the selection (the action's own
+  // result message is announced instead — see finishBulkAction).
+  useEffect(() => {
+    const prev = prevSelectionCountRef.current;
+    if (selectionCount === prev) {
+      return;
+    }
+    if (selectionCount === 0) {
+      setAnnouncement('Selection cleared');
+    } else {
+      setAnnouncement(`${taskCountLabel(selectionCount)} selected`);
+    }
+    prevSelectionCountRef.current = selectionCount;
+  }, [selectionCount]);
+
+  function finishBulkAction(message: string): void {
+    setAnnouncement(message);
+    // Pre-sync the ref so the count effect does not overwrite the action
+    // message with "Selection cleared" once clear() drops the count to 0.
+    prevSelectionCountRef.current = 0;
+    clearSelection();
+  }
+
+  async function handleBulkStatus(status: TTaskStatus): Promise<void> {
+    const rows = selectedTaskRows;
+    if (rows.length === 0) {
+      return;
+    }
+    await bulkUpdateTaskStatus(workspaceId, projectId, rows, status, uid);
+    finishBulkAction(`${taskCountLabel(rows.length)} moved to ${TASK_STATUS_LABELS[status]}`);
+  }
+
+  async function handleBulkAssignee(assignee: TTaskAssignee): Promise<void> {
+    const rows = selectedTaskRows;
+    if (rows.length === 0) {
+      return;
+    }
+    const { added, skipped } = await bulkAddAssignee(workspaceId, projectId, rows, assignee, uid);
+    const base = `${assignee.name} added to ${taskCountLabel(added)}`;
+    finishBulkAction(skipped > 0 ? `${base} (${skipped} skipped)` : base);
+  }
+
+  async function handleBulkDelete(): Promise<void> {
+    const ids = selectedTaskRows.map((row) => row.id);
+    if (ids.length === 0) {
+      return;
+    }
+    const { deletedIds, failedIds } = await bulkDeleteTasks(workspaceId, projectId, ids);
+    // Restricted header projection can shift when tasks disappear (detail panel
+    // does the same on single delete).
+    tasksState.refreshRestricted();
+    if (failedIds.length > 0) {
+      // Keep the failed rows selected; the deleted ones fall out via pruning.
+      selection.deselectMany(deletedIds);
+      throw new Error(`${taskCountLabel(failedIds.length)} could not be deleted.`);
+    }
+    finishBulkAction(`${taskCountLabel(deletedIds.length)} deleted`);
+  }
+
+  function handleListKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    // Escape clears an active selection when focus is inside the list. Popovers
+    // and dialogs in the bar handle their own Escape (separate DOM subtree).
+    if (event.key === 'Escape' && selectionCount > 0) {
+      clearSelection();
+    }
+  }
+
   useEffect(() => {
     onSelectedTaskChange?.(selectedId);
   }, [selectedId, onSelectedTaskChange]);
@@ -666,6 +787,9 @@ export function TasksSection({
     const doneCount = rows.filter((row) => !row.restricted && row.status === 'done').length;
     const isCollapsed = collapsed.has(key);
     const label = phase !== null ? phase.name : 'No phase';
+    const selectableGroupIds = rows.filter(isReadableTask).map((row) => row.id);
+    const groupState = selection.groupState(selectableGroupIds);
+    const showGroupCheckbox = canEdit && selectableGroupIds.length > 0;
     return (
       <section
         key={key}
@@ -673,6 +797,14 @@ export function TasksSection({
         className="rounded-lg border border-border bg-card shadow-card"
       >
         <div className="flex items-center gap-2 px-3">
+          {showGroupCheckbox && (
+            <Checkbox
+              checked={groupState === 'all'}
+              indeterminate={groupState === 'some'}
+              onChange={() => selection.toggleGroup(selectableGroupIds)}
+              aria-label={`Select all tasks in ${label}`}
+            />
+          )}
           <button
             type="button"
             onClick={() => toggleGroup(key)}
@@ -712,6 +844,9 @@ export function TasksSection({
                       selected={row.id === selectedId}
                       highlighted={row.id === highlightId}
                       onSelect={() => setSelectedId(row.id)}
+                      showCheckbox={canEdit}
+                      checkboxSelected={selection.isSelected(row.id)}
+                      onToggleSelect={() => selection.toggle(row.id)}
                       showDragHandle={canEdit}
                       dragEnabled={dragEnabled}
                       dragging={
@@ -765,6 +900,9 @@ export function TasksSection({
 
   return (
     <div className="flex flex-col gap-4">
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
       <div className="flex items-center justify-between gap-3">
         <div
           role="group"
@@ -824,7 +962,7 @@ export function TasksSection({
           }}
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3" onKeyDown={handleListKeyDown}>
           {phases.map((phase) => renderGroup(phase.id, phase))}
           {renderGroup(NO_PHASE, null)}
           {taskRows.length === 0 && phases.length === 0 && (
@@ -833,6 +971,18 @@ export function TasksSection({
             </p>
           )}
         </div>
+      )}
+
+      {canEdit && view === 'list' && selectionCount > 0 && (
+        <TaskBulkActionsBar
+          count={selectionCount}
+          members={members}
+          collaborators={collaborators}
+          onClear={clearSelection}
+          onUpdateStatus={handleBulkStatus}
+          onAddAssignee={handleBulkAssignee}
+          onDelete={handleBulkDelete}
+        />
       )}
 
       {canEdit &&

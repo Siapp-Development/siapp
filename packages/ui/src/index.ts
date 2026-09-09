@@ -3,6 +3,7 @@ export { Avatar, avatarInitials, avatarVariants, type IAvatarProps } from './com
 export { Badge, badgeVariants, type IBadgeProps } from './components/Badge.tsx';
 export { Button, buttonVariants, type IButtonProps } from './components/Button.tsx';
 export { Card, CardContent, CardFooter, CardHeader, type TCardProps } from './components/Card.tsx';
+export { Checkbox, type ICheckboxProps } from './components/Checkbox.tsx';
 export {
   CircularProgress,
   type ICircularProgressProps,
