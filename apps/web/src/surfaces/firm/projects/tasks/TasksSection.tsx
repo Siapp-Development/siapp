@@ -132,18 +132,20 @@ function TaskRowItem({
         )}
       >
         {showCheckbox && (
-          <Checkbox
-            checked={checkboxSelected}
-            onChange={onToggleSelect}
-            onClick={(event) => event.stopPropagation()}
-            aria-label={`Select ${task.title}`}
-            className={cn(
-              'mt-1 transition-opacity',
-              // Reveal on hover/focus like the drag handle; stay visible when checked.
-              'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-              checkboxSelected && 'opacity-100',
-            )}
-          />
+          <span className="inline-flex h-5 items-center">
+            <Checkbox
+              checked={checkboxSelected}
+              onChange={onToggleSelect}
+              onClick={(event) => event.stopPropagation()}
+              aria-label={`Select ${task.title}`}
+              className={cn(
+                'transition-opacity',
+                // Reveal on hover/focus like the drag handle; stay visible when checked.
+                'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                checkboxSelected && 'opacity-100',
+              )}
+            />
+          </span>
         )}
         {showDragHandle && (
           <button
@@ -155,7 +157,7 @@ function TaskRowItem({
             aria-label={`Drag to reorder ${task.title}`}
             id={`task-reorder-handle-${task.id}`}
             className={cn(
-              'mt-0.5 inline-flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground disabled:cursor-not-allowed',
+              'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground disabled:cursor-not-allowed',
               'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
               'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
               dragEnabled && 'cursor-grab',
