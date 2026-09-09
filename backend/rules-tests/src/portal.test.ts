@@ -30,10 +30,14 @@ import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.t
 const WKS_A = 'wksA';
 const WKS_B = 'wksB';
 const CLIENT_ID = 'client1';
+const CLIENT_ID_2 = 'client2';
 const PROJ_PUB = 'proj-portal-pub';
 const PROJ_DRAFT = 'proj-portal-draft';
 const PROJ_ARCH = 'proj-portal-arch';
 const PROJ_OTHER = 'proj-portal-other';
+const PROJ_MULTI = 'proj-portal-multi';
+const PROJ_NOCLIENT = 'proj-portal-noclient';
+const PROJ_STALE_LEGACY = 'proj-portal-stale-legacy';
 
 const PUB_PREFIX = `workspaces/${WKS_A}/projects/${PROJ_PUB}`;
 const DRAFT_PREFIX = `workspaces/${WKS_A}/projects/${PROJ_DRAFT}`;
@@ -57,6 +61,40 @@ beforeAll(async () => {
   await seedDoc(testEnv, `workspaces/${WKS_B}/projects/${PROJ_PUB}`, {
     lifecycle: 'published',
     clientId: CLIENT_ID,
+  });
+
+  // #157: a project linking two co-equal clients via membership `clientIds`
+  // ONLY (no legacy `clientId`), plus a project with NO client link at all to
+  // exercise the defensive fallback (absent clientIds must deny, not error).
+  await seedDoc(testEnv, `workspaces/${WKS_A}/projects/${PROJ_MULTI}`, {
+    lifecycle: 'published',
+    clientIds: [CLIENT_ID, CLIENT_ID_2],
+    clients: [
+      { id: CLIENT_ID, name: 'Ann Lee' },
+      { id: CLIENT_ID_2, name: 'Ben Tan' },
+    ],
+  });
+  await seedDoc(testEnv, `workspaces/${WKS_A}/projects/${PROJ_NOCLIENT}`, {
+    lifecycle: 'published',
+  });
+
+  // #157 (security hardening): a BACKFILLED project whose membership `clientIds`
+  // is authoritative (only CLIENT_ID_2 / Ben), but whose LEGACY `clientId` is
+  // STALE — still points at CLIENT_ID / Ann after a re-link. Membership must
+  // WIN: Ann (removed) is denied, Ben (member) is allowed. Proves the stale
+  // legacy field can never over-grant once clientIds is present.
+  await seedDoc(testEnv, `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}`, {
+    lifecycle: 'published',
+    clientId: CLIENT_ID,
+    clientNameDenorm: 'Ann Lee',
+    clientIds: [CLIENT_ID_2],
+    clients: [{ id: CLIENT_ID_2, name: 'Ben Tan' }],
+  });
+  // A subcollection doc so the stale-legacy denial is also exercised through
+  // portalProjectLive() (subcollection read gate), not just the project get.
+  await seedDoc(testEnv, `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}/phases/ph1`, {
+    id: 'ph1',
+    name: 'Foundation',
   });
 
   // Published-project subcollections.
@@ -236,6 +274,109 @@ describe('portal project reads', () => {
 
   it('denies portal writes to its own project', async () => {
     await assertFails(updateDoc(doc(dbAsPortal(), PUB_PREFIX), { name: 'hacked' }));
+  });
+
+  // #157 membership access.
+  it('allows a client whose cid is in clientIds to read the shared project', async () => {
+    await assertSucceeds(
+      getDoc(doc(dbAsPortal(PROJ_MULTI), `workspaces/${WKS_A}/projects/${PROJ_MULTI}`)),
+    );
+  });
+
+  it('allows a SECOND co-equal client independent access to the same project', async () => {
+    await assertSucceeds(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_MULTI, WKS_A, CLIENT_ID_2),
+          `workspaces/${WKS_A}/projects/${PROJ_MULTI}`,
+        ),
+      ),
+    );
+  });
+
+  it('denies a client whose cid is NOT in clientIds (#157 membership)', async () => {
+    await assertFails(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_MULTI, WKS_A, 'client-stranger'),
+          `workspaces/${WKS_A}/projects/${PROJ_MULTI}`,
+        ),
+      ),
+    );
+  });
+
+  it('denies (not errors) when the project has neither clientIds nor clientId', async () => {
+    await assertFails(
+      getDoc(
+        doc(dbAsPortal(PROJ_NOCLIENT), `workspaces/${WKS_A}/projects/${PROJ_NOCLIENT}`),
+      ),
+    );
+  });
+
+  // #157 D5: an un-backfilled legacy doc (single `clientId`, no `clientIds`) must
+  // keep resolving for its client via the defensive `portalCidLinked` fallback —
+  // PROJ_PUB is seeded legacy-only, so this pins the no-hard-cutover guarantee.
+  it('resolves an un-backfilled legacy doc (clientId only, no clientIds) for its client', async () => {
+    await assertSucceeds(
+      getDoc(doc(dbAsPortal(PROJ_PUB), `workspaces/${WKS_A}/projects/${PROJ_PUB}`)),
+    );
+  });
+
+  it('denies a stranger cid on an un-backfilled legacy doc (clientId only)', async () => {
+    await assertFails(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_PUB, WKS_A, 'client-stranger'),
+          `workspaces/${WKS_A}/projects/${PROJ_PUB}`,
+        ),
+      ),
+    );
+  });
+
+  // #157 (security hardening): clientIds is AUTHORITATIVE when present. A
+  // backfilled doc with a STALE legacy clientId (points at a REMOVED client)
+  // must NOT over-grant that client. Membership (clientIds) alone decides.
+  it('denies a stale legacy clientId once clientIds is present (project get)', async () => {
+    // Ann (CLIENT_ID) is the stale legacy clientId but was removed from clientIds.
+    await assertFails(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_STALE_LEGACY, WKS_A, CLIENT_ID),
+          `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}`,
+        ),
+      ),
+    );
+  });
+
+  it('denies a stale legacy clientId via portalProjectLive (subcollection read)', async () => {
+    await assertFails(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_STALE_LEGACY, WKS_A, CLIENT_ID),
+          `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}/phases/ph1`,
+        ),
+      ),
+    );
+  });
+
+  it('allows the current member (in clientIds) on the same backfilled doc', async () => {
+    // Ben (CLIENT_ID_2) is the authoritative member — allowed for get and subcollection.
+    await assertSucceeds(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_STALE_LEGACY, WKS_A, CLIENT_ID_2),
+          `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}`,
+        ),
+      ),
+    );
+    await assertSucceeds(
+      getDoc(
+        doc(
+          dbAsPortal(PROJ_STALE_LEGACY, WKS_A, CLIENT_ID_2),
+          `workspaces/${WKS_A}/projects/${PROJ_STALE_LEGACY}/phases/ph1`,
+        ),
+      ),
+    );
   });
 });
 

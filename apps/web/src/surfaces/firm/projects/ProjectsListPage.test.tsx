@@ -55,14 +55,14 @@ vi.mock('./tags/useTags.ts', () => ({
 import { ProjectsListPage } from './ProjectsListPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
-  return {
+  const base = {
     id: 'p1',
     name: 'Bungalow build',
     description: '',
     code: 'BB-1',
-    vertical: 'construction',
-    lifecycle: 'draft',
-    status: 'planning',
+    vertical: 'construction' as const,
+    lifecycle: 'draft' as const,
+    status: 'planning' as const,
     clientId: '',
     clientNameDenorm: '',
     ownerNameDenorm: 'Alice Tan',
@@ -76,9 +76,13 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     clientCanSee: true,
     collaboratorsCount: 0,
     updatedAt: null,
-    tags: [],
+    tags: [] as string[],
     ...overrides,
   };
+  const clientIds = overrides.clientIds ?? (base.clientId !== '' ? [base.clientId] : []);
+  const clients =
+    overrides.clients ?? clientIds.map((id) => ({ id, name: base.clientNameDenorm }));
+  return { ...base, clientIds, clients };
 }
 
 function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
@@ -117,6 +121,7 @@ describe('ProjectsListPage', () => {
           status: 'active',
           progressPct: 40,
           overdueTasks: 2,
+          clientId: 'c-ahmad',
           clientNameDenorm: 'Ahmad Corp',
         }),
       ],
@@ -324,7 +329,7 @@ describe('ProjectsListPage', () => {
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
   });
 
-  it('links a client on create, pairing clientId with the denorm name (#16)', async () => {
+  it('links a client on create, writing clientIds + clients denorm (#157)', async () => {
     projectsData.createProject.mockResolvedValue('p-new');
     clientsData.state = {
       status: 'ready',
@@ -352,12 +357,15 @@ describe('ProjectsListPage', () => {
     expect(
       screen.getByRole('option', { name: 'Ahmad bin Ismail (notifications off)' }),
     ).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText('Client (optional)'), 'c1');
+    await userEvent.selectOptions(screen.getByLabelText('Clients (optional)'), 'c1');
     await userEvent.click(screen.getByRole('button', { name: /create draft/i }));
 
     expect(projectsData.createProject).toHaveBeenCalledWith(
       'wksA',
-      expect.objectContaining({ clientId: 'c1', clientName: 'Ahmad bin Ismail' }),
+      expect.objectContaining({
+        clientIds: ['c1'],
+        clients: [{ id: 'c1', name: 'Ahmad bin Ismail' }],
+      }),
       'u1',
       'Alice Tan',
     );

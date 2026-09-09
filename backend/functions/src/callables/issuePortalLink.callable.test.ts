@@ -98,7 +98,9 @@ describe('issuePortalLink callable — default get-or-create audit (#142)', () =
       request({ workspaceId: WID, projectId: PID }),
     )) as Record<string, unknown>;
 
-    expect(result['url']).toMatch(/\/p\/[a-zA-Z0-9]{12}_/);
+    const links = result['links'] as Array<Record<string, unknown>>;
+    expect(links[0]?.['url']).toMatch(/\/p\/[a-zA-Z0-9]{12}_/);
+    expect(links[0]).toMatchObject({ clientId: CID });
     expect(fake.activeClientLinks()).toHaveLength(1);
     expect(auditMock.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(auditMock.writeAuditLog).toHaveBeenCalledWith(
@@ -123,9 +125,46 @@ describe('issuePortalLink callable — default get-or-create audit (#142)', () =
       request({ workspaceId: WID, projectId: PID }),
     )) as Record<string, unknown>;
 
-    expect(result['url']).toMatch(/\/p\/link-existingshortcode_secretvalue$/);
+    const links = result['links'] as Array<Record<string, unknown>>;
+    expect(links[0]?.['url']).toMatch(/\/p\/link-existingshortcode_secretvalue$/);
     expect(fake.activeClientLinks()).toHaveLength(1);
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  // #157: co-equal clients — the callable fans out one durable link PER client
+  // id (links are per-subject; no phone de-dupe here — that only applies to
+  // WhatsApp sends). Each fresh mint audits its own portal_link.issue.
+  it('fans out one link per linked client, auditing each fresh mint (#157)', async () => {
+    const fake = makeFakeMagicLinksDb({
+      pathDocs: {
+        [PROJECT_PATH]: {
+          lifecycle: 'published',
+          clientId: 'c1',
+          clientNameDenorm: 'Ann Lee',
+          clientIds: ['c1', 'c2'],
+          clients: [
+            { id: 'c1', name: 'Ann Lee' },
+            { id: 'c2', name: 'Ben Tan' },
+          ],
+        },
+      },
+    });
+    hoisted.db = fake.db;
+
+    const result = (await issuePortalLink.run(
+      request({ workspaceId: WID, projectId: PID }),
+    )) as Record<string, unknown>;
+
+    const links = result['links'] as Array<Record<string, unknown>>;
+    expect(links).toHaveLength(2);
+    expect(links.map((l) => l['clientId'])).toEqual(['c1', 'c2']);
+    expect(links.map((l) => l['clientName'])).toEqual(['Ann Lee', 'Ben Tan']);
+    for (const link of links) {
+      expect(link['url']).toMatch(/\/p\/[a-zA-Z0-9]{12}_/);
+    }
+    // Two distinct durable links (one per subject) + one audit each.
+    expect(fake.activeClientLinks()).toHaveLength(2);
+    expect(auditMock.writeAuditLog).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -148,7 +187,8 @@ describe('issuePortalLink callable — reset:true rotate (#142)', () => {
     expect(active[0].id).not.toBe('link-prior');
     // The anchor now points at the fresh link (not the revoked prior).
     expect(fake.store.get(portalLinkAnchorId(WID, PID, CID))?.data['activeLinkId']).toBe(active[0].id);
-    expect(result['url']).toMatch(/\/p\/[a-zA-Z0-9]{12}_/);
+    const links = result['links'] as Array<Record<string, unknown>>;
+    expect(links[0]?.['url']).toMatch(/\/p\/[a-zA-Z0-9]{12}_/);
 
     expect(auditMock.writeAuditLog).toHaveBeenCalledTimes(1);
     expect(auditMock.writeAuditLog).toHaveBeenCalledWith(

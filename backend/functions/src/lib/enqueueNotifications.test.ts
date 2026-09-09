@@ -27,9 +27,12 @@ function input(overrides: Partial<IPlanTaskNotificationsInput> = {}): IPlanTaskN
       name: 'Bungalow Reno',
       lifecycle: 'published',
       clientId: 'client1',
+      clientIds: ['client1'],
     },
     // waConsent granted so the #26 D2 gate lets the happy paths through.
-    clientData: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: true } },
+    clients: [
+      { id: 'client1', data: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: true } } },
+    ],
     memberProfiles: new Map(),
     quietHours: { ...QUIET_HOURS_DEFAULT },
     firmName: 'Acme Builders',
@@ -93,7 +96,7 @@ describe('planTaskNotifications — D8 decision table', () => {
   it('suppresses with opt_out for an opted-out client', () => {
     // No waConsent either — opt_out takes precedence over no_consent (#26).
     const planned = planTaskNotifications(
-      input({ clientData: { phone: '+60123456789', notificationsOptOut: true } }),
+      input({ clients: [{ id: 'client1', data: { phone: '+60123456789', notificationsOptOut: true } }] }),
     );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({ suppressed: true, suppressedReason: 'opt_out' });
@@ -101,7 +104,7 @@ describe('planTaskNotifications — D8 decision table', () => {
 
   it('suppresses with no_consent for a client without a waConsent grant (#26 D2)', () => {
     const planned = planTaskNotifications(
-      input({ clientData: { name: 'Ahmad', phone: '+60123456789' } }),
+      input({ clients: [{ id: 'client1', data: { name: 'Ahmad', phone: '+60123456789' } }] }),
     );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({
@@ -114,7 +117,9 @@ describe('planTaskNotifications — D8 decision table', () => {
   it('treats a granted:false refusal record as no_consent (#26 D2)', () => {
     const planned = planTaskNotifications(
       input({
-        clientData: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: false } },
+        clients: [
+          { id: 'client1', data: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: false } } },
+        ],
       }),
     );
     expect(planned).toHaveLength(1);
@@ -122,16 +127,18 @@ describe('planTaskNotifications — D8 decision table', () => {
   });
 
   it('reports no_consent (not no_phone) for a resolvable but unconsented client', () => {
-    const planned = planTaskNotifications(input({ clientData: { name: 'Ahmad' } }));
+    const planned = planTaskNotifications(
+      input({ clients: [{ id: 'client1', data: { name: 'Ahmad' } }] }),
+    );
     expect(planned).toHaveLength(1);
     expect(planned[0].data).toMatchObject({ suppressed: true, suppressedReason: 'no_consent' });
   });
 
-  it('suppresses with no_recipient when no client is linked', () => {
+  it('suppresses with no_recipient when the linked client doc is missing', () => {
     const planned = planTaskNotifications(
       input({
-        projectData: { name: 'P', lifecycle: 'published', clientId: '' },
-        clientData: undefined,
+        projectData: { name: 'P', lifecycle: 'published', clientId: 'client1', clientIds: ['client1'] },
+        clients: [{ id: 'client1', data: undefined }],
       }),
     );
     expect(planned).toHaveLength(1);
@@ -139,8 +146,18 @@ describe('planTaskNotifications — D8 decision table', () => {
       suppressed: true,
       suppressedReason: 'no_recipient',
       recipientType: 'client',
-      recipientId: '',
+      recipientId: 'client1',
     });
+  });
+
+  it('writes no client record when the project has no linked client', () => {
+    const planned = planTaskNotifications(
+      input({
+        projectData: { name: 'P', lifecycle: 'published', clientId: '', clientIds: [] },
+        clients: [],
+      }),
+    );
+    expect(planned).toEqual([]);
   });
 
   it('suppresses with no_phone for a member assignee without a profile phone (D7)', () => {
@@ -308,6 +325,125 @@ describe('planTaskNotifications — D8 decision table', () => {
     expect(planTaskNotifications(dueSoonInput())[0].id).toBe(planned[0].id);
     // Status-change events use auto ids.
     expect(planTaskNotifications(input())[0].id).toBeNull();
+  });
+});
+
+describe('planTaskNotifications — #157 multi-client fan-out (trigger path)', () => {
+  // Two co-equal clients on distinct phones, each carrying its OWN durable
+  // portal token (enqueueTaskEvent mints one per sendable client). The pure
+  // planner must fan out one message per client with no cross-client bleed.
+  const twoDistinct = [
+    {
+      id: 'c1',
+      data: { name: 'Ann Lee', phone: '+60111111111', waConsent: { granted: true } },
+      portalToken: 'tokAAAA1111_c2VjcmV0',
+    },
+    {
+      id: 'c2',
+      data: { name: 'Ben Tan', phone: '+60222222222', waConsent: { granted: true } },
+      portalToken: 'tokBBBB2222_c2VjcmV0',
+    },
+  ];
+
+  it('D3: fans out one queued client record per linked client (distinct phones)', () => {
+    const planned = planTaskNotifications(input({ clients: twoDistinct }));
+    expect(planned).toHaveLength(2);
+    for (const message of planned) {
+      expect(message.data['recipientType']).toBe('client');
+      expect(message.data).not.toHaveProperty('suppressed');
+    }
+    expect(planned.map((m) => m.data['recipientId'])).toEqual(['c1', 'c2']);
+    expect(planned.map((m) => m.data['recipientPhone'])).toEqual([
+      '+60111111111',
+      '+60222222222',
+    ]);
+    // Two distinct sends ⇒ two allowance draws (one decrement per sent message).
+    expect(planned.filter((m) => m.data['suppressed'] !== true)).toHaveLength(2);
+  });
+
+  it('D9: each message embeds only its OWN client portal token — no cross-client leak', () => {
+    const planned = planTaskNotifications(input({ clients: twoDistinct }));
+    const tokens = planned.map(
+      (m) => (m.data['variables'] as Record<string, string>)['portal_token'],
+    );
+    expect(tokens).toEqual(['tokAAAA1111_c2VjcmV0', 'tokBBBB2222_c2VjcmV0']);
+    // c1's message must not carry c2's token and vice versa.
+    expect(tokens[0]).not.toBe(tokens[1]);
+    expect(JSON.stringify(planned[0].data['variables'])).not.toContain('tokBBBB2222');
+    expect(JSON.stringify(planned[1].data['variables'])).not.toContain('tokAAAA1111');
+  });
+
+  it('D4: de-dupes the WhatsApp SEND when two clients share a normalized phone', () => {
+    const shared = [
+      {
+        id: 'c1',
+        data: { name: 'Ann Lee', phone: '+60123456789', waConsent: { granted: true } },
+        portalToken: 'tokAAAA1111_c2VjcmV0',
+      },
+      {
+        id: 'c2',
+        data: { name: 'Ben Tan', phone: ' +60123456789 ', waConsent: { granted: true } },
+        portalToken: 'tokBBBB2222_c2VjcmV0',
+      },
+    ];
+    const planned = planTaskNotifications(input({ clients: shared }));
+    expect(planned).toHaveLength(2);
+    // First client on the number sends; the second collapses to a suppressed
+    // 'duplicate_phone' record (audit trail, but never sent / never billed).
+    expect(planned[0].data).not.toHaveProperty('suppressed');
+    expect(planned[0].data['recipientId']).toBe('c1');
+    expect(planned[1].data).toMatchObject({
+      suppressed: true,
+      suppressedReason: 'duplicate_phone',
+      recipientId: 'c2',
+    });
+    // Exactly ONE non-suppressed record ⇒ exactly ONE allowance draw (D4).
+    expect(planned.filter((m) => m.data['suppressed'] !== true)).toHaveLength(1);
+  });
+
+  it('gates each client independently on its own opt-out / consent / phone', () => {
+    const mixed = [
+      {
+        id: 'c1',
+        data: { name: 'Ann Lee', phone: '+60111111111', waConsent: { granted: true } },
+        portalToken: 'tokAAAA1111_c2VjcmV0',
+      },
+      // opted out — suppressed regardless of consent/phone.
+      {
+        id: 'c2',
+        data: {
+          name: 'Ben Tan',
+          phone: '+60222222222',
+          waConsent: { granted: true },
+          notificationsOptOut: true,
+        },
+      },
+      // no waConsent grant (#26 D2).
+      { id: 'c3', data: { name: 'Cai Wong', phone: '+60333333333' } },
+      // consented but no phone on file.
+      { id: 'c4', data: { name: 'Dee Ong', waConsent: { granted: true } } },
+    ];
+    const planned = planTaskNotifications(input({ clients: mixed }));
+    expect(planned).toHaveLength(4);
+    expect(planned[0].data).not.toHaveProperty('suppressed');
+    expect(planned[1].data).toMatchObject({ suppressed: true, suppressedReason: 'opt_out' });
+    expect(planned[2].data).toMatchObject({ suppressed: true, suppressedReason: 'no_consent' });
+    expect(planned[3].data).toMatchObject({ suppressed: true, suppressedReason: 'no_phone' });
+    // Only the one eligible client draws allowance; the rest are suppressed.
+    expect(planned.filter((m) => m.data['suppressed'] !== true)).toHaveLength(1);
+  });
+
+  it('a draft project suppresses ALL clients with lifecycle:<state> (D-027, no leak)', () => {
+    const planned = planTaskNotifications(
+      input({
+        clients: twoDistinct,
+        projectData: { name: 'Bungalow Reno', lifecycle: 'draft', clientIds: ['c1', 'c2'] },
+      }),
+    );
+    expect(planned).toHaveLength(2);
+    for (const message of planned) {
+      expect(message.data).toMatchObject({ suppressed: true, suppressedReason: 'lifecycle:draft' });
+    }
   });
 });
 
@@ -554,7 +690,13 @@ describe('templateVariables — snake_case wire contract (#137/#142)', () => {
           sendWhatsapp: true,
           assignees: [],
         },
-        clientPortalToken: 'abcdEFGH2345_c2VjcmV0',
+        clients: [
+          {
+            id: 'client1',
+            data: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: true } },
+            portalToken: 'abcdEFGH2345_c2VjcmV0',
+          },
+        ],
       }),
     );
     expect(planned).toHaveLength(1);
@@ -595,7 +737,13 @@ describe('templateVariables — snake_case wire contract (#137/#142)', () => {
           assignees: [],
           blockedReason: 'Waiting on materials',
         },
-        clientPortalToken: 'abcdEFGH2345_c2VjcmV0',
+        clients: [
+          {
+            id: 'client1',
+            data: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: true } },
+            portalToken: 'abcdEFGH2345_c2VjcmV0',
+          },
+        ],
       }),
     );
     expect(planned).toHaveLength(1);

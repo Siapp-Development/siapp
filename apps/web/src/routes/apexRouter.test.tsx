@@ -32,7 +32,7 @@ vi.mock('@/surfaces/portal/usePortalProject.ts', () => ({
     status: 'ready',
     project: {
       name: 'Roadside Cafe Fitout',
-      clientName: 'Aisyah Rahman',
+      clients: [{ id: 'client-1', name: 'Aisyah Rahman' }],
       lifecycle: 'published',
       startDate: null,
       targetEndDate: null,
