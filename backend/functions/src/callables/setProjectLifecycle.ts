@@ -24,6 +24,7 @@ import {
   type TProjectLifecycle,
 } from '../lib/projectLifecycle.js';
 import { countWaRecipients } from '../lib/optOut.js';
+import { resolveProjectClientIds } from '../lib/projectClients.js';
 import { writeProjectActivity } from '../lib/activityLog.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
@@ -75,7 +76,6 @@ interface IPublishPreview {
 async function computePublishPreview(
   workspaceId: string,
   projectId: string,
-  clientId: string,
 ): Promise<IPublishPreview> {
   const db = getFirestore();
   const tasks = await db
@@ -96,10 +96,11 @@ async function computePublishPreview(
     }
   }
 
-  const clientSnap =
-    clientId !== ''
-      ? await db.doc(`workspaces/${workspaceId}/clients/${clientId}`).get()
-      : null;
+  const projectSnap = await db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get();
+  const clientIds = resolveProjectClientIds(projectSnap.data());
+  const clientSnaps = await Promise.all(
+    clientIds.map((id) => db.doc(`workspaces/${workspaceId}/clients/${id}`).get()),
+  );
   const collaboratorSnaps = await Promise.all(
     [...collaboratorIds].map((id) =>
       db.doc(`workspaces/${workspaceId}/collaborators/${id}`).get(),
@@ -107,8 +108,7 @@ async function computePublishPreview(
   );
 
   const waCount = countWaRecipients({
-    clientLinked: clientId !== '',
-    clientData: clientSnap?.data(),
+    clientDocs: clientSnaps.map((snap) => snap.data()),
     collaboratorDocs: collaboratorSnaps.map((snap) => snap.data()),
   });
   return {
@@ -136,7 +136,7 @@ export const setProjectLifecycle = onCall(async (request) => {
   const db = getFirestore();
   const projectRef = db.doc(`workspaces/${workspaceId}/projects/${projectId}`);
 
-  const { lifecycle, clientId, from } = await db.runTransaction(async (txn) => {
+  const { lifecycle, from } = await db.runTransaction(async (txn) => {
     const snap = await txn.get(projectRef);
     const current = snap.get('lifecycle') as unknown;
     if (
@@ -160,7 +160,6 @@ export const setProjectLifecycle = onCall(async (request) => {
     if (dryRun) {
       return {
         lifecycle: current as TProjectLifecycle,
-        clientId: (snap.get('clientId') as string | undefined) ?? '',
         from: null,
       };
     }
@@ -173,7 +172,6 @@ export const setProjectLifecycle = onCall(async (request) => {
     });
     return {
       lifecycle: result.to,
-      clientId: (snap.get('clientId') as string | undefined) ?? '',
       from: current as TProjectLifecycle,
     };
   });
@@ -212,7 +210,7 @@ export const setProjectLifecycle = onCall(async (request) => {
   }
 
   if (action === 'publish') {
-    const publishPreview = await computePublishPreview(workspaceId, projectId, clientId);
+    const publishPreview = await computePublishPreview(workspaceId, projectId);
     return { lifecycle, publishPreview };
   }
   return { lifecycle };

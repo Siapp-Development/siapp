@@ -110,7 +110,12 @@ export function filterAndSortProjects(
     if (params.verticals.length > 0 && !params.verticals.includes(row.vertical)) {
       return false;
     }
-    if (params.clientIds.length > 0 && !params.clientIds.includes(row.clientId)) {
+    // Client filter (#157): match if ANY linked client id intersects the
+    // selected filter ids (co-equal clients — a project surfaces under each).
+    if (
+      params.clientIds.length > 0 &&
+      !row.clientIds.some((id) => params.clientIds.includes(id))
+    ) {
       return false;
     }
     if (params.overdueOnly && row.overdueTasks <= 0) {

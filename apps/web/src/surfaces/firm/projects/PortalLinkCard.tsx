@@ -1,26 +1,30 @@
-import type { TMemberRole, TProjectLifecycle } from '@siapp/shared';
+import type {
+  IPortalClientLink,
+  IPortalClientSendResult,
+  TMemberRole,
+  TProjectLifecycle,
+} from '@siapp/shared';
 import { Button, Card, CardContent, CardHeader } from '@siapp/ui';
 import { useState } from 'react';
 
 import { issuePortalLink, sendPortalLink } from '@/lib/callables.ts';
 
+import type { IProjectClientRef } from './useProjects.ts';
+
 export interface IPortalLinkCardProps {
   workspaceId: string;
   projectId: string;
   lifecycle: TProjectLifecycle;
-  clientId: string;
+  /** Linked clients (#157). Empty → the card is gated with a "link a client" hint. */
+  clients: readonly IProjectClientRef[];
   role: TMemberRole;
 }
 
 type TLinkState =
   | { status: 'idle' }
   | { status: 'working' }
-  | { status: 'copied'; expiresAt: string }
-  | { status: 'reset'; url: string; expiresAt: string }
-  | { status: 'sent'; expiresAt: string }
-  | { status: 'opted_out' }
-  | { status: 'no_consent' }
-  | { status: 'no_phone' }
+  | { status: 'links'; links: IPortalClientLink[]; copiedClientId: string | null }
+  | { status: 'sent'; results: IPortalClientSendResult[] }
   | { status: 'error' };
 
 const EXPIRY_FORMAT = new Intl.DateTimeFormat('en-MY', {
@@ -34,24 +38,40 @@ function formatExpiry(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : EXPIRY_FORMAT.format(date);
 }
 
+function sendResultMessage(result: IPortalClientSendResult): string {
+  switch (result.status) {
+    case 'queued':
+      return `Sent via WhatsApp — valid until ${formatExpiry(result.expiresAt ?? '')}.`;
+    case 'opted_out':
+      return 'Turned off WhatsApp notifications — no message sent.';
+    case 'no_consent':
+      return 'Has not consented to WhatsApp — no message sent.';
+    case 'no_phone':
+      return 'No phone number on file — no message sent.';
+    case 'duplicate_phone':
+      return 'Shares a phone with another client — one message covers both.';
+    default:
+      return 'No message sent.';
+  }
+}
+
 /**
- * Firm-side portal link controls (#21, D2) in the project Details tab for a
- * project's ONE durable, client-scoped portal link.
+ * Firm-side portal link controls (#21, D2; #157) in the project Details tab.
+ * Every linked client has its OWN durable, client-scoped portal link — Copy and
+ * Send fan out across all clients (#157 D3), and Send de-dupes WhatsApp messages
+ * by shared phone (D4). "Copy" auto-copies to the clipboard only when a single
+ * client is linked; with several clients each link is listed for manual copy.
  *
- * Durable, reset-only: "Copy" and "Send portal link" (#137, Part C) are
- * idempotent — they get-or-create and re-surface the SAME link every time, so
- * earlier links keep working (no rotation or invalidation per press). Only the
- * explicit, confirm-guarded "Reset link" rotates (audit-logged as
- * portal_link.reset). The reusable link token lives on the server-only client
- * magicLink doc, which stays rules-denied (magicLinks: read/write false).
- * "Send portal link" also enqueues the link over WhatsApp, honouring the
- * client's opt-out / consent.
+ * Durable, reset-only: "Copy" and "Send portal link" are idempotent — they
+ * get-or-create and re-surface the SAME links every time, so earlier links keep
+ * working. Only the explicit, confirm-guarded "Reset link" rotates every
+ * client's link (audit-logged as portal_link.reset).
  */
 export function PortalLinkCard({
   workspaceId,
   projectId,
   lifecycle,
-  clientId,
+  clients,
   role,
 }: IPortalLinkCardProps) {
   const [state, setState] = useState<TLinkState>({ status: 'idle' });
@@ -62,7 +82,7 @@ export function PortalLinkCard({
     ? 'Only owners, admins and PMs can share portal links.'
     : lifecycle !== 'published' && lifecycle !== 'completed'
       ? 'Publish the project before sharing a portal link.'
-      : clientId === ''
+      : clients.length === 0
         ? 'Link a client to the project first.'
         : null;
 
@@ -72,20 +92,35 @@ export function PortalLinkCard({
     setState({ status: 'working' });
     setConfirmingReset(false);
     try {
-      const { url, expiresAt } = await issuePortalLink({
+      const { links } = await issuePortalLink({
         workspaceId,
         projectId,
         ...(reset ? { reset: true } : {}),
       });
-      try {
-        await navigator.clipboard.writeText(url);
-        setState({ status: 'copied', expiresAt });
-      } catch {
-        // Clipboard denied (permissions/insecure context) — show the URL.
-        setState({ status: 'reset', url, expiresAt });
+      // Auto-copy only makes sense for a single link; multi-client projects list
+      // each link for manual copy instead.
+      let copiedClientId: string | null = null;
+      const only = links.length === 1 ? links[0] : undefined;
+      if (only !== undefined) {
+        try {
+          await navigator.clipboard.writeText(only.url);
+          copiedClientId = only.clientId;
+        } catch {
+          // Clipboard denied (permissions/insecure context) — fall back to display.
+        }
       }
+      setState({ status: 'links', links, copiedClientId });
     } catch {
       setState({ status: 'error' });
+    }
+  }
+
+  async function copyOne(link: IPortalClientLink, links: IPortalClientLink[]): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setState({ status: 'links', links, copiedClientId: link.clientId });
+    } catch {
+      // Leave the current listing in place; the URL is already shown for manual copy.
     }
   }
 
@@ -93,16 +128,8 @@ export function PortalLinkCard({
     setState({ status: 'working' });
     setConfirmingReset(false);
     try {
-      const result = await sendPortalLink({ workspaceId, projectId });
-      if (result.status === 'queued') {
-        setState({ status: 'sent', expiresAt: result.expiresAt });
-      } else if (result.status === 'opted_out') {
-        setState({ status: 'opted_out' });
-      } else if (result.status === 'no_phone') {
-        setState({ status: 'no_phone' });
-      } else {
-        setState({ status: 'no_consent' });
-      }
+      const { results } = await sendPortalLink({ workspaceId, projectId });
+      setState({ status: 'sent', results });
     } catch {
       setState({ status: 'error' });
     }
@@ -119,16 +146,12 @@ export function PortalLinkCard({
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              Links last 90 days. Copy and Send re-surface the same link — earlier links keep working. Only Reset rotates it.
+              Each client gets their own link, valid 90 days. Copy and Send re-surface the same
+              links — earlier links keep working. Only Reset rotates them.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                disabled={working}
-                onClick={() => void issue(false)}
-              >
-                Copy portal link
+              <Button type="button" size="sm" disabled={working} onClick={() => void issue(false)}>
+                {clients.length > 1 ? 'Get portal links' : 'Copy portal link'}
               </Button>
               <Button
                 type="button"
@@ -137,7 +160,7 @@ export function PortalLinkCard({
                 disabled={working}
                 onClick={() => void send()}
               >
-                Send portal link
+                Send portal link{clients.length > 1 ? 's' : ''}
               </Button>
               {confirmingReset ? (
                 <>
@@ -167,40 +190,54 @@ export function PortalLinkCard({
                   disabled={working}
                   onClick={() => setConfirmingReset(true)}
                 >
-                  Reset link
+                  Reset link{clients.length > 1 ? 's' : ''}
                 </Button>
               )}
             </div>
-            {state.status === 'copied' && (
-              <p role="status" className="text-sm text-primary">
-                Link copied — valid until {formatExpiry(state.expiresAt)}.
-              </p>
-            )}
-            {state.status === 'reset' && (
-              <p role="status" className="break-all text-sm">
-                New link (valid until {formatExpiry(state.expiresAt)}):{' '}
-                <span className="font-mono">{state.url}</span>
-              </p>
+            {state.status === 'links' && (
+              <ul className="flex flex-col gap-2" aria-label="Portal links">
+                {state.links.map((link) => (
+                  <li key={link.clientId} className="text-sm">
+                    <span className="font-medium">{link.clientName}</span> — valid until{' '}
+                    {formatExpiry(link.expiresAt)}
+                    {state.copiedClientId === link.clientId ? (
+                      <span className="ml-2 text-primary" role="status">
+                        Copied
+                      </span>
+                    ) : (
+                      <>
+                        {': '}
+                        <span className="break-all font-mono">{link.url}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="ml-2"
+                          onClick={() => void copyOne(link, state.links)}
+                        >
+                          Copy
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
             {state.status === 'sent' && (
-              <p role="status" className="text-sm text-primary">
-                Portal link sent via WhatsApp — valid until {formatExpiry(state.expiresAt)}.
-              </p>
-            )}
-            {state.status === 'opted_out' && (
-              <p role="status" className="text-sm text-destructive">
-                This client has turned off WhatsApp notifications, so no message was sent.
-              </p>
-            )}
-            {state.status === 'no_consent' && (
-              <p role="status" className="text-sm text-destructive">
-                This client has not consented to WhatsApp, so no message was sent.
-              </p>
-            )}
-            {state.status === 'no_phone' && (
-              <p role="status" className="text-sm text-destructive">
-                This client has no phone number on file, so no message was sent.
-              </p>
+              <ul className="flex flex-col gap-1" aria-label="Send results">
+                {state.results.map((result) => (
+                  <li
+                    key={result.clientId}
+                    className={`text-sm ${
+                      result.status === 'queued' ? 'text-primary' : 'text-muted-foreground'
+                    }`}
+                    role="status"
+                  >
+                    <span className="font-medium">{result.clientName}</span>:{' '}
+                    {sendResultMessage(result)}
+                  </li>
+                ))}
+              </ul>
             )}
             {state.status === 'error' && (
               <p role="alert" className="text-sm text-destructive">

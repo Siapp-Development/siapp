@@ -442,8 +442,29 @@ export interface IProjectDoc {
   deletedAt?: Date;
   status: TProjectStatus;
   duplicatedFromProjectId?: string;
+  /**
+   * @deprecated (#157) Legacy single-client field. During the migration window
+   * this is dual-written to mirror the first entry of `clientIds`/`clients` so
+   * legacy readers keep working. New code should read `clientIds`/`clients`.
+   */
   clientId: string;
+  /**
+   * @deprecated (#157) Legacy single-client denorm name. Mirrors the first entry
+   * of `clients`. New code should read `clients[].name`.
+   */
   clientNameDenorm: string;
+  /**
+   * Client ids linked to this project (#157). Rules-queryable membership list
+   * used for portal access + notification fan-out (mirrors the
+   * `assigneeCollaboratorIds` string-projection precedent). Empty = no client
+   * linked. Capped at 5 clients per project (D2).
+   */
+  clientIds: string[];
+  /**
+   * Denormalised `{id,name}` for display without N reads (#157). Kept in lockstep
+   * with `clientIds` by the firm CRUD forms (rules-validated equal-length pairing).
+   */
+  clients: Array<{ id: string; name: string }>;
   ownerUid: string;
   ownerNameDenorm: string;
   startDate: Date;

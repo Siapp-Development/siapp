@@ -11,6 +11,13 @@ import type { IQuietHoursSettings, ITaskNotifyConfig } from './firestoreTypes.ts
  */
 export const WA_UTILITY_COST_MYR = 0.1;
 
+/**
+ * Max number of clients that can be linked to a single project (#157, D2).
+ * Enforced in the project form, the create/update write path, and
+ * `firestore.rules` (keep the three in sync).
+ */
+export const MAX_PROJECT_CLIENTS = 5;
+
 /** Max upload size for project/task documents (#14) — enforced in storage.rules and firestore.rules; keep the three in sync. */
 export const MAX_DOCUMENT_SIZE_BYTES = 25 * 1024 * 1024;
 

@@ -35,7 +35,7 @@ import type {
   IUpdateNotificationSettingsResponse,
   TResendInviteResponse,
   TSendCollaboratorLinkResponse,
-  TSendPortalLinkResponse,
+  ISendPortalLinkResponse,
 } from '@siapp/shared';
 
 import { functions } from './firebase.ts';
@@ -168,8 +168,8 @@ export async function sendCollaboratorLink(
  */
 export async function sendPortalLink(
   data: ISendPortalLinkRequest,
-): Promise<TSendPortalLinkResponse> {
-  const call = httpsCallable<ISendPortalLinkRequest, TSendPortalLinkResponse>(
+): Promise<ISendPortalLinkResponse> {
+  const call = httpsCallable<ISendPortalLinkRequest, ISendPortalLinkResponse>(
     functions,
     'sendPortalLink',
   );

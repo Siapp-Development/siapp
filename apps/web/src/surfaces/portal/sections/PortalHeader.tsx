@@ -35,6 +35,10 @@ export function PortalHeader({ project, workspaceId, projectId, clientId }: IPor
   const headingId = useId();
   const upload = usePortalDocumentUpload({ workspaceId, projectId, clientId });
 
+  // D7: the subtitle is the logged-in client's OWN name (resolved from the
+  // session cid), never the full co-client list.
+  const ownName = project.clients.find((client) => client.id === clientId)?.name ?? '';
+
   return (
     <section
       aria-labelledby={headingId}
@@ -43,9 +47,7 @@ export function PortalHeader({ project, workspaceId, projectId, clientId }: IPor
       <h1 id={headingId} className="text-3xl font-bold tracking-tight">
         {project.name}
       </h1>
-      {project.clientName !== '' && (
-        <p className="mt-1 text-sm text-muted-foreground">{project.clientName}</p>
-      )}
+      {ownName !== '' && <p className="mt-1 text-sm text-muted-foreground">{ownName}</p>}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>

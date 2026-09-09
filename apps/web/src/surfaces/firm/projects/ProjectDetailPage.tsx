@@ -23,7 +23,7 @@ import { PortalLinkCard } from './PortalLinkCard.tsx';
 import { ProjectActionsMenu } from './ProjectActionsMenu.tsx';
 import { ProjectForm } from './ProjectForm.tsx';
 import { PublishProjectDialog } from './PublishProjectDialog.tsx';
-import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
+import { STATUS_LABELS, VERTICAL_LABELS, clientSummaryLabel } from './projectLabels.ts';
 import { lifecycleActionsFor, lifecycleErrorMessage } from './projectLifecycle.ts';
 import { TagSelect } from './tags/TagSelect.tsx';
 import { createTag, deleteTag, useTags } from './tags/useTags.ts';
@@ -331,10 +331,12 @@ export function ProjectDetailPage({
               ) : (
                 <dl className="grid grid-cols-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                   <div>
-                    <dt className="text-muted-foreground">Client</dt>
+                    <dt className="text-muted-foreground">
+                      {project.clients.length > 1 ? 'Clients' : 'Client'}
+                    </dt>
                     <dd>
-                      {project.clientNameDenorm !== ''
-                        ? project.clientNameDenorm
+                      {project.clients.length > 0
+                        ? clientSummaryLabel(project.clients)
                         : 'No client linked'}
                     </dd>
                   </div>
@@ -380,7 +382,7 @@ export function ProjectDetailPage({
             workspaceId={workspaceId}
             projectId={project.id}
             lifecycle={project.lifecycle}
-            clientId={project.clientId}
+            clients={project.clients}
             role={role}
           />
 

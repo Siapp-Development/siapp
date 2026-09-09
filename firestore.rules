@@ -188,10 +188,20 @@ service cloud.firestore {
     // Portal reads additionally re-check the project's CURRENT client
     // binding against the portal.cid claim — re-linking the project to
     // another client instantly closes the old client's portal.
+    // #157: membership against clientIds (co-equal clients) is AUTHORITATIVE
+    // when present — a client removed from clientIds instantly loses portal
+    // access even if a stale legacy clientId still points at them (form bug,
+    // Admin-SDK write, partial migration). The legacy single clientId is used
+    // ONLY as a fallback for un-backfilled docs that lack a clientIds field.
+    function portalCidLinked(project) {
+      return ('clientIds' in project)
+        ? (request.auth.token.portal.cid in project.clientIds)
+        : (project.get('clientId', '') == request.auth.token.portal.cid);
+    }
     function portalProjectLive(wid, pid) {
       let project = get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)).data;
       return project.lifecycle in ['published', 'completed']
-        && project.clientId == request.auth.token.portal.cid;
+        && portalCidLinked(project);
     }
 
     // Field validation for own users/{uid} writes. Whitelisted keys only —
@@ -311,6 +321,10 @@ service cloud.firestore {
     // (no client linked) or both non-empty. No exists() check on clientId
     // (matches the phaseId precedent; a stale id only mislabels the firm's
     // own project inside its own workspace).
+    // #157: clientIds/clients are the co-equal multi-client fields. Forms
+    // dual-write the legacy pair (first entry) during the migration window.
+    // clients[] is the display denorm and must stay length-locked to
+    // clientIds[]. Cap = 5 (MAX_PROJECT_CLIENTS in @siapp/shared; keep in sync).
     function validProjectFields() {
       let d = request.resource.data;
       return d.name is string
@@ -323,6 +337,13 @@ service cloud.firestore {
         && d.clientNameDenorm is string
         && ((d.clientId == '' && d.clientNameDenorm == '')
           || (d.clientId.size() > 0 && d.clientNameDenorm.size() > 0))
+        // #157: clientIds/clients are optional during the dual-write window so
+        // legacy docs (and field-scoped updates that don't touch clients) keep
+        // passing. When present they must be paired lists, sizes equal, cap 5.
+        && (!('clientIds' in d) || (d.clientIds is list && d.clientIds.size() <= 5))
+        && (!('clients' in d) || d.clients is list)
+        && (('clientIds' in d) == ('clients' in d))
+        && (!('clientIds' in d) || d.clients.size() == d.clientIds.size())
         && d.startDate is timestamp
         && (!('targetEndDate' in d) || d.targetEndDate is timestamp)
         && (!('actualEndDate' in d) || d.actualEndDate is timestamp)
@@ -804,13 +825,14 @@ service cloud.firestore {
         allow get: if isFirmMember(wid)
           || (isPortalClient(wid, pid)
             && resource.data.lifecycle in ['published', 'completed']
-            && resource.data.clientId == request.auth.token.portal.cid);
+            && portalCidLinked(resource.data));
         allow list: if isFirmMember(wid);
         allow create: if hasRole(wid, ['owner', 'admin', 'pm'])
           && workspaceActive(wid)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'code', 'vertical', 'lifecycle', 'status',
-            'clientId', 'clientNameDenorm', 'ownerUid', 'ownerNameDenorm',
+            'clientId', 'clientNameDenorm', 'clientIds', 'clients',
+            'ownerUid', 'ownerNameDenorm',
             'startDate', 'targetEndDate', 'actualEndDate',
             'summary', 'visibility', 'tags', 'createdAt', 'updatedAt', 'createdBy',
             'duplicatedFromProjectId', 'description'
@@ -846,7 +868,8 @@ service cloud.firestore {
           && workspaceActive(wid)
           && resource.data.lifecycle in ['draft', 'published']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'name', 'code', 'clientId', 'clientNameDenorm', 'status',
+            'name', 'code', 'clientId', 'clientNameDenorm',
+            'clientIds', 'clients', 'status',
             'startDate', 'targetEndDate', 'actualEndDate', 'visibility',
             'tags', 'updatedAt', 'description'
           ])

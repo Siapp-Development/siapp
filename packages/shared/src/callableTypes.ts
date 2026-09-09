@@ -149,12 +149,10 @@ export interface IUpdateNotificationSettingsResponse {
 }
 
 /**
- * issuePortalLink (#21, D2): firm owner/admin/pm mints a client portal magic
- * link for a published/completed project with a linked client. One active
- * link per (project, client): every issue revokes any previous active link
- * and returns a fresh URL (raw secrets are never at rest, so an existing
- * link's URL cannot be re-surfaced). `reset: true` marks the rotation as an
- * explicit reset in the audit log.
+ * issuePortalLink (#21, D2 · #157): firm owner/admin/pm mints the client portal
+ * magic link for a published/completed project. #157: a project can carry
+ * MULTIPLE co-equal clients, so issuance fans out — one durable link PER linked
+ * client (links are per-subject). `reset: true` rotates every client's link.
  */
 export interface IIssuePortalLinkRequest {
   workspaceId: string;
@@ -163,11 +161,19 @@ export interface IIssuePortalLinkRequest {
   reset?: boolean;
 }
 
-export interface IIssuePortalLinkResponse {
+/** One linked client's durable portal link (#157). */
+export interface IPortalClientLink {
+  clientId: string;
+  clientName: string;
   /** Full portal URL: `https://siapp.app/p/{shortCode}_{secret}`. */
   url: string;
   /** ISO instant the link stops redeeming (PORTAL_LINK_TTL_DAYS from issue). */
   expiresAt: string;
+}
+
+export interface IIssuePortalLinkResponse {
+  /** One entry per linked client, in link order (#157). */
+  links: IPortalClientLink[];
 }
 
 /** redeemPortalLink (#21, D1): unauthenticated; the URL token is the credential. */
@@ -246,23 +252,31 @@ export type TSendCollaboratorLinkResponse =
   | { status: 'no_phone' };
 
 /**
- * sendPortalLink (#137, Part C): firm owner/admin/pm sends a CLIENT their
- * project portal link over WhatsApp on demand. Mints a fresh client portal link
- * (rotate-on-issue, per-action) and enqueues a `project_welcome` `messages` doc
- * — the client analog of `sendCollaboratorLink`. Enqueue-only; honours
- * opt-out / consent. Delivery is handled by the scheduled dispatch sweep (#133)
- * when Twilio config is present (absent creds → NoopProvider, no send).
+ * sendPortalLink (#137, Part C · #157): firm owner/admin/pm sends the project
+ * portal link over WhatsApp to EVERY linked client on demand — the client
+ * analog of `sendCollaboratorLink`. Each client is gated independently on its
+ * own opt-out / consent / phone; #157 (D4) de-dupes sends by normalized phone
+ * so two clients sharing a number get ONE message. Enqueue-only; delivery via
+ * the scheduled dispatch sweep (#133).
  */
 export interface ISendPortalLinkRequest {
   workspaceId: string;
   projectId: string;
 }
 
-export type TSendPortalLinkResponse =
-  | { status: 'queued'; expiresAt: string }
-  | { status: 'opted_out' }
-  | { status: 'no_consent' }
-  | { status: 'no_phone' };
+/** Per-client send outcome (#157). `duplicate_phone`: suppressed by D4 de-dupe. */
+export interface IPortalClientSendResult {
+  clientId: string;
+  clientName: string;
+  status: 'queued' | 'opted_out' | 'no_consent' | 'no_phone' | 'duplicate_phone';
+  /** Present only when status === 'queued'. */
+  expiresAt?: string;
+}
+
+export interface ISendPortalLinkResponse {
+  /** One entry per linked client, in link order (#157). */
+  results: IPortalClientSendResult[];
+}
 
 /** redeemCollabLink (#22): unauthenticated; the URL token is the credential. */
 export interface IRedeemCollabLinkRequest {

@@ -61,7 +61,7 @@ export function ProjectActionsMenu({
   const canCopyLink =
     (role === 'owner' || role === 'admin' || role === 'pm') &&
     (project.lifecycle === 'published' || project.lifecycle === 'completed') &&
-    project.clientId !== '';
+    project.clientIds.length > 0;
 
   async function runLifecycle(action: TProjectLifecycleAction): Promise<void> {
     setPending(true);

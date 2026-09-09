@@ -59,6 +59,7 @@ export type TAuditAction =
   | 'billing.trial_expired';
 
 import { parseCollabUid } from './portalTokens.js';
+import { resolveProjectClientIds, resolveProjectClientNames } from './projectClients.js';
 
 type TDocData = Record<string, unknown> | undefined;
 
@@ -341,7 +342,14 @@ export function deriveProjectActivity(before: TDocData, after: TDocData): IDeriv
     ];
   }
 
-  if (str(before, 'clientId') !== str(after, 'clientId')) {
+  // #157: the client link changed when the SET of linked client ids changes
+  // (add/remove any co-equal client), not just the legacy first entry. Compare
+  // order-insensitively; from/to carry the joined client display names.
+  const beforeIds = [...resolveProjectClientIds(before)].sort();
+  const afterIds = [...resolveProjectClientIds(after)].sort();
+  if (beforeIds.join('\u0000') !== afterIds.join('\u0000')) {
+    const fromNames = resolveProjectClientNames(before).join(', ');
+    const toNames = resolveProjectClientNames(after).join(', ');
     return [
       {
         action: 'client_link_changed',
@@ -351,8 +359,8 @@ export function deriveProjectActivity(before: TDocData, after: TDocData): IDeriv
         restrictedToDepartments: [],
         visibleToClient: false,
         payload: {
-          from: str(before, 'clientNameDenorm') || null,
-          to: str(after, 'clientNameDenorm') || null,
+          from: fromNames !== '' ? fromNames : null,
+          to: toNames !== '' ? toNames : null,
         },
       },
     ];
