@@ -14,6 +14,8 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     status: 'active',
     clientId: '',
     clientNameDenorm: '',
+    clientIds: [],
+    clients: [],
     ownerNameDenorm: 'Alice Tan',
     startDate: null,
     targetEndDate: null,

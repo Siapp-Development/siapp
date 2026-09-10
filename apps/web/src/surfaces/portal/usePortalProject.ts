@@ -19,9 +19,19 @@ import { useEffect, useState } from 'react';
 
 import { db } from '@/lib/firebase.ts';
 
+export interface IPortalClientRef {
+  id: string;
+  name: string;
+}
+
 export interface IPortalProject {
   name: string;
-  clientName: string;
+  /**
+   * All linked clients on the shared project (#157). Portal principals can read
+   * the project doc but NOT `/clients`, so names come from the `clients` denorm.
+   * Legacy single-client docs resolve to a one-entry list via {@link mapProject}.
+   */
+  clients: IPortalClientRef[];
   lifecycle: string;
   startDate: Date | null;
   targetEndDate: Date | null;
@@ -48,11 +58,38 @@ function asDate(value: unknown): Date | null {
   return value instanceof Timestamp ? value.toDate() : null;
 }
 
+function resolvePortalClients(data: DocumentData): IPortalClientRef[] {
+  const raw = data['clients'];
+  // #157 D5: when the `clients` denorm array is present it is authoritative —
+  // even if empty — so a cleared client list renders as no linked clients rather
+  // than re-surfacing stale legacy values.
+  if (Array.isArray(raw)) {
+    return raw.flatMap((entry): IPortalClientRef[] => {
+      if (entry === null || typeof entry !== 'object') {
+        return [];
+      }
+      const record = entry as Record<string, unknown>;
+      const id = typeof record['id'] === 'string' ? record['id'] : '';
+      if (id === '') {
+        return [];
+      }
+      return [{ id, name: typeof record['name'] === 'string' ? record['name'] : '' }];
+    });
+  }
+  // Legacy single-client fallback (#157, D5): a not-yet-backfilled doc has only
+  // `clientId`/`clientNameDenorm`.
+  const legacyId = typeof data['clientId'] === 'string' ? data['clientId'] : '';
+  if (legacyId === '') {
+    return [];
+  }
+  return [{ id: legacyId, name: String(data['clientNameDenorm'] ?? '') }];
+}
+
 function mapProject(data: DocumentData): IPortalProject {
   const summary = (data['summary'] ?? {}) as Record<string, unknown>;
   return {
     name: String(data['name'] ?? ''),
-    clientName: String(data['clientNameDenorm'] ?? ''),
+    clients: resolvePortalClients(data),
     lifecycle: String(data['lifecycle'] ?? ''),
     startDate: asDate(data['startDate']),
     targetEndDate: asDate(data['targetEndDate']),

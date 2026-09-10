@@ -27,7 +27,7 @@ import {
   writeProjectsListParams,
   type IProjectsListParams,
 } from './projectsListFilter.ts';
-import { STATUS_LABELS } from './projectLabels.ts';
+import { STATUS_LABELS, clientSummaryLabel } from './projectLabels.ts';
 import { TagChipList } from './tags/TagChipList.tsx';
 import { useTags, type ITagEntry } from './tags/useTags.ts';
 import { createProject, useProjects, type IProjectRow } from './useProjects.ts';
@@ -79,7 +79,7 @@ function ProjectListItem({ project, workspaceSlug, tags }: IProjectListItemProps
       <p className="mt-1.5 text-sm text-muted-foreground">
         {STATUS_LABELS[project.status]}
         {' · '}
-        {project.clientNameDenorm !== '' ? project.clientNameDenorm : 'No client linked'}
+        {project.clients.length > 0 ? clientSummaryLabel(project.clients) : 'No client linked'}
         {project.startDate !== null && ` · starts ${project.startDate.toLocaleDateString()}`}
         {project.targetEndDate !== null && ` · due ${project.targetEndDate.toLocaleDateString()}`}
       </p>
@@ -246,8 +246,8 @@ export function ProjectsListPage({
                         code: '',
                         vertical: source.vertical,
                         status: 'planning',
-                        clientId: '',
-                        clientName: '',
+                        clientIds: [],
+                        clients: [],
                         startDate: new Date(),
                         targetEndDate: null,
                         clientCanSee: source.clientCanSee,

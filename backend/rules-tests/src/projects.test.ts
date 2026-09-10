@@ -84,6 +84,8 @@ function validProject(
     status: 'planning',
     clientId: '',
     clientNameDenorm: '',
+    clientIds: [],
+    clients: [],
     ownerUid: creator,
     ownerNameDenorm: 'Test Owner',
     startDate: Timestamp.now(),
@@ -251,6 +253,92 @@ describe('project create', () => {
       ),
     );
   });
+
+  // #157 multi-client create shape.
+  it('allows creating a project linking two co-equal clients', async () => {
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-multi`),
+        validProject('proj-multi', {
+          clientId: 'c1',
+          clientNameDenorm: 'Ann Lee',
+          clientIds: ['c1', 'c2'],
+          clients: [
+            { id: 'c1', name: 'Ann Lee' },
+            { id: 'c2', name: 'Ben Tan' },
+          ],
+        }),
+      ),
+    );
+  });
+
+  it('denies create when clients length != clientIds length (#157)', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-mismatch`),
+        validProject('proj-mismatch', {
+          clientId: 'c1',
+          clientNameDenorm: 'Ann Lee',
+          clientIds: ['c1', 'c2'],
+          clients: [{ id: 'c1', name: 'Ann Lee' }],
+        }),
+      ),
+    );
+  });
+
+  it('denies create with more than 5 clients (#157 D2)', async () => {
+    const clientIds = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-cap`),
+        validProject('proj-cap', {
+          clientId: 'c1',
+          clientNameDenorm: 'Ann Lee',
+          clientIds,
+          clients: clientIds.map((id) => ({ id, name: id })),
+        }),
+      ),
+    );
+  });
+
+  it('denies create when clientIds is present but clients is missing (#157)', async () => {
+    const bad = validProject('proj-noclients', {
+      clientId: 'c1',
+      clientNameDenorm: 'Ann Lee',
+      clientIds: ['c1'],
+    });
+    delete (bad as Record<string, unknown>)['clients'];
+    await assertFails(
+      setDoc(doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-noclients`), bad),
+    );
+  });
+
+  it('denies create when clients is present but clientIds is missing (#157 paired presence)', async () => {
+    const bad = validProject('proj-noids', {
+      clientId: 'c1',
+      clientNameDenorm: 'Ann Lee',
+      clients: [{ id: 'c1', name: 'Ann Lee' }],
+    });
+    delete (bad as Record<string, unknown>)['clientIds'];
+    await assertFails(
+      setDoc(doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-noids`), bad),
+    );
+  });
+
+  it('allows creating a project with exactly 5 clients (#157 D2 boundary)', async () => {
+    const clientIds = ['c1', 'c2', 'c3', 'c4', 'c5'];
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('owner'), `workspaces/${WKS_A}/projects/proj-five`),
+        validProject('proj-five', {
+          clientId: 'c1',
+          clientNameDenorm: 'Ann Lee',
+          clientIds,
+          clients: clientIds.map((id) => ({ id, name: id })),
+        }),
+      ),
+    );
+  });
 });
 
 describe('project update', () => {
@@ -310,6 +398,76 @@ describe('project update', () => {
       updateDoc(doc(dbAs('pm'), PROJ_PATH), {
         clientId: '',
         clientNameDenorm: 'Acme',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('allows linking two co-equal clients on update (#157)', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: 'c1',
+        clientNameDenorm: 'Ann Lee',
+        clientIds: ['c1', 'c2'],
+        clients: [
+          { id: 'c1', name: 'Ann Lee' },
+          { id: 'c2', name: 'Ben Tan' },
+        ],
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('denies updating to more than 5 clients (#157 D2)', async () => {
+    const clientIds = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    await assertFails(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: 'c1',
+        clientNameDenorm: 'Ann Lee',
+        clientIds,
+        clients: clientIds.map((id) => ({ id, name: id })),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('allows updating to exactly 5 clients (#157 D2 boundary)', async () => {
+    const clientIds = ['c1', 'c2', 'c3', 'c4', 'c5'];
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        clientId: 'c1',
+        clientNameDenorm: 'Ann Lee',
+        clientIds,
+        clients: clientIds.map((id) => ({ id, name: id })),
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  // #157 D5 (dual-write + backfill, NO hard cutover): a legacy single-client doc
+  // that predates the arrays (no clientIds/clients) must keep passing field-scoped
+  // edits, so not-yet-backfilled projects stay editable during the window.
+  it('allows a name-only edit on an un-backfilled legacy doc (no clientIds/clients)', async () => {
+    const legacy = validProject('proj-site', { clientId: 'c1', clientNameDenorm: 'Ann Lee' });
+    delete (legacy as Record<string, unknown>)['clientIds'];
+    delete (legacy as Record<string, unknown>)['clients'];
+    await seedDoc(testEnv, PROJ_PATH, legacy);
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        name: 'Legacy rename',
+        updatedAt: Timestamp.now(),
+      }),
+    );
+  });
+
+  it('allows a tags-only edit on an un-backfilled legacy doc (no clientIds/clients)', async () => {
+    const legacy = validProject('proj-site', { clientId: 'c1', clientNameDenorm: 'Ann Lee' });
+    delete (legacy as Record<string, unknown>)['clientIds'];
+    delete (legacy as Record<string, unknown>)['clients'];
+    await seedDoc(testEnv, PROJ_PATH, legacy);
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), PROJ_PATH), {
+        tags: ['urgent'],
         updatedAt: Timestamp.now(),
       }),
     );

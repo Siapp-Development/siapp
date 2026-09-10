@@ -5,10 +5,10 @@
  */
 
 import { Alert, Button, Input, Label } from '@siapp/ui';
-import type { TProjectStatus, TProjectVertical } from '@siapp/shared';
+import { MAX_PROJECT_CLIENTS, type TProjectStatus, type TProjectVertical } from '@siapp/shared';
 import { useState, type FormEvent } from 'react';
 
-import type { IProjectFormValues, IProjectRow } from './useProjects.ts';
+import type { IProjectClientRef, IProjectFormValues, IProjectRow } from './useProjects.ts';
 import { STATUS_LABELS, VERTICAL_LABELS } from './projectLabels.ts';
 
 const STATUSES = Object.keys(STATUS_LABELS) as TProjectStatus[];
@@ -76,7 +76,10 @@ export function ProjectForm({
   const [status, setStatus] = useState<TProjectStatus>(
     project?.status ?? prefill?.status ?? 'planning',
   );
-  const [clientId, setClientId] = useState(project?.clientId ?? prefill?.clientId ?? '');
+  const [clientIds, setClientIds] = useState<string[]>(
+    project?.clientIds ?? prefill?.clientIds ?? [],
+  );
+  const [clientToAdd, setClientToAdd] = useState('');
   const [startDate, setStartDate] = useState(
     toDateInput(project?.startDate ?? prefill?.startDate ?? new Date()),
   );
@@ -88,6 +91,32 @@ export function ProjectForm({
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Names come from the live options first, then the project's existing denorm
+  // (an already-linked client may have been archived out of the options list).
+  function nameFor(id: string): string {
+    const option = clients.find((client) => client.id === id);
+    if (option !== undefined) {
+      return option.name;
+    }
+    return project?.clients.find((client) => client.id === id)?.name ?? '';
+  }
+
+  const selectedClients = clientIds.map((id) => ({ id, name: nameFor(id) }));
+  const availableClients = clients.filter((client) => !clientIds.includes(client.id));
+  const atCap = clientIds.length >= MAX_PROJECT_CLIENTS;
+
+  function addClient(id: string): void {
+    if (id === '' || clientIds.includes(id) || clientIds.length >= MAX_PROJECT_CLIENTS) {
+      return;
+    }
+    setClientIds([...clientIds, id]);
+    setClientToAdd('');
+  }
+
+  function removeClient(id: string): void {
+    setClientIds(clientIds.filter((clientId) => clientId !== id));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -109,21 +138,17 @@ export function ProjectForm({
       setError('Enter a start date.');
       return;
     }
-    // Resolve the denormalized client name from the selected row; fall back to
-    // the existing denorm when the link is unchanged but the client list is
-    // still loading. Rules require the id/name pair to be set together.
-    let clientName = '';
-    if (clientId !== '') {
-      const selected = clients.find((client) => client.id === clientId);
-      if (selected !== undefined) {
-        clientName = selected.name;
-      } else if (project !== undefined && clientId === project.clientId) {
-        clientName = project.clientNameDenorm;
-      }
-      if (clientName === '') {
-        setError('Pick a client from the list, or leave it as No client.');
+    // Resolve denormalized names for each linked client from the option list,
+    // falling back to the project's existing denorm when an option is still
+    // loading. Rules require `clients[]` to parallel `clientIds[]` (#157).
+    const clients: IProjectClientRef[] = [];
+    for (const id of clientIds) {
+      const name = nameFor(id);
+      if (name === '') {
+        setError('One or more selected clients could not be resolved. Try again.');
         return;
       }
+      clients.push({ id, name });
     }
     setPending(true);
     setError(null);
@@ -134,8 +159,8 @@ export function ProjectForm({
         code: code.trim(),
         vertical,
         status,
-        clientId,
-        clientName,
+        clientIds,
+        clients,
         startDate: start,
         targetEndDate: fromDateInput(targetEndDate),
         clientCanSee,
@@ -212,21 +237,39 @@ export function ProjectForm({
             ))}
           </select>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="project-client">Client (optional)</Label>
+        <div className="flex min-w-64 flex-col gap-1.5">
+          <Label htmlFor="project-client">Clients (optional)</Label>
+          {selectedClients.length > 0 && (
+            <ul className="flex flex-wrap gap-2" aria-label="Linked clients">
+              {selectedClients.map((client) => (
+                <li
+                  key={client.id}
+                  className="flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-sm"
+                >
+                  <span>{client.name}</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground"
+                    aria-label={`Remove ${client.name}`}
+                    onClick={() => removeClient(client.id)}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <select
             id="project-client"
             className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            value={clientId}
-            onChange={(event) => setClientId(event.target.value)}
+            value={clientToAdd}
+            disabled={atCap || availableClients.length === 0}
+            onChange={(event) => addClient(event.target.value)}
           >
-            <option value="">No client</option>
-            {project !== undefined &&
-              project.clientId !== '' &&
-              !clients.some((client) => client.id === project.clientId) && (
-                <option value={project.clientId}>{project.clientNameDenorm}</option>
-              )}
-            {clients.map((client) => (
+            <option value="">
+              {atCap ? `Client limit reached (${MAX_PROJECT_CLIENTS})` : 'Add a client…'}
+            </option>
+            {availableClients.map((client) => (
               <option key={client.id} value={client.id}>
                 {client.name}
                 {client.notificationsOptOut ? ' (notifications off)' : ''}

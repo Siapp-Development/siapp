@@ -179,7 +179,7 @@ describe('sendPortalLink — argument + role gate', () => {
       });
       hoisted.db = db;
       const result = await sendPortalLink.run(request({ role }));
-      expect(result).toMatchObject({ status: 'queued' });
+      expect(result).toMatchObject({ results: [{ status: 'queued' }] });
     }
   });
 });
@@ -206,9 +206,15 @@ describe('sendPortalLink — D-027 gate', () => {
     await expect(sendPortalLink.run(request())).rejects.toThrow(/link a client/i);
   });
 
-  it('rejects when the linked client doc is missing', async () => {
-    hoisted.db = makeDb({ project: PUBLISHED_PROJECT, workspace: WORKSPACE, client: undefined }).db;
-    await expect(sendPortalLink.run(request())).rejects.toThrow(/client not found/i);
+  it('skips a missing linked client doc (dangling denorm ref) — no send, no error', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: undefined,
+    });
+    hoisted.db = db;
+    expect(await sendPortalLink.run(request())).toEqual({ results: [] });
+    expect(writes.messages).toHaveLength(0);
   });
 });
 
@@ -223,7 +229,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     const result = await sendPortalLink.run(request());
 
-    expect(result).toEqual({ status: 'opted_out' });
+    expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'opted_out' }] });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
@@ -239,7 +245,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     const result = await sendPortalLink.run(request());
 
-    expect(result).toEqual({ status: 'no_consent' });
+    expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }] });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
@@ -255,7 +261,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
 
     const result = await sendPortalLink.run(request());
 
-    expect(result).toEqual({ status: 'no_phone' });
+    expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }] });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
@@ -269,7 +275,24 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     });
     hoisted.db = db;
 
-    expect(await sendPortalLink.run(request())).toEqual({ status: 'no_phone' });
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }],
+    });
+    expect(writes.messages).toHaveLength(0);
+    expect(resolveFn).not.toHaveBeenCalled();
+  });
+
+  it('treats a whitespace-only phone as no_phone (normalized before the empty gate)', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '   ', waConsent: { granted: true } },
+    });
+    hoisted.db = db;
+
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }],
+    });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
   });
@@ -281,7 +304,9 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
       client: { name: 'Ahmad', phone: '+60123456789', waConsent: { granted: false } },
     });
     hoisted.db = db;
-    expect(await sendPortalLink.run(request())).toEqual({ status: 'no_consent' });
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }],
+    });
     expect(writes.messages).toHaveLength(0);
   });
 
@@ -295,7 +320,9 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
       client: { name: 'Ahmad', phone: '', notificationsOptOut: true },
     });
     hoisted.db = db;
-    expect(await sendPortalLink.run(request())).toEqual({ status: 'opted_out' });
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'opted_out' }],
+    });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
   });
@@ -307,7 +334,9 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
       client: { name: 'Ahmad', phone: '' },
     });
     hoisted.db = db;
-    expect(await sendPortalLink.run(request())).toEqual({ status: 'no_consent' });
+    expect(await sendPortalLink.run(request())).toEqual({
+      results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }],
+    });
     expect(writes.messages).toHaveLength(0);
     expect(resolveFn).not.toHaveBeenCalled();
   });
@@ -328,8 +357,14 @@ describe('sendPortalLink — happy path enqueue shape', () => {
     expect(resolveFn).toHaveBeenCalledWith(db, WID, PID, CID, 'u-owner');
 
     expect(result).toEqual({
-      status: 'queued',
-      expiresAt: '2026-06-01T00:00:00.000Z',
+      results: [
+        {
+          clientId: CID,
+          clientName: 'Ahmad Rahman Bin Ismail',
+          status: 'queued',
+          expiresAt: '2026-06-01T00:00:00.000Z',
+        },
+      ],
     });
 
     expect(writes.messages).toHaveLength(1);
@@ -443,8 +478,118 @@ describe('sendPortalLink — happy path enqueue shape', () => {
     const result = await sendPortalLink.run(request());
 
     // Still enqueues the message (same stable link), but no audit on reuse.
-    expect(result).toMatchObject({ status: 'queued' });
+    expect(result).toMatchObject({ results: [{ status: 'queued' }] });
     expect(writes.messages).toHaveLength(1);
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+// A db fake that resolves multiple client docs by id — for the multi-client
+// (D1/D3) fan-out and shared-phone de-dupe (D4) coverage.
+function makeMultiDb(opts: {
+  project: Record<string, unknown>;
+  workspace?: Record<string, unknown>;
+  clients: Record<string, Record<string, unknown>>;
+}): { db: unknown; writes: IWrites } {
+  const writes: IWrites = { messages: [] };
+  let auto = 0;
+  const messagesCollection = {
+    doc: () => {
+      const id = `msg${(auto += 1)}`;
+      return {
+        id,
+        set: (data: Record<string, unknown>) => {
+          writes.messages.push({ id, data });
+          return Promise.resolve();
+        },
+      };
+    },
+  };
+  const db = {
+    doc: (path: string) => ({
+      get: () => {
+        if (path === `workspaces/${WID}/projects/${PID}`) return Promise.resolve(snap(opts.project));
+        if (path === `workspaces/${WID}`) return Promise.resolve(snap(opts.workspace));
+        const clientMatch = path.match(new RegExp(`^workspaces/${WID}/clients/(.+)$`));
+        if (clientMatch) return Promise.resolve(snap(opts.clients[clientMatch[1]]));
+        return Promise.resolve(snap(undefined));
+      },
+    }),
+    collection: (path: string) => {
+      if (path === `workspaces/${WID}/messages`) return messagesCollection;
+      throw new Error(`unexpected collection ${path}`);
+    },
+  };
+  return { db, writes };
+}
+
+describe('sendPortalLink — multi-client fan-out + shared-phone de-dupe (D1/D3/D4)', () => {
+  const MULTI_PROJECT = {
+    lifecycle: 'published',
+    clientId: 'c1',
+    clientNameDenorm: 'Ann Lee',
+    clientIds: ['c1', 'c2'],
+    clients: [
+      { id: 'c1', name: 'Ann Lee' },
+      { id: 'c2', name: 'Ben Tan' },
+    ],
+    name: 'Bungalow Reno',
+    targetEndDate: { toDate: () => new Date('2026-07-15T00:00:00.000Z') },
+  };
+
+  it('mints a link and enqueues one message per consenting client on distinct phones', async () => {
+    const { db, writes } = makeMultiDb({
+      project: MULTI_PROJECT,
+      workspace: WORKSPACE,
+      clients: {
+        c1: { name: 'Ann Lee', phone: '+60111111111', waConsent: { granted: true } },
+        c2: { name: 'Ben Tan', phone: '+60222222222', waConsent: { granted: true } },
+      },
+    });
+    hoisted.db = db;
+
+    const result = await sendPortalLink.run(request());
+
+    // One durable link per client id (links are per-subject).
+    expect(resolveFn).toHaveBeenCalledWith(db, WID, PID, 'c1', 'u-owner');
+    expect(resolveFn).toHaveBeenCalledWith(db, WID, PID, 'c2', 'u-owner');
+
+    expect(result).toMatchObject({
+      results: [
+        { clientId: 'c1', clientName: 'Ann Lee', status: 'queued' },
+        { clientId: 'c2', clientName: 'Ben Tan', status: 'queued' },
+      ],
+    });
+    expect(writes.messages).toHaveLength(2);
+    // Per-recipient personalization — no cross-client name leakage (D9).
+    const firstNames = writes.messages.map(
+      (m) => (m.data['variables'] as Record<string, string>)['client_first_name'],
+    );
+    expect(firstNames).toEqual(['Ann', 'Ben']);
+  });
+
+  it('de-dupes the WhatsApp SEND when two clients share a normalized phone (D4)', async () => {
+    const { db, writes } = makeMultiDb({
+      project: MULTI_PROJECT,
+      workspace: WORKSPACE,
+      clients: {
+        c1: { name: 'Ann Lee', phone: '+60123456789', waConsent: { granted: true } },
+        c2: { name: 'Ben Tan', phone: '+60123456789', waConsent: { granted: true } },
+      },
+    });
+    hoisted.db = db;
+
+    const result = await sendPortalLink.run(request());
+
+    // First client sends; second (shared phone) is suppressed as duplicate_phone.
+    expect(result).toMatchObject({
+      results: [
+        { clientId: 'c1', clientName: 'Ann Lee', status: 'queued' },
+        { clientId: 'c2', clientName: 'Ben Tan', status: 'duplicate_phone' },
+      ],
+    });
+    // Only ONE message actually enqueued to the shared number.
+    expect(writes.messages).toHaveLength(1);
+    expect(writes.messages[0].data['recipientId']).toBe('c1');
   });
 });

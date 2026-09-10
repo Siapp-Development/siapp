@@ -20,6 +20,11 @@ import { useEffect, useState } from 'react';
 
 import { db } from '@/lib/firebase.ts';
 
+export interface IProjectClientRef {
+  id: string;
+  name: string;
+}
+
 export interface IProjectRow {
   id: string;
   name: string;
@@ -28,7 +33,17 @@ export interface IProjectRow {
   vertical: TProjectVertical;
   lifecycle: TProjectLifecycle;
   status: TProjectStatus;
+  /**
+   * Membership list of linked client ids (#157). Rules-queryable; mirrors the
+   * `assigneeCollaboratorIds` precedent. Legacy single-client docs resolve to a
+   * one-entry array via {@link mapProject}.
+   */
+  clientIds: string[];
+  /** Denormalized `{id,name}` display refs, parallel to {@link clientIds}. */
+  clients: IProjectClientRef[];
+  /** @deprecated Legacy single-client id — mirrors `clientIds[0]` during the dual-write window (#157). */
   clientId: string;
+  /** @deprecated Legacy single-client name — mirrors `clients[0].name` during the dual-write window (#157). */
   clientNameDenorm: string;
   ownerNameDenorm: string;
   startDate: Date | null;
@@ -65,9 +80,49 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+function asClientRefs(value: unknown): IProjectClientRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry): IProjectClientRef[] => {
+    if (entry === null || typeof entry !== 'object') {
+      return [];
+    }
+    const record = entry as Record<string, unknown>;
+    const id = typeof record['id'] === 'string' ? record['id'] : '';
+    if (id === '') {
+      return [];
+    }
+    return [{ id, name: typeof record['name'] === 'string' ? record['name'] : '' }];
+  });
+}
+
+/**
+ * Resolves the multi-client fields with a legacy single-client fallback (#157,
+ * D5). When the `clientIds` array field is PRESENT it is authoritative — even if
+ * empty — so an intentionally cleared client list never re-surfaces stale legacy
+ * values. Only a not-yet-backfilled doc (no `clientIds` field) falls back to the
+ * legacy `clientId`/`clientNameDenorm`, surfaced as a one-entry list so the firm
+ * UI is uniform.
+ */
+function resolveClients(data: DocumentData): { clientIds: string[]; clients: IProjectClientRef[] } {
+  if (Array.isArray(data['clientIds'])) {
+    return { clientIds: asStringArray(data['clientIds']), clients: asClientRefs(data['clients']) };
+  }
+  const legacyId = typeof data['clientId'] === 'string' ? data['clientId'] : '';
+  if (legacyId === '') {
+    return { clientIds: [], clients: [] };
+  }
+  return {
+    clientIds: [legacyId],
+    clients: [{ id: legacyId, name: String(data['clientNameDenorm'] ?? '') }],
+  };
+}
+
 function mapProject(id: string, data: DocumentData): IProjectRow {
   const summary = (data['summary'] ?? {}) as Record<string, unknown>;
   const visibility = (data['visibility'] ?? {}) as Record<string, unknown>;
+  const { clientIds, clients } = resolveClients(data);
   return {
     id,
     name: String(data['name'] ?? ''),
@@ -76,8 +131,10 @@ function mapProject(id: string, data: DocumentData): IProjectRow {
     vertical: (data['vertical'] ?? 'other') as TProjectVertical,
     lifecycle: (data['lifecycle'] ?? 'draft') as TProjectLifecycle,
     status: (data['status'] ?? 'planning') as TProjectStatus,
-    clientId: typeof data['clientId'] === 'string' ? data['clientId'] : '',
-    clientNameDenorm: String(data['clientNameDenorm'] ?? ''),
+    clientIds,
+    clients,
+    clientId: clientIds[0] ?? '',
+    clientNameDenorm: clients[0]?.name ?? '',
     ownerNameDenorm: String(data['ownerNameDenorm'] ?? ''),
     startDate: asDate(data['startDate']),
     targetEndDate: asDate(data['targetEndDate']),
@@ -143,20 +200,34 @@ export interface IProjectFormValues {
   code: string;
   vertical: TProjectVertical;
   status: TProjectStatus;
-  /** '' when no client is linked; rules require clientId/clientName paired (#16). */
-  clientId: string;
-  /** Denormalized display name for the linked client; '' when unlinked. */
-  clientName: string;
+  /** Linked client ids (#157). Empty when no client is linked; capped at 5. */
+  clientIds: string[];
+  /** Denormalized `{id,name}` refs, parallel to {@link clientIds}. */
+  clients: IProjectClientRef[];
   startDate: Date;
   targetEndDate: Date | null;
   clientCanSee: boolean;
 }
 
 /**
+ * Derives the legacy single-client dual-write fields from the multi-client
+ * arrays (#157, D5): legacy readers keep working off `clientId`/
+ * `clientNameDenorm`, which mirror the FIRST linked client (or '' when none).
+ */
+function legacyClientFields(values: Pick<IProjectFormValues, 'clientIds' | 'clients'>): {
+  clientId: string;
+  clientNameDenorm: string;
+} {
+  const firstId = values.clientIds[0] ?? '';
+  const firstName = values.clients.find((client) => client.id === firstId)?.name ?? '';
+  return { clientId: firstId, clientNameDenorm: firstName };
+}
+
+/**
  * Creates a draft project. The doc shape must satisfy the #12 create rule:
  * lifecycle 'draft', zeroed summary, collaboratorsCount 0, caller as
- * ownerUid/createdBy. clientId/clientNameDenorm are paired — both set or
- * both '' (#16).
+ * ownerUid/createdBy. Writes the #157 `clientIds`/`clients` arrays AND the
+ * legacy `clientId`/`clientNameDenorm` pair (dual-write, D5).
  */
 export async function createProject(
   workspaceId: string,
@@ -173,8 +244,9 @@ export async function createProject(
     vertical: values.vertical,
     lifecycle: 'draft',
     status: values.status,
-    clientId: values.clientId,
-    clientNameDenorm: values.clientName,
+    clientIds: values.clientIds,
+    clients: values.clients,
+    ...legacyClientFields(values),
     ownerUid: uid,
     ownerNameDenorm: ownerName,
     startDate: Timestamp.fromDate(values.startDate),
@@ -202,8 +274,9 @@ export async function updateProject(
     description: values.description !== '' ? values.description : deleteField(),
     code: values.code !== '' ? values.code : deleteField(),
     status: values.status,
-    clientId: values.clientId,
-    clientNameDenorm: values.clientName,
+    clientIds: values.clientIds,
+    clients: values.clients,
+    ...legacyClientFields(values),
     startDate: Timestamp.fromDate(values.startDate),
     targetEndDate:
       values.targetEndDate !== null ? Timestamp.fromDate(values.targetEndDate) : deleteField(),

@@ -41,14 +41,19 @@ export function PortalPrintLayout({
   clientId,
 }: IPortalPrintLayoutProps) {
   const progress = Math.min(100, Math.max(0, Math.round(project.progressPct)));
+  // D8: the shared deliverable is "Prepared for" ALL linked client names.
+  const preparedFor = project.clients
+    .map((client) => client.name)
+    .filter((name) => name !== '')
+    .join(', ');
 
   return (
     <div className="print-layout hidden print:block" aria-hidden="true">
       <header className="flex items-start justify-between gap-6 border-b border-border pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
-          {project.clientName !== '' && (
-            <p className="mt-1 text-sm text-muted-foreground">Prepared for {project.clientName}</p>
+          {preparedFor !== '' && (
+            <p className="mt-1 text-sm text-muted-foreground">Prepared for {preparedFor}</p>
           )}
           <p className="mt-2 text-xs text-muted-foreground">
             Started {formatDate(project.startDate)} · Target completion{' '}

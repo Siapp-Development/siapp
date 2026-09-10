@@ -44,6 +44,7 @@ import {
 } from '../lib/portalTokens.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
+import { resolveProjectClients } from '../lib/projectClients.js';
 
 /** Apex origin carried in portal URLs (D-036: portal lives on siapp.app). */
 const portalOrigin = defineString('PORTAL_ORIGIN', { default: 'https://siapp.app' });
@@ -359,10 +360,12 @@ export const issuePortalLink = onCall(async (request) => {
 
   const db = getFirestore();
   const projectSnap = await db.doc(`workspaces/${workspaceId}/projects/${projectId}`).get();
+  // #157: fan out issuance across every linked client (co-equal).
+  const clients = resolveProjectClients(projectSnap.data());
   const blocker = issueBlocker({
     projectExists: projectSnap.exists,
     lifecycle: projectSnap.get('lifecycle'),
-    clientId: projectSnap.get('clientId'),
+    clientId: clients[0]?.id ?? '',
   });
   if (blocker === 'not-found') {
     throw new HttpsError('not-found', 'Project not found.');
@@ -376,52 +379,62 @@ export const issuePortalLink = onCall(async (request) => {
   if (blocker === 'no-client') {
     throw new HttpsError('failed-precondition', 'Link a client to the project first.');
   }
-  const clientId = projectSnap.get('clientId') as string;
 
-  if (reset) {
-    // ROTATE: revoke the active link and mint a fresh one (explicit Reset).
-    const { url, expiresAt, linkId } = await mintClientPortalLink(
-      db,
-      workspaceId,
-      projectId,
-      clientId,
-      uid,
-    );
-    await writeAuditLog(workspaceId, {
-      actorType: 'user',
-      actorId: uid,
-      action: 'portal_link.reset',
-      targetType: 'magicLink',
-      targetId: linkId,
-      after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
-      ...callableRequestMeta(request),
-    });
-    return { url, expiresAt: expiresAt.toDate().toISOString() };
+  // One durable link per client (links are per-subject). `reset` rotates every
+  // client's link; the default path get-or-creates (idempotent Copy).
+  const links: Array<{ clientId: string; clientName: string; url: string; expiresAt: string }> = [];
+  for (const client of clients) {
+    if (reset) {
+      const { url, expiresAt, linkId } = await mintClientPortalLink(
+        db,
+        workspaceId,
+        projectId,
+        client.id,
+        uid,
+      );
+      await writeAuditLog(workspaceId, {
+        actorType: 'user',
+        actorId: uid,
+        action: 'portal_link.reset',
+        targetType: 'magicLink',
+        targetId: linkId,
+        after: { projectId, clientId: client.id, expiresAt: expiresAt.toDate().toISOString() },
+        ...callableRequestMeta(request),
+      });
+      links.push({
+        clientId: client.id,
+        clientName: client.name,
+        url,
+        expiresAt: expiresAt.toDate().toISOString(),
+      });
+    } else {
+      const { url, expiresAt, linkId, created } = await getOrCreateClientPortalLink(
+        db,
+        workspaceId,
+        projectId,
+        client.id,
+        uid,
+      );
+      if (created) {
+        // Only first-ever creation is audited; re-surfacing is not (lightweight).
+        await writeAuditLog(workspaceId, {
+          actorType: 'user',
+          actorId: uid,
+          action: 'portal_link.issue',
+          targetType: 'magicLink',
+          targetId: linkId,
+          after: { projectId, clientId: client.id, expiresAt: expiresAt.toDate().toISOString() },
+          ...callableRequestMeta(request),
+        });
+      }
+      links.push({
+        clientId: client.id,
+        clientName: client.name,
+        url,
+        expiresAt: expiresAt.toDate().toISOString(),
+      });
+    }
   }
 
-  // GET-OR-CREATE: idempotent Copy — reuse the active durable link if present.
-  const { url, expiresAt, linkId, created } = await getOrCreateClientPortalLink(
-    db,
-    workspaceId,
-    projectId,
-    clientId,
-    uid,
-  );
-  if (created) {
-    // Only first-ever creation is audited; re-surfacing is not (lightweight).
-    await writeAuditLog(workspaceId, {
-      actorType: 'user',
-      actorId: uid,
-      action: 'portal_link.issue',
-      targetType: 'magicLink',
-      targetId: linkId,
-      after: { projectId, clientId, expiresAt: expiresAt.toDate().toISOString() },
-      ...callableRequestMeta(request),
-    });
-  }
-
-  return {
-    url,
-    expiresAt: expiresAt.toDate().toISOString(),
-  };
+  return { links };
 });

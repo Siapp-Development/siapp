@@ -51,14 +51,14 @@ vi.mock('./export/ExportSection.tsx', () => ({
 import { ProjectDetailPage } from './ProjectDetailPage.tsx';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
-  return {
+  const base = {
     id: 'p1',
     name: 'Bungalow build',
     description: '',
     code: 'BB-1',
-    vertical: 'construction',
-    lifecycle: 'draft',
-    status: 'planning',
+    vertical: 'construction' as const,
+    lifecycle: 'draft' as const,
+    status: 'planning' as const,
     clientId: '',
     clientNameDenorm: '',
     ownerNameDenorm: 'Alice Tan',
@@ -72,9 +72,13 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     clientCanSee: true,
     collaboratorsCount: 0,
     updatedAt: null,
-    tags: [],
+    tags: [] as string[],
     ...overrides,
   };
+  const clientIds = overrides.clientIds ?? (base.clientId !== '' ? [base.clientId] : []);
+  const clients =
+    overrides.clients ?? clientIds.map((id) => ({ id, name: base.clientNameDenorm }));
+  return { ...base, clientIds, clients };
 }
 
 function renderPage(role: 'owner' | 'admin' | 'pm' | 'viewer' = 'owner') {
@@ -131,6 +135,7 @@ describe('ProjectDetailPage', () => {
         totalTasks: 10,
         doneTasks: 5,
         overdueTasks: 1,
+        clientId: 'c-ahmad',
         clientNameDenorm: 'Ahmad Corp',
       }),
     };

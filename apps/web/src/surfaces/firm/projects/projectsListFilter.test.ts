@@ -12,14 +12,14 @@ import {
 import type { IProjectRow } from './useProjects.ts';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
-  return {
+  const base = {
     id: 'p1',
     name: 'Bungalow build',
     description: '',
     code: 'BB-1',
-    vertical: 'construction',
-    lifecycle: 'draft',
-    status: 'planning',
+    vertical: 'construction' as const,
+    lifecycle: 'draft' as const,
+    status: 'planning' as const,
     clientId: '',
     clientNameDenorm: '',
     ownerNameDenorm: 'Alice Tan',
@@ -33,9 +33,15 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
-    tags: [],
+    tags: [] as string[],
     ...overrides,
   };
+  // Derive multi-client arrays from the legacy single fields when not given, so
+  // existing single-client fixtures keep working (#157).
+  const clientIds = overrides.clientIds ?? (base.clientId !== '' ? [base.clientId] : []);
+  const clients =
+    overrides.clients ?? clientIds.map((id) => ({ id, name: base.clientNameDenorm }));
+  return { ...base, clientIds, clients };
 }
 
 function tagMap(

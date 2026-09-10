@@ -33,7 +33,7 @@ vi.mock('../documents/usePortalDocuments.ts', async () => {
 
 const PROJECT: IPortalProject = {
   name: 'Cafe Fitout',
-  clientName: 'Acme Retail',
+  clients: [{ id: 'c1', name: 'Acme Retail' }],
   lifecycle: 'published',
   startDate: new Date('2026-08-01T00:00:00Z'),
   targetEndDate: new Date('2026-12-01T00:00:00Z'),
@@ -83,6 +83,26 @@ describe('PortalPrintLayout', () => {
     expect(screen.getByRole('heading', { name: 'Cafe Fitout', hidden: true })).toBeInTheDocument();
     expect(screen.getByText(/Prepared for Acme Retail/)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: '45% complete', hidden: true })).toBeInTheDocument();
+  });
+
+  it('joins all client names in the "Prepared for" line (#157 D8)', () => {
+    render(
+      <PortalPrintLayout
+        project={{
+          ...PROJECT,
+          clients: [
+            { id: 'c1', name: 'Ann Lee' },
+            { id: 'c2', name: 'Ben Tan' },
+          ],
+        }}
+        groups={GROUPS}
+        workspaceId="w1"
+        projectId="p1"
+        clientId="c1"
+      />,
+    );
+
+    expect(screen.getByText(/Prepared for Ann Lee, Ben Tan/)).toBeInTheDocument();
   });
 
   it('renders all four sections', () => {

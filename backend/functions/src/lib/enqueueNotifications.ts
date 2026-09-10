@@ -21,10 +21,11 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
-import { isOptedOut } from './optOut.js';
+import { isOptedOut, normalizePhoneKey } from './optOut.js';
 import { hasWaConsent } from './pdpa.js';
 import { holdUntilFor, mytDateString, resolveQuietHours, type IQuietHours } from './quietHours.js';
 import { resolveNotify, type ITaskNotifyConfig } from './notifyConfig.js';
+import { resolveProjectClientIds } from './projectClients.js';
 import { getOrCreateClientPortalLink } from '../callables/issuePortalLink.js';
 
 // Mirrors WA_UTILITY_COST_MYR in @siapp/shared (source-only package this
@@ -70,28 +71,42 @@ export interface IPlannedMessage {
   data: Record<string, unknown>;
 }
 
+/**
+ * One linked client's fan-out input (#157). Each project client is an
+ * independent recipient with its own consent/opt-out/phone and its OWN durable
+ * portal token — the token must never leak across clients (D9).
+ */
+export interface IClientRecipientInput {
+  id: string;
+  /** Client doc data; undefined when the doc is missing. */
+  data: Record<string, unknown> | undefined;
+  /**
+   * The resolved durable portal token for THIS client (#142/#157), embedded as
+   * `portal_token` in the CLIENT-facing status_change/blocked templates.
+   * Undefined/empty when the client is not sendable (draft/no-consent/etc.).
+   */
+  portalToken?: string;
+}
+
 export interface IPlanTaskNotificationsInput {
   trigger: TTaskTrigger;
   projectId: string;
   taskId: string;
   taskData: Record<string, unknown>;
   projectData: Record<string, unknown> | undefined;
-  /** Linked client doc data; undefined when unlinked or the doc is missing. */
-  clientData: Record<string, unknown> | undefined;
+  /**
+   * Every client linked to the project (#157). Each is fanned out to its own
+   * message, independently gated on its own consent/opt-out/phone. WhatsApp
+   * sends de-dupe by normalized phone (D4): clients sharing a number collapse to
+   * one send. Empty when the project has no client or the trigger is internal.
+   */
+  clients: IClientRecipientInput[];
   /** `users/{uid}` data per firm-member assignee; undefined = missing doc. */
   memberProfiles: ReadonlyMap<string, Record<string, unknown> | undefined>;
   quietHours: IQuietHours;
   firmName: string;
   /** #24 D2: read-only workspace — every record suppressed 'billing'. */
   billingReadOnly?: boolean;
-  /**
-   * #142 (Part B): the resolved durable client portal token
-   * (`{shortCode}_{secret}`) embedded as `portal_token` for the CLIENT-facing
-   * `task_status_change` / `task_blocked` templates. Resolved ONCE per event by
-   * `enqueueTaskEvent` (system actor) only when the project is published and a
-   * sendable client exists; undefined/empty otherwise (those records never send).
-   */
-  clientPortalToken?: string;
   now: Date;
 }
 
@@ -108,32 +123,42 @@ interface IRecipient {
   noConsent: boolean;
   /** Suppression when the recipient cannot be resolved at all. */
   unresolvableReason: 'no_recipient' | 'no_phone' | null;
+  /** #142/#157: this client's own durable portal token (client recipients only). */
+  portalToken?: string;
 }
 
 function phoneOf(data: Record<string, unknown> | undefined): string | null {
+  // #157/D4: normalize once at the source so whitespace-only phones become
+  // unresolvable ('no_phone') and the queued `recipientPhone` matches the
+  // normalized de-dupe key exactly across both fan-out sites.
   const value = data?.['phone'];
-  return typeof value === 'string' && value !== '' ? value : null;
+  const normalized = normalizePhoneKey(typeof value === 'string' ? value : '');
+  return normalized !== '' ? normalized : null;
 }
 
 function resolveRecipients(input: IPlanTaskNotificationsInput, notify: ITaskNotifyConfig): IRecipient[] {
   const recipients: IRecipient[] = [];
 
   if (notify.toClient) {
-    const clientId = input.projectData?.['clientId'];
-    const linked = typeof clientId === 'string' && clientId !== '';
-    const phone = phoneOf(input.clientData);
-    recipients.push({
-      type: 'client',
-      id: linked ? clientId : '',
-      phone,
-      optedOut: isOptedOut(input.clientData),
-      noConsent: input.clientData !== undefined && !hasWaConsent(input.clientData),
-      unresolvableReason: !linked || input.clientData === undefined
-        ? 'no_recipient'
-        : phone === null
-          ? 'no_phone'
-          : null,
-    });
+    // #157: one recipient per linked client, each independently gated on its
+    // own consent/opt-out/phone and carrying its OWN durable portal token.
+    for (const client of input.clients) {
+      const linked = client.id !== '';
+      const phone = phoneOf(client.data);
+      recipients.push({
+        type: 'client',
+        id: client.id,
+        phone,
+        optedOut: isOptedOut(client.data),
+        noConsent: client.data !== undefined && !hasWaConsent(client.data),
+        unresolvableReason: !linked || client.data === undefined
+          ? 'no_recipient'
+          : phone === null
+            ? 'no_phone'
+            : null,
+        portalToken: client.portalToken,
+      });
+    }
   }
 
   if (notify.toInternal) {
@@ -185,15 +210,11 @@ function templateVariables(input: IPlanTaskNotificationsInput): Record<string, s
   if (input.trigger === 'task_status_change') {
     const status = input.taskData['status'];
     variables['new_status'] = typeof status === 'string' ? status : '';
-    // #142 (Part B): bare durable client portal token; empty when unresolved.
-    variables['portal_token'] = input.clientPortalToken ?? '';
   }
   if (input.trigger === 'task_blocked') {
     // #22 (D-d): the need-help reason lands in the task_blocked template.
     const reason = input.taskData['blockedReason'];
     variables['blocked_reason'] = typeof reason === 'string' ? reason : '';
-    // #142 (Part B): bare durable client portal token; empty when unresolved.
-    variables['portal_token'] = input.clientPortalToken ?? '';
   }
   if (input.trigger === 'task_due_soon') {
     const dueDate = input.taskData['dueDate'] as { toDate?: () => Date } | undefined;
@@ -223,12 +244,21 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
 
   const lifecycle = input.projectData?.['lifecycle'];
   const published = lifecycle === 'published';
-  const variables = templateVariables(input);
+  const baseVariables = templateVariables(input);
   const holdUntil = holdUntilFor(input.now, input.quietHours);
   const dedupeDate = mytDateString(input.now);
+  // #142/#157: only these CLIENT-facing templates carry a per-client portal
+  // token variable — resolved per recipient so no client's link leaks to another.
+  const carriesPortalToken =
+    input.trigger === 'task_status_change' || input.trigger === 'task_blocked';
+  // #157 (D4): WhatsApp sends de-dupe by normalized phone across clients — a
+  // shared number is messaged once. Only sendable client recipients reserve a
+  // phone; the rest collapse to a suppressed 'duplicate_phone' record (no send,
+  // no allowance draw), keeping the fan-out auditable.
+  const claimedClientPhones = new Set<string>();
 
   return resolveRecipients(input, effectiveNotify).map((recipient) => {
-    const suppressedReason = input.billingReadOnly === true
+    let suppressedReason: string | null = input.billingReadOnly === true
       ? 'billing'
       : !published
         ? `lifecycle:${typeof lifecycle === 'string' ? lifecycle : 'draft'}`
@@ -237,6 +267,19 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
           : recipient.noConsent
             ? 'no_consent'
             : recipient.unresolvableReason;
+
+    if (recipient.type === 'client' && suppressedReason === null && recipient.phone !== null) {
+      const phoneKey = normalizePhoneKey(recipient.phone);
+      if (claimedClientPhones.has(phoneKey)) {
+        suppressedReason = 'duplicate_phone';
+      } else {
+        claimedClientPhones.add(phoneKey);
+      }
+    }
+
+    const variables = carriesPortalToken
+      ? { ...baseVariables, portal_token: recipient.portalToken ?? '' }
+      : baseVariables;
 
     // D5: deterministic id per task, recipient, and MYT day so re-runs and
     // overlapping sweep windows cannot double-enqueue.
@@ -305,11 +348,15 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
   const workspaceSnap = await db.doc(`workspaces/${workspaceId}`).get();
   const workspaceData = workspaceSnap.data();
 
-  const clientId = projectData?.['clientId'];
-  const clientSnap =
-    effectiveNotify.toClient && typeof clientId === 'string' && clientId !== ''
-      ? await db.doc(`workspaces/${workspaceId}/clients/${clientId}`).get()
-      : null;
+  // #157: fan out to every linked client (falls back to the legacy single
+  // clientId for not-yet-backfilled projects). Each client is fetched once.
+  const clientIds = effectiveNotify.toClient ? resolveProjectClientIds(projectData) : [];
+  const clientEntries = await Promise.all(
+    clientIds.map(async (id) => ({
+      id,
+      data: (await db.doc(`workspaces/${workspaceId}/clients/${id}`).get()).data(),
+    })),
+  );
 
   const memberProfiles = new Map<string, Record<string, unknown> | undefined>();
   if (effectiveNotify.toInternal) {
@@ -330,30 +377,36 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
   }
 
   const firmName = typeof workspaceData?.['name'] === 'string' ? workspaceData['name'] : '';
-  const clientData = clientSnap?.data();
 
-  // #142 (Part B): resolve the client's ONE durable portal link ONCE per event
-  // for the CLIENT-facing status_change/blocked templates — ONLY when the
-  // project is published, the workspace can send, and a consented, phone-bearing
-  // client exists (a suppressed record would never send, so no link is minted).
-  // Get-or-create reuses the existing link, so two events for the same (project,
-  // client) embed the SAME token (D-042). System actor (Q5): createdBy 'system',
-  // no extra audit entry from the enqueue path.
-  let clientPortalToken: string | undefined;
-  if (
-    (trigger === 'task_status_change' || trigger === 'task_blocked') &&
+  // #142/#157: resolve EACH sendable client's ONE durable portal link for the
+  // CLIENT-facing status_change/blocked templates — ONLY when the project is
+  // published, the workspace can send, and that client is consented + reachable
+  // (a suppressed record never sends, so no link is minted). Get-or-create
+  // reuses the existing link, so repeat events embed the SAME token (D-042).
+  // System actor (Q5): createdBy 'system', no extra audit from the enqueue path.
+  // Each client keeps its OWN token — no cross-client link leakage (D9).
+  const carriesPortalToken = trigger === 'task_status_change' || trigger === 'task_blocked';
+  const canMintLinks =
+    carriesPortalToken &&
     projectData?.['lifecycle'] === 'published' &&
-    workspaceData?.['billingStatus'] !== 'read_only' &&
-    typeof clientId === 'string' &&
-    clientId !== '' &&
-    clientData !== undefined &&
-    !isOptedOut(clientData) &&
-    hasWaConsent(clientData) &&
-    phoneOf(clientData) !== null
-  ) {
-    const link = await getOrCreateClientPortalLink(db, workspaceId, projectId, clientId, 'system');
-    clientPortalToken = link.token;
-  }
+    workspaceData?.['billingStatus'] !== 'read_only';
+  const clients: IClientRecipientInput[] = await Promise.all(
+    clientEntries.map(async ({ id, data }) => {
+      let portalToken: string | undefined;
+      if (
+        canMintLinks &&
+        id !== '' &&
+        data !== undefined &&
+        !isOptedOut(data) &&
+        hasWaConsent(data) &&
+        phoneOf(data) !== null
+      ) {
+        const link = await getOrCreateClientPortalLink(db, workspaceId, projectId, id, 'system');
+        portalToken = link.token;
+      }
+      return { id, data, portalToken };
+    }),
+  );
 
   const planned = planTaskNotifications({
     trigger,
@@ -361,12 +414,11 @@ export async function enqueueTaskEvent(params: IEnqueueTaskEventParams): Promise
     taskId,
     taskData,
     projectData,
-    clientData,
+    clients,
     memberProfiles,
     quietHours: resolveQuietHours(workspaceData),
     firmName,
     billingReadOnly: workspaceData?.['billingStatus'] === 'read_only',
-    clientPortalToken,
     now,
   });
 

@@ -25,14 +25,14 @@ import { ProjectActionsMenu } from './ProjectActionsMenu.tsx';
 import type { IProjectRow } from './useProjects.ts';
 
 function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
-  return {
+  const base = {
     id: 'p1',
     name: 'Bungalow build',
     description: '',
     code: '',
-    vertical: 'construction',
-    lifecycle: 'published',
-    status: 'active',
+    vertical: 'construction' as const,
+    lifecycle: 'published' as const,
+    status: 'active' as const,
     clientId: 'c1',
     clientNameDenorm: 'Ahmad',
     ownerNameDenorm: 'Alice Tan',
@@ -46,9 +46,13 @@ function projectRow(overrides: Partial<IProjectRow> = {}): IProjectRow {
     blockedTasks: 0,
     clientCanSee: true,
     collaboratorsCount: 0,
-    tags: [],
+    tags: [] as string[],
     ...overrides,
   };
+  const clientIds = overrides.clientIds ?? (base.clientId !== '' ? [base.clientId] : []);
+  const clients =
+    overrides.clients ?? clientIds.map((id) => ({ id, name: base.clientNameDenorm }));
+  return { ...base, clientIds, clients };
 }
 
 function renderMenu(

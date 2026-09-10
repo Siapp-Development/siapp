@@ -8,7 +8,7 @@ import { PortalHeader } from './PortalHeader.tsx';
 function project(overrides: Partial<IPortalProject> = {}): IPortalProject {
   return {
     name: 'Residential Build Starter',
-    clientName: 'Lee Chong Wei',
+    clients: [{ id: 'c1', name: 'Lee Chong Wei' }],
     lifecycle: 'published',
     startDate: new Date('2026-08-24T00:00:00Z'),
     targetEndDate: null,
@@ -40,6 +40,18 @@ describe('PortalHeader', () => {
     expect(screen.getByText('Lee Chong Wei')).toBeInTheDocument();
     expect(screen.getByText('Start date')).toBeInTheDocument();
     expect(screen.getByText('Target completion')).toBeInTheDocument();
+  });
+
+  it('shows only the logged-in client’s own name, not co-clients (#157 D7)', () => {
+    renderHeader({
+      clients: [
+        { id: 'c1', name: 'Lee Chong Wei' },
+        { id: 'c2', name: 'Datuk Ahmad' },
+      ],
+    });
+
+    expect(screen.getByText('Lee Chong Wei')).toBeInTheDocument();
+    expect(screen.queryByText('Datuk Ahmad')).not.toBeInTheDocument();
   });
 
   it('opens the file picker when Upload Document is clicked', async () => {
