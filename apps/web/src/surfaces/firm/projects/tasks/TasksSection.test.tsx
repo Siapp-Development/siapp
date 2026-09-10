@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useCallback } from 'react';
 import { MemoryRouter, useSearchParams } from 'react-router';
@@ -14,6 +14,11 @@ const tasksData = vi.hoisted(() => ({
   createTask: vi.fn(),
   createPhase: vi.fn(),
   reorderTasks: vi.fn(),
+  bulkUpdateTaskStatus: vi.fn(),
+  bulkAddAssignee: vi.fn(),
+  bulkDeleteTasks: vi.fn(),
+  members: [] as Array<Record<string, unknown>>,
+  collaborators: [] as Array<Record<string, unknown>>,
 }));
 vi.mock('./useTasks.ts', () => ({
   useTasks: () => ({ ...tasksData.tasksState, refreshRestricted: tasksData.refreshRestricted }),
@@ -21,10 +26,13 @@ vi.mock('./useTasks.ts', () => ({
   createTask: tasksData.createTask,
   createPhase: tasksData.createPhase,
   reorderTasks: tasksData.reorderTasks,
+  bulkUpdateTaskStatus: (...args: unknown[]) => tasksData.bulkUpdateTaskStatus(...args),
+  bulkAddAssignee: (...args: unknown[]) => tasksData.bulkAddAssignee(...args),
+  bulkDeleteTasks: (...args: unknown[]) => tasksData.bulkDeleteTasks(...args),
 }));
 
 vi.mock('../../settings/useTeamData.ts', () => ({
-  useMembers: () => ({ status: 'ready', rows: [] }),
+  useMembers: () => ({ status: 'ready', rows: tasksData.members }),
   useDepartments: () => ({
     status: 'ready',
     rows: [{ id: 'dep-fin', name: 'Finance', memberCount: 1 }],
@@ -32,7 +40,7 @@ vi.mock('../../settings/useTeamData.ts', () => ({
 }));
 
 vi.mock('../../collaborators/useCollaborators.ts', () => ({
-  useCollaborators: () => ({ status: 'ready', rows: [] }),
+  useCollaborators: () => ({ status: 'ready', rows: tasksData.collaborators }),
 }));
 
 vi.mock('./TaskDetailPanel.tsx', () => ({
@@ -138,6 +146,11 @@ beforeEach(() => {
     ],
   };
   tasksData.tasksState = { status: 'ready', rows: [] };
+  tasksData.members = [];
+  tasksData.collaborators = [];
+  tasksData.bulkUpdateTaskStatus.mockResolvedValue(undefined);
+  tasksData.bulkAddAssignee.mockResolvedValue({ added: 0, skipped: 0 });
+  tasksData.bulkDeleteTasks.mockResolvedValue({ deletedIds: [], failedIds: [] });
 });
 
 /**
@@ -819,5 +832,375 @@ describe('TasksSection', () => {
     tasksData.phasesState = { status: 'ready', rows: [] };
     renderSection();
     expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument();
+  });
+});
+
+describe('TasksSection bulk select (#156)', () => {
+  it('renders a select checkbox for each readable task row', () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    expect(screen.getByRole('checkbox', { name: 'Select Pour foundation' })).toBeInTheDocument();
+  });
+
+  it('does not render a checkbox for restricted rows', () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [restrictedRow({ id: 'tr1', phaseId: 'ph1', title: 'Payment schedule', order: 1 })],
+    };
+    renderSection();
+
+    expect(screen.queryByRole('checkbox', { name: /Select Payment schedule/ })).not.toBeInTheDocument();
+  });
+
+  it('renders no checkboxes or bar when the caller cannot edit', () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection({ canEdit: false });
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Bulk task actions' })).not.toBeInTheDocument();
+  });
+
+  it('selecting a row shows the bar and does not open the detail panel', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+
+    expect(screen.getByRole('region', { name: 'Bulk task actions' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Bulk task actions' })).getByText('1 task selected'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('task-detail-panel')).not.toBeInTheDocument();
+  });
+
+  it('header select-all toggles the whole phase group', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
+
+    expect(
+      within(screen.getByRole('region', { name: 'Bulk task actions' })).getByText('2 tasks selected'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Select First' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Second' })).toBeChecked();
+  });
+
+  it('shows an indeterminate header checkbox for a partial group selection', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select First' }));
+
+    const header = screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' });
+    expect((header as HTMLInputElement).indeterminate).toBe(true);
+  });
+
+  it('clears the selection (and hides the bar) with the clear control', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+
+    expect(screen.queryByRole('region', { name: 'Bulk task actions' })).not.toBeInTheDocument();
+  });
+
+  it('Escape clears an active selection', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('region', { name: 'Bulk task actions' })).not.toBeInTheDocument();
+  });
+
+  it('announces the selection count in a live region', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('1 task selected');
+  });
+
+  it('bulk status update calls the writer with the selected rows and clears selection', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Done' }));
+
+    expect(tasksData.bulkUpdateTaskStatus).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      [expect.objectContaining({ id: 't1' })],
+      'done',
+      'u1',
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Bulk task actions' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('bulk delete calls the delete writer and refreshes restricted headers', async () => {
+    tasksData.bulkDeleteTasks.mockResolvedValue({ deletedIds: ['t1'], failedIds: [] });
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(tasksData.bulkDeleteTasks).toHaveBeenCalledWith('wksA', 'p1', ['t1']);
+    await waitFor(() => expect(tasksData.refreshRestricted).toHaveBeenCalled());
+  });
+
+  it('bulk add assignee calls the writer with the chosen teammate', async () => {
+    tasksData.bulkAddAssignee.mockResolvedValue({ added: 1, skipped: 0 });
+    tasksData.members = [
+      {
+        uid: 'u1',
+        email: 'a@x.com',
+        displayName: 'Alice Tan',
+        role: 'pm',
+        departments: [],
+        seatActive: true,
+      },
+    ];
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add assignee' }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
+
+    expect(tasksData.bulkAddAssignee).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      [expect.objectContaining({ id: 't1' })],
+      { type: 'user', id: 'u1', name: 'Alice Tan' },
+      'u1',
+    );
+  });
+
+  // --- Announcement lifecycle (flagged edge case) -------------------------
+  // The live region must announce the count while selecting, "Selection
+  // cleared" on an empty selection, and — crucially — the ACTION RESULT after a
+  // bulk op WITHOUT that message being clobbered by "Selection cleared" when the
+  // op's own clear() drops the count to 0.
+  it('announces "Selection cleared" when the selection is cleared', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    expect(screen.getByRole('status')).toHaveTextContent('1 task selected');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Selection cleared');
+  });
+
+  it('announces the status-action result and does not clobber it with "Selection cleared"', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Done' }));
+
+    // The bar clears (selection dropped to 0) but the announcer keeps the result.
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Bulk task actions' })).not.toBeInTheDocument(),
+    );
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('2 tasks moved to Done');
+    expect(status).not.toHaveTextContent('Selection cleared');
+  });
+
+  it('announces the deleted count after a successful bulk delete', async () => {
+    tasksData.bulkDeleteTasks.mockResolvedValue({ deletedIds: ['t1'], failedIds: [] });
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 task deleted'));
+    expect(screen.getByRole('status')).not.toHaveTextContent('Selection cleared');
+  });
+
+  it('reports skipped tasks in the add-assignee announcement', async () => {
+    tasksData.bulkAddAssignee.mockResolvedValue({ added: 1, skipped: 1 });
+    tasksData.members = [
+      {
+        uid: 'u1',
+        email: 'a@x.com',
+        displayName: 'Alice Tan',
+        role: 'pm',
+        departments: [],
+        seatActive: true,
+      },
+    ];
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add assignee' }));
+    await userEvent.click(screen.getByRole('button', { name: /Alice Tan/ }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Alice Tan added to 1 task (1 skipped)'),
+    );
+  });
+
+  // --- Partial delete failure (flagged edge case) -------------------------
+  // Failed ids stay selected; deleted ids are pruned from the selection; the
+  // error surfaces in the confirm dialog and success is NOT announced.
+  it('keeps failed rows selected and surfaces the error on a partial delete failure', async () => {
+    tasksData.bulkDeleteTasks.mockResolvedValue({ deletedIds: ['t1'], failedIds: ['t2'] });
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    // Error is surfaced (dialog stays open) and the deleted id is pruned while
+    // the failed id remains selected — so the bar now shows a count of 1.
+    await waitFor(() =>
+      expect(within(dialog).getByText('1 task could not be deleted.')).toBeInTheDocument(),
+    );
+    expect(tasksData.refreshRestricted).toHaveBeenCalled();
+    expect(screen.getByRole('checkbox', { name: 'Select First' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select Second' })).toBeChecked();
+    expect(
+      within(screen.getByRole('region', { name: 'Bulk task actions' })).getByText('1 task selected'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('status')).not.toHaveTextContent('deleted');
+  });
+
+  // --- Escape scope (flagged edge case) -----------------------------------
+  // Escape clears only when focus is inside the list; a keypress originating on
+  // a bar control (outside the list container) must NOT clear the selection.
+  it('does not clear the selection when Escape is pressed on a bar control', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'Pour foundation', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Pour foundation' }));
+    const clearButton = screen.getByRole('button', { name: 'Clear selection' });
+    clearButton.focus();
+    expect(clearButton).toHaveFocus();
+
+    // Escape dispatched from the bar (outside the list keydown handler) is a no-op.
+    fireEvent.keyDown(clearButton, { key: 'Escape' });
+
+    expect(screen.getByRole('region', { name: 'Bulk task actions' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Select Pour foundation' })).toBeChecked();
+  });
+
+  // --- Header select-all is per PHASE group -------------------------------
+  it('scopes header select-all and indeterminate state to each phase group', async () => {
+    tasksData.phasesState = {
+      status: 'ready',
+      rows: [
+        { id: 'ph1', name: 'Site prep', order: 1, startDate: null, endDate: null, status: 'todo' },
+        { id: 'ph2', name: 'Framing', order: 2, startDate: null, endDate: null, status: 'todo' },
+      ],
+    };
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'Prep A', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Prep B', order: 2 }),
+        taskRow({ id: 't3', phaseId: 'ph2', title: 'Frame A', order: 1 }),
+      ],
+    };
+    renderSection();
+
+    // Select all of Site prep only.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' }));
+
+    const sitePrepHeader = screen.getByRole('checkbox', { name: 'Select all tasks in Site prep' });
+    const framingHeader = screen.getByRole('checkbox', { name: 'Select all tasks in Framing' });
+    expect(sitePrepHeader).toBeChecked();
+    expect((sitePrepHeader as HTMLInputElement).indeterminate).toBe(false);
+    // The other group's header is completely unaffected.
+    expect(framingHeader).not.toBeChecked();
+    expect((framingHeader as HTMLInputElement).indeterminate).toBe(false);
+    expect(screen.getByRole('checkbox', { name: 'Select Frame A' })).not.toBeChecked();
   });
 });
