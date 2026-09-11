@@ -177,6 +177,35 @@ describe('DocumentsSection list', () => {
     expect(accept).toContain('application/pdf');
   });
 
+  it('renders a link row with an external Open anchor, provider label, no download and a Delete', () => {
+    docsData.state = { status: 'ready', rows: [linkRow({ scope: 'project', scopeId: 'p1' })] };
+    renderSection();
+
+    const item = screen.getByRole('listitem');
+    expect(within(item).getByText('Rebar spec (Drive)')).toBeInTheDocument();
+    expect(within(item).getByText('Google Drive link')).toBeInTheDocument();
+
+    const open = within(item).getByRole('link', { name: 'Open' });
+    expect(open).toHaveAttribute('href', 'https://drive.google.com/file/d/abc123/view');
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open.getAttribute('rel')).toContain('noopener');
+
+    // A link is not a Storage object → no Preview/Download for it.
+    expect(within(item).queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument();
+    // Delete stays available to editors.
+    expect(within(item).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('hides Delete on a link row when canEdit is false', () => {
+    docsData.state = { status: 'ready', rows: [linkRow({ scope: 'project', scopeId: 'p1' })] };
+    renderSection({ role: 'viewer', canEdit: false });
+
+    const item = screen.getByRole('listitem');
+    expect(within(item).getByRole('link', { name: 'Open' })).toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
   it('hides upload and delete when canEdit is false', () => {
     docsData.state = { status: 'ready', rows: [docRow()] };
     renderSection({ role: 'viewer', canEdit: false });
@@ -379,7 +408,7 @@ describe('TaskAttachments Google Drive dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Google Drive' }));
     const dialog = screen.getByRole('dialog', { name: 'Attach a Google Drive link' });
 
-    const urlField = within(dialog).getByLabelText('Google Drive link');
+    const urlField = within(dialog).getByLabelText(/Google Drive link/);
     const submit = within(dialog).getByRole('button', { name: 'Attach' });
 
     // Invalid URL → error shown after blur and submit stays disabled.
@@ -420,6 +449,41 @@ describe('TaskAttachments Google Drive dialog', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(docsData.addLinkAttachment).not.toHaveBeenCalled();
+  });
+
+  it('marks the URL field required and exposes a required indication on its label', async () => {
+    const user = userEvent.setup();
+    renderTaskAttachments();
+
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    const dialog = screen.getByRole('dialog', { name: 'Attach a Google Drive link' });
+
+    // The accessible label carries a (required) indication (the visible "*" is
+    // aria-hidden; the sr-only " (required)" is what assistive tech announces).
+    const urlField = within(dialog).getByLabelText(/Google Drive link/);
+    expect(urlField).toBeRequired();
+    expect(within(dialog).getByLabelText(/Google Drive link.*required/i)).toBe(urlField);
+  });
+
+  it('caps a derived display name to the rules 255-char limit', async () => {
+    const user = userEvent.setup();
+    renderTaskAttachments();
+
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    const dialog = screen.getByRole('dialog', { name: 'Attach a Google Drive link' });
+
+    // A Drive URL whose final path segment is >255 chars; the display-name
+    // field is left blank so the name is derived from the URL and must be
+    // capped to 255 (the rules' `name` limit) before submit.
+    const longSegment = 'a'.repeat(300);
+    const urlField = within(dialog).getByLabelText(/Google Drive link/);
+    await user.type(urlField, `https://drive.google.com/file/d/${longSegment}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Attach' }));
+
+    expect(docsData.addLinkAttachment).toHaveBeenCalledTimes(1);
+    const submitted = docsData.addLinkAttachment.mock.calls[0][0] as { name: string };
+    expect(submitted.name.length).toBeLessThanOrEqual(255);
+    expect(submitted.name).toBe('a'.repeat(255));
   });
 });
 

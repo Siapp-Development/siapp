@@ -113,6 +113,18 @@ describe('validateDriveUrl (D-043)', () => {
     expect(validateDriveUrl('   ')).not.toBeNull();
   });
 
+  it('rejects a bare Drive host with no file path (client/rules predicate parity)', () => {
+    // The rules regex requires https://<host>/.* — a bare host would pass the
+    // host check but fail server-side. The client now rejects it up front so a
+    // user cannot Attach a link the batch would reject.
+    expect(validateDriveUrl('https://drive.google.com')).not.toBeNull();
+    expect(validateDriveUrl('https://drive.google.com/')).not.toBeNull();
+    expect(validateDriveUrl('https://docs.google.com')).not.toBeNull();
+    expect(validateDriveUrl('https://docs.google.com/')).not.toBeNull();
+    // A full share link (host + path) still validates.
+    expect(validateDriveUrl('https://drive.google.com/file/d/ABC/view')).toBeNull();
+  });
+
   it('returns a human-readable message (not just a boolean) for invalid input', () => {
     expect(typeof validateDriveUrl('')).toBe('string');
     expect(typeof validateDriveUrl('https://evil.com')).toBe('string');

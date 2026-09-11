@@ -384,16 +384,125 @@ describe('link document create (D-043)', () => {
   });
 
   it('enforces need-to-know: pm cannot create a link restricted to a department they lack', async () => {
+    // Visibility now pins to the parent task (D-043): seed a task actually
+    // restricted to finance so an inherited [DEP_FINANCE] link is a valid
+    // shape, and need-to-know (canSeeRestricted) is the only gate under test.
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/proj1/tasks/task-fin`, {
+      id: 'task-fin',
+      visibleToClient: false,
+      restrictedToDepartments: [DEP_FINANCE],
+    });
     await assertFails(
       setDoc(
         doc(dbAs('pm', WKS_A, [DEP_SITE]), `${DOCS_PATH}/lnk-x`),
-        validLinkDocument('lnk-x', { restrictedToDepartments: [DEP_FINANCE] }, 'user-pm'),
+        validLinkDocument(
+          'lnk-x',
+          { scopeId: 'task-fin', restrictedToDepartments: [DEP_FINANCE] },
+          'user-pm',
+        ),
       ),
     );
     await assertSucceeds(
       setDoc(
         doc(dbAs('pm', WKS_A, [DEP_FINANCE]), `${DOCS_PATH}/lnk-ok`),
-        validLinkDocument('lnk-ok', { restrictedToDepartments: [DEP_FINANCE] }, 'user-pm'),
+        validLinkDocument(
+          'lnk-ok',
+          { scopeId: 'task-fin', restrictedToDepartments: [DEP_FINANCE] },
+          'user-pm',
+        ),
+      ),
+    );
+  });
+
+  it('denies a link whose visibleToClient does not match the parent task (both directions)', async () => {
+    // Direction 1 — task false, doc true. `task1` is seeded (seedWorkspace)
+    // without a visibleToClient field, so task.get('visibleToClient', false)
+    // is false; a doc claiming client-visible mismatches.
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-vis`),
+        validLinkDocument('lnk-vis', { visibleToClient: true }),
+      ),
+    );
+    // Direction 2 — task true, doc false. Pin a client-visible task and submit
+    // a firm-internal link against it: the visibility now mismatches downward.
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/proj1/tasks/task-vis`, {
+      id: 'task-vis',
+      visibleToClient: true,
+      restrictedToDepartments: [],
+    });
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-invis`),
+        validLinkDocument('lnk-invis', { scopeId: 'task-vis', visibleToClient: false }),
+      ),
+    );
+  });
+
+  it('denies a link whose restrictedToDepartments does not match the parent task', async () => {
+    // `task1` has no restrictedToDepartments → default []; a link carrying a
+    // non-empty department set no longer matches the task's (empty) array.
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-rd`),
+        validLinkDocument('lnk-rd', { restrictedToDepartments: [DEP_SITE] }),
+      ),
+    );
+    // And the reverse: a task actually restricted to finance rejects a link
+    // that drops the restriction (owner can see everything, so need-to-know is
+    // satisfied — only the pinned-array check fails).
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/proj1/tasks/task-rd`, {
+      id: 'task-rd',
+      visibleToClient: false,
+      restrictedToDepartments: [DEP_FINANCE],
+    });
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-rd2`),
+        validLinkDocument('lnk-rd2', { scopeId: 'task-rd', restrictedToDepartments: [] }),
+      ),
+    );
+  });
+
+  it('denies a link whose scopeId points at a non-existent task', async () => {
+    // The rule get()s the task at the submitted scopeId; a missing task makes
+    // the pinned-visibility read fail, so the create is denied.
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-orphan`),
+        validLinkDocument('lnk-orphan', { scopeId: 'no-such-task' }),
+      ),
+    );
+  });
+
+  it('allows a link that inherits a client-visible task exactly', async () => {
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/proj1/tasks/task-client`, {
+      id: 'task-client',
+      visibleToClient: true,
+      restrictedToDepartments: [],
+    });
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-client`),
+        validLinkDocument('lnk-client', { scopeId: 'task-client', visibleToClient: true }),
+      ),
+    );
+  });
+
+  it('allows a link that inherits a department-restricted task the actor can see', async () => {
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/proj1/tasks/task-dep`, {
+      id: 'task-dep',
+      visibleToClient: false,
+      restrictedToDepartments: [DEP_SITE],
+    });
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('pm', WKS_A, [DEP_SITE]), `${DOCS_PATH}/lnk-dep`),
+        validLinkDocument(
+          'lnk-dep',
+          { scopeId: 'task-dep', restrictedToDepartments: [DEP_SITE] },
+          'user-pm',
+        ),
       ),
     );
   });
