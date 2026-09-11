@@ -135,37 +135,52 @@ export function PortalDocumentsSection({
           </p>
         ) : (
           <ul aria-label="Shared documents" className="mt-3 space-y-2">
-            {state.rows.map((row) => (
-              <li
-                key={row.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{row.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatSize(row.sizeBytes)}
-                    {row.uploadedAt !== null && ` · ${DATE_FORMAT.format(row.uploadedAt)}`}
-                    {row.uploaderType === 'client' && ' · shared by you'}
-                  </p>
-                </div>
-                {row.scanStatus === 'infected' ? (
-                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                    Blocked by virus scan
-                  </span>
-                ) : (
-                  interactive && (
-                    <button
-                      type="button"
-                      onClick={() => void handleDownload(row.storagePath)}
-                      className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
-                    >
-                      Download
-                      <span className="sr-only"> {row.name}</span>
-                    </button>
-                  )
-                )}
-              </li>
-            ))}
+            {state.rows.map((row) => {
+              const isLink = row.attachmentType === 'link';
+              return (
+                <li
+                  key={row.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{row.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {isLink ? 'Google Drive link' : formatSize(row.sizeBytes)}
+                      {row.uploadedAt !== null && ` · ${DATE_FORMAT.format(row.uploadedAt)}`}
+                      {row.uploaderType === 'client' && ' · shared by you'}
+                    </p>
+                  </div>
+                  {isLink ? (
+                    interactive && (
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                      >
+                        Open
+                        <span className="sr-only"> {row.name} (opens in a new tab)</span>
+                      </a>
+                    )
+                  ) : row.scanStatus === 'infected' ? (
+                    <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                      Blocked by virus scan
+                    </span>
+                  ) : (
+                    interactive && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDownload(row.storagePath)}
+                        className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                      >
+                        Download
+                        <span className="sr-only"> {row.name}</span>
+                      </button>
+                    )
+                  )}
+                </li>
+              );
+            })}
           </ul>
         ))}
     </section>

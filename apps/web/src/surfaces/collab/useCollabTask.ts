@@ -153,6 +153,12 @@ export function useCollabUpdates(
 export interface ICollabDocument {
   id: string;
   name: string;
+  /** 'file' = uploaded Storage bytes; 'link' = external URL (D-043). */
+  attachmentType: 'file' | 'link';
+  /** Link target URL (link docs only; '' for file docs). */
+  url: string;
+  /** Provider for link docs (empty string for file docs). */
+  linkProvider: string;
   mimeType: string;
   sizeBytes: number;
   uploadedAt: Date | null;
@@ -166,9 +172,14 @@ export type TCollabDocumentsState =
   | { status: 'ready'; rows: ICollabDocument[] };
 
 function mapDocument(id: string, data: DocumentData): ICollabDocument {
+  // Legacy/file docs predate `attachmentType` — default to 'file' (D-043).
+  const attachmentType = data['attachmentType'] === 'link' ? 'link' : 'file';
   return {
     id,
     name: String(data['name'] ?? ''),
+    attachmentType,
+    url: String(data['url'] ?? ''),
+    linkProvider: String(data['linkProvider'] ?? ''),
     mimeType: String(data['mimeType'] ?? ''),
     sizeBytes: typeof data['sizeBytes'] === 'number' ? data['sizeBytes'] : 0,
     uploadedAt: data['uploadedAt'] instanceof Timestamp ? data['uploadedAt'].toDate() : null,

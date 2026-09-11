@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { IPortalDocument, TPortalDocumentsState } from '../documents/usePortalDocuments.ts';
@@ -24,6 +24,9 @@ function docRow(overrides: Partial<IPortalDocument>): IPortalDocument {
   return {
     id: 'd1',
     name: 'Plan.pdf',
+    attachmentType: 'file',
+    url: '',
+    linkProvider: '',
     mimeType: 'application/pdf',
     sizeBytes: 2048,
     uploadedAt: new Date('2026-08-01T00:00:00Z'),
@@ -100,5 +103,62 @@ describe('PortalDocumentsSection', () => {
 
     expect(screen.getByText(/blocked by virus scan/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it('renders a link row as an external Open anchor with a provider label and no download (D-043)', () => {
+    setState({
+      status: 'ready',
+      rows: [
+        docRow({
+          name: 'Rebar spec (Drive)',
+          attachmentType: 'link',
+          url: 'https://drive.google.com/file/d/abc123/view',
+          linkProvider: 'google_drive',
+          mimeType: '',
+          sizeBytes: 0,
+          storagePath: '',
+        }),
+      ],
+    });
+
+    render(<PortalDocumentsSection workspaceId="w1" projectId="p1" clientId="c1" />);
+
+    const list = screen.getByRole('list', { name: 'Shared documents' });
+    expect(list).toHaveTextContent('Rebar spec (Drive)');
+    expect(within(list).getByText(/Google Drive link/)).toBeInTheDocument();
+
+    const open = within(list).getByRole('link', { name: /open rebar spec \(drive\)/i });
+    expect(open).toHaveAttribute('href', 'https://drive.google.com/file/d/abc123/view');
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open.getAttribute('rel')).toContain('noopener');
+    // A link carries no Storage bytes → no Download control.
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+  });
+
+  it('renders a link row as static text (no Open anchor) when non-interactive (print)', () => {
+    setState({
+      status: 'ready',
+      rows: [
+        docRow({
+          name: 'Rebar spec (Drive)',
+          attachmentType: 'link',
+          url: 'https://drive.google.com/file/d/abc123/view',
+          linkProvider: 'google_drive',
+          storagePath: '',
+        }),
+      ],
+    });
+
+    render(
+      <PortalDocumentsSection
+        workspaceId="w1"
+        projectId="p1"
+        clientId="c1"
+        interactive={false}
+      />,
+    );
+
+    expect(screen.getByText('Rebar spec (Drive)')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open/i })).not.toBeInTheDocument();
   });
 });

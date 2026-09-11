@@ -230,6 +230,9 @@ describe('PortalPrintLayout — print-color-adjust scoping (#151)', () => {
     const infectedRow: IPortalDocument = {
       id: 'd1',
       name: 'Bad.pdf',
+      attachmentType: 'file',
+      url: '',
+      linkProvider: '',
       mimeType: 'application/pdf',
       sizeBytes: 2048,
       uploadedAt: new Date('2026-08-01T00:00:00Z'),

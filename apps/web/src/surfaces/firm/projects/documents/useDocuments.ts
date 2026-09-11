@@ -41,6 +41,12 @@ import { db, storage } from '@/lib/firebase.ts';
 export interface IDocumentRow {
   id: string;
   name: string;
+  /** 'file' = uploaded Storage bytes; 'link' = external URL (D-043). */
+  attachmentType: 'file' | 'link';
+  /** Link target URL (link docs only; '' for file docs). */
+  url: string;
+  /** Provider for link docs (empty string for file docs). */
+  linkProvider: string;
   mimeType: string;
   sizeBytes: number;
   storagePath: string;
@@ -68,9 +74,15 @@ function asStringArray(value: unknown): string[] {
 }
 
 function mapDocument(id: string, data: DocumentData): IDocumentRow {
+  // Legacy/file docs predate `attachmentType` — default to 'file' so they
+  // render exactly as before (D-043 backward compat).
+  const attachmentType = data['attachmentType'] === 'link' ? 'link' : 'file';
   return {
     id,
     name: String(data['name'] ?? ''),
+    attachmentType,
+    url: String(data['url'] ?? ''),
+    linkProvider: String(data['linkProvider'] ?? ''),
     mimeType: String(data['mimeType'] ?? ''),
     sizeBytes: typeof data['sizeBytes'] === 'number' ? data['sizeBytes'] : 0,
     storagePath: String(data['storagePath'] ?? ''),
@@ -208,6 +220,39 @@ export function validateDocumentFile(file: File): string | null {
   return null;
 }
 
+/** Google Drive share-link hosts accepted for link attachments (D-043). */
+const DRIVE_LINK_HOSTS: readonly string[] = ['drive.google.com', 'docs.google.com'];
+
+/**
+ * Client-side pre-check for a Google Drive link attachment (D-043). Returns
+ * `null` when `raw` is a valid `https://` Drive URL, otherwise a friendly
+ * message. Mirrors the `validLinkDocumentCreate` host allow-list in
+ * firestore.rules (defence in depth).
+ */
+export function validateDriveUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return 'Paste a Google Drive share link.';
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return 'Enter a valid link (starting with https://).';
+  }
+  if (parsed.protocol !== 'https:' || !DRIVE_LINK_HOSTS.includes(parsed.hostname)) {
+    return 'Enter a Google Drive share link (drive.google.com/…).';
+  }
+  // The rules regex requires `https://<host>/.*` — a bare host (pathname just
+  // '/' or empty) would pass the host check here but be rejected server-side,
+  // enabling Attach then failing the batch. Require a non-empty path so the
+  // client predicate stays identical to validLinkDocumentCreate.
+  if (parsed.pathname.length <= 1) {
+    return 'Paste the full Google Drive share link (it should include a file path).';
+  }
+  return null;
+}
+
 function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.-]+/g, '_').slice(0, 120);
 }
@@ -266,10 +311,66 @@ export async function uploadDocument(input: IUploadDocumentInput): Promise<void>
   await batch.commit();
 }
 
+// ---------------------------------------------------------------------------
+// Link attachment writer (D-043) — no Storage bytes, task-scoped only.
+// ---------------------------------------------------------------------------
+
+export interface IAddLinkAttachmentInput {
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  url: string;
+  name: string;
+  visibleToClient: boolean;
+  restrictedToDepartments: string[];
+  uid: string;
+  userName: string;
+}
+
+/**
+ * Attach an external Google Drive link to a task as a link-type document
+ * (D-043). Writes a `documents/{did}` record with no `storagePath`/
+ * `sizeBytes`/`mimeType` and `scanStatus: 'clean'` (nothing to scan), plus a
+ * `doc_added` activity entry carrying the URL. Visibility inherits from the
+ * task, matching file uploads. No Storage call is made.
+ */
+export async function addLinkAttachment(input: IAddLinkAttachmentInput): Promise<void> {
+  const batch = writeBatch(db);
+  const docRef = doc(
+    collection(db, `workspaces/${input.workspaceId}/projects/${input.projectId}/documents`),
+  );
+  batch.set(docRef, {
+    id: docRef.id,
+    name: input.name,
+    attachmentType: 'link',
+    url: input.url,
+    linkProvider: 'google_drive',
+    scope: 'task',
+    scopeId: input.taskId,
+    uploadedBy: input.uid,
+    uploaderType: 'firm_member',
+    uploadedAt: serverTimestamp(),
+    visibleToClient: input.visibleToClient,
+    visibleToCollaboratorIds: [],
+    restrictedToDepartments: input.restrictedToDepartments,
+    scanStatus: 'clean',
+    deletedAt: null,
+  });
+  appendDocActivity(batch, input.workspaceId, input.projectId, input.taskId, 'doc_added', {
+    name: input.name,
+    url: input.url,
+    uid: input.uid,
+    userName: input.userName,
+  });
+  await batch.commit();
+}
+
 interface IDocActivityInput {
   name: string;
-  storagePath: string;
-  mimeType: string;
+  storagePath?: string;
+  mimeType?: string;
+  /** Link target for link-type doc activity (D-043); omit for file docs. */
+  url?: string;
   uid: string;
   userName: string;
 }
@@ -285,6 +386,20 @@ function appendDocActivity(
   const ref = doc(
     collection(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/updates`),
   );
+  // Only carry the keys relevant to this attachment kind — file activity
+  // keeps storagePath/mimeType; link activity carries url instead.
+  const payload: { text: string; storagePath?: string; mimeType?: string; url?: string } = {
+    text: input.name,
+  };
+  if (input.storagePath !== undefined) {
+    payload.storagePath = input.storagePath;
+  }
+  if (input.mimeType !== undefined) {
+    payload.mimeType = input.mimeType;
+  }
+  if (input.url !== undefined) {
+    payload.url = input.url;
+  }
   batch.set(ref, {
     id: ref.id,
     authorType: 'user',
@@ -292,7 +407,7 @@ function appendDocActivity(
     authorNameDenorm: input.userName,
     source: 'web',
     action,
-    payload: { text: input.name, storagePath: input.storagePath, mimeType: input.mimeType },
+    payload,
     createdAt: serverTimestamp(),
   });
 }
