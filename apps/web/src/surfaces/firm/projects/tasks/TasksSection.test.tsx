@@ -13,6 +13,9 @@ const tasksData = vi.hoisted(() => ({
   refreshRestricted: vi.fn(),
   createTask: vi.fn(),
   createPhase: vi.fn(),
+  deletePhase: vi.fn(),
+  deleteTask: vi.fn(),
+  reorderPhases: vi.fn(),
   reorderTasks: vi.fn(),
   bulkUpdateTaskStatus: vi.fn(),
   bulkAddAssignee: vi.fn(),
@@ -25,6 +28,9 @@ vi.mock('./useTasks.ts', () => ({
   usePhases: () => tasksData.phasesState,
   createTask: tasksData.createTask,
   createPhase: tasksData.createPhase,
+  deletePhase: (...args: unknown[]) => tasksData.deletePhase(...args),
+  deleteTask: (...args: unknown[]) => tasksData.deleteTask(...args),
+  reorderPhases: (...args: unknown[]) => tasksData.reorderPhases(...args),
   reorderTasks: tasksData.reorderTasks,
   bulkUpdateTaskStatus: (...args: unknown[]) => tasksData.bulkUpdateTaskStatus(...args),
   bulkAddAssignee: (...args: unknown[]) => tasksData.bulkAddAssignee(...args),
@@ -151,6 +157,9 @@ beforeEach(() => {
   tasksData.bulkUpdateTaskStatus.mockResolvedValue(undefined);
   tasksData.bulkAddAssignee.mockResolvedValue({ added: 0, skipped: 0 });
   tasksData.bulkDeleteTasks.mockResolvedValue({ deletedIds: [], failedIds: [] });
+  tasksData.deletePhase.mockResolvedValue(undefined);
+  tasksData.reorderPhases.mockResolvedValue(undefined);
+  tasksData.deleteTask.mockResolvedValue(undefined);
 });
 
 /**
@@ -223,7 +232,7 @@ describe('TasksSection', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Clear debris')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('button', { name: /site prep/i }));
+    await userEvent.click(screen.getByRole('button', { name: /site prep\s*2/i }));
     expect(screen.queryByText('Clear debris')).not.toBeInTheDocument();
     expect(screen.getByText('Loose task')).toBeInTheDocument();
   });
@@ -278,6 +287,121 @@ describe('TasksSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add phase' }));
 
     expect(tasksData.createPhase).toHaveBeenCalledWith('wksA', 'p1', 'Finishing', 2);
+  });
+
+  it('reorders phases by dragging a phase handle', async () => {
+    tasksData.phasesState = {
+      status: 'ready',
+      rows: [
+        { id: 'ph1', name: 'Site prep', order: 1, startDate: null, endDate: null, status: 'todo' },
+        { id: 'ph2', name: 'Framing', order: 2, startDate: null, endDate: null, status: 'todo' },
+      ],
+    };
+    renderSection();
+
+    const sourceHandle = screen.getByRole('button', { name: /drag to reorder phase framing/i });
+    const targetSection = screen.getByRole('region', { name: 'Site prep' });
+    const transfer = createDragDataTransfer();
+
+    fireEvent.dragStart(sourceHandle, { dataTransfer: transfer });
+    fireEvent.dragOver(targetSection, { dataTransfer: transfer });
+    fireEvent.drop(targetSection, { dataTransfer: transfer });
+    fireEvent.dragEnd(sourceHandle, { dataTransfer: transfer });
+
+    await waitFor(() => {
+      expect(tasksData.reorderPhases).toHaveBeenCalledWith('wksA', 'p1', ['ph2', 'ph1']);
+    });
+  });
+
+  it('reorders phases via keyboard arrows and keeps handle focus', async () => {
+    tasksData.phasesState = {
+      status: 'ready',
+      rows: [
+        { id: 'ph1', name: 'Site prep', order: 1, startDate: null, endDate: null, status: 'todo' },
+        { id: 'ph2', name: 'Framing', order: 2, startDate: null, endDate: null, status: 'todo' },
+      ],
+    };
+    const user = userEvent.setup();
+    renderSection();
+
+    const handle = screen.getByRole('button', { name: /drag to reorder phase framing/i });
+    handle.focus();
+    expect(handle).toHaveFocus();
+
+    await user.keyboard('{ArrowUp}');
+
+    await waitFor(() => {
+      expect(tasksData.reorderPhases).toHaveBeenCalledWith('wksA', 'p1', ['ph2', 'ph1']);
+    });
+    expect(handle).toHaveFocus();
+  });
+
+  it('deletes a phase after confirmation, detaching its readable tasks', async () => {
+    tasksData.phasesState = {
+      status: 'ready',
+      rows: [
+        { id: 'ph1', name: 'Site prep', order: 1, startDate: null, endDate: null, status: 'todo' },
+      ],
+    };
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [
+        taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 }),
+        taskRow({ id: 't2', phaseId: 'ph1', title: 'Second', order: 2 }),
+      ],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete phase Site prep' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete phase' }));
+
+    await waitFor(() => {
+      expect(tasksData.deletePhase).toHaveBeenCalledWith('wksA', 'p1', 'ph1', ['t1', 't2'], 'u1');
+    });
+  });
+
+  it('does not delete a phase when the confirmation is cancelled', async () => {
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete phase Site prep' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(tasksData.deletePhase).not.toHaveBeenCalled();
+  });
+
+  it('offers no phase reorder/delete affordances when the caller cannot edit', () => {
+    renderSection({ canEdit: false });
+
+    expect(
+      screen.queryByRole('button', { name: /drag to reorder phase/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete phase/i })).not.toBeInTheDocument();
+  });
+
+  it('deletes a task after confirmation via the row delete control', async () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 })],
+    };
+    renderSection();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete First' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete task' }));
+
+    await waitFor(() => {
+      expect(tasksData.deleteTask).toHaveBeenCalledWith('wksA', 'p1', 't1');
+    });
+    expect(tasksData.refreshRestricted).toHaveBeenCalled();
+  });
+
+  it('hides the row delete control when the caller cannot edit', () => {
+    tasksData.tasksState = {
+      status: 'ready',
+      rows: [taskRow({ id: 't1', phaseId: 'ph1', title: 'First', order: 1 })],
+    };
+    renderSection({ canEdit: false });
+
+    expect(screen.queryByRole('button', { name: 'Delete First' })).not.toBeInTheDocument();
   });
 
   it('reorders tasks within a phase by dragging anywhere on the row', async () => {
