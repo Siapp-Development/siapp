@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,18 +7,22 @@ import type { IDocumentRow, TDocumentsState } from './useDocuments.ts';
 const docsData = vi.hoisted(() => ({
   state: { status: 'loading' } as TDocumentsState,
   uploadDocument: vi.fn(),
+  addLinkAttachment: vi.fn(),
   softDeleteDocument: vi.fn(),
   downloadDocument: vi.fn(),
   getPreviewUrl: vi.fn(),
   validateDocumentFile: vi.fn<(file: File) => string | null>(() => null),
+  validateDriveUrl: vi.fn<(raw: string) => string | null>(() => null),
 }));
 vi.mock('./useDocuments.ts', () => ({
   useDocuments: () => docsData.state,
   uploadDocument: docsData.uploadDocument,
+  addLinkAttachment: docsData.addLinkAttachment,
   softDeleteDocument: docsData.softDeleteDocument,
   downloadDocument: docsData.downloadDocument,
   getPreviewUrl: docsData.getPreviewUrl,
   validateDocumentFile: docsData.validateDocumentFile,
+  validateDriveUrl: docsData.validateDriveUrl,
 }));
 
 vi.mock('../../settings/useTeamData.ts', () => ({
@@ -44,13 +48,16 @@ vi.mock('../../settings/useTeamData.ts', () => ({
   }),
 }));
 
-import { DocumentsSection } from './DocumentsSection.tsx';
+import { DocumentsSection, TaskAttachments } from './DocumentsSection.tsx';
 import { formatBytes } from './formatBytes.ts';
 
 function docRow(overrides: Partial<IDocumentRow> = {}): IDocumentRow {
   return {
     id: 'd1',
     name: 'site-plan.pdf',
+    attachmentType: 'file',
+    url: '',
+    linkProvider: '',
     mimeType: 'application/pdf',
     sizeBytes: 2.5 * 1024 * 1024,
     storagePath: 'workspaces/wksA/projects/p1/uuid-site-plan.pdf',
@@ -91,6 +98,14 @@ beforeEach(() => {
   docsData.validateDocumentFile.mockReturnValue(null);
   docsData.uploadDocument.mockResolvedValue(undefined);
   docsData.softDeleteDocument.mockResolvedValue(undefined);
+  docsData.addLinkAttachment.mockResolvedValue(undefined);
+  // Realistic Drive-host validator so the dialog's disabled/error wiring is
+  // exercised end-to-end (the pure validator itself is covered in useDocuments.test.ts).
+  docsData.validateDriveUrl.mockImplementation((raw: string) =>
+    /^https:\/\/(drive|docs)\.google\.com\//.test(raw.trim())
+      ? null
+      : 'Enter a Google Drive share link (drive.google.com/…).',
+  );
   Object.assign(URL, { revokeObjectURL: vi.fn() });
 });
 
@@ -258,5 +273,204 @@ describe('DocumentsSection preview', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview-url');
     expect(screen.queryByTitle('site-plan.pdf')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TaskAttachments — the compact task-detail block with Upload File + Google
+// Drive link attachments (D-043).
+// ---------------------------------------------------------------------------
+
+function renderTaskAttachments(
+  overrides: Partial<Parameters<typeof TaskAttachments>[0]> = {},
+) {
+  return render(
+    <TaskAttachments
+      workspaceId="wksA"
+      projectId="p1"
+      taskId="t1"
+      taskVisibleToClient={false}
+      taskRestrictedToDepartments={[]}
+      role="pm"
+      departments={['dep-ops']}
+      uid="u1"
+      userName="Alice Tan"
+      canEdit
+      {...overrides}
+    />,
+  );
+}
+
+function linkRow(overrides: Partial<IDocumentRow> = {}): IDocumentRow {
+  return docRow({
+    id: 'lnk1',
+    name: 'Rebar spec (Drive)',
+    attachmentType: 'link',
+    url: 'https://drive.google.com/file/d/abc123/view',
+    linkProvider: 'google_drive',
+    mimeType: '',
+    sizeBytes: 0,
+    storagePath: '',
+    scope: 'task',
+    scopeId: 't1',
+    ...overrides,
+  });
+}
+
+describe('TaskAttachments buttons + count header', () => {
+  it('renders Upload File and Google Drive buttons when canEdit', () => {
+    renderTaskAttachments();
+    expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Google Drive' })).toBeInTheDocument();
+  });
+
+  it('hides both buttons when canEdit is false', () => {
+    renderTaskAttachments({ canEdit: false });
+    expect(screen.queryByRole('button', { name: 'Upload File' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Google Drive' })).not.toBeInTheDocument();
+  });
+
+  it('shows a right-aligned file count that pluralises with the row count', () => {
+    docsData.state = { status: 'ready', rows: [] };
+    const { rerender } = renderTaskAttachments();
+    expect(screen.getByText('0 files')).toBeInTheDocument();
+
+    docsData.state = { status: 'ready', rows: [linkRow()] };
+    rerender(
+      <TaskAttachments
+        workspaceId="wksA"
+        projectId="p1"
+        taskId="t1"
+        taskVisibleToClient={false}
+        taskRestrictedToDepartments={[]}
+        role="pm"
+        departments={['dep-ops']}
+        uid="u1"
+        userName="Alice Tan"
+        canEdit
+      />,
+    );
+    expect(screen.getByText('1 file')).toBeInTheDocument();
+
+    docsData.state = { status: 'ready', rows: [linkRow(), docRow({ id: 'd9', scope: 'task' })] };
+    rerender(
+      <TaskAttachments
+        workspaceId="wksA"
+        projectId="p1"
+        taskId="t1"
+        taskVisibleToClient={false}
+        taskRestrictedToDepartments={[]}
+        role="pm"
+        departments={['dep-ops']}
+        uid="u1"
+        userName="Alice Tan"
+        canEdit
+      />,
+    );
+    expect(screen.getByText('2 files')).toBeInTheDocument();
+  });
+});
+
+describe('TaskAttachments Google Drive dialog', () => {
+  it('opens the dialog, gates submit on validation, and attaches with inherited visibility', async () => {
+    const user = userEvent.setup();
+    renderTaskAttachments({ taskVisibleToClient: true, taskRestrictedToDepartments: ['dep-ops'] });
+
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    const dialog = screen.getByRole('dialog', { name: 'Attach a Google Drive link' });
+
+    const urlField = within(dialog).getByLabelText('Google Drive link');
+    const submit = within(dialog).getByRole('button', { name: 'Attach' });
+
+    // Invalid URL → error shown after blur and submit stays disabled.
+    await user.type(urlField, 'https://evil.com/x');
+    await user.tab();
+    expect(
+      within(dialog).getByText('Enter a Google Drive share link (drive.google.com/…).'),
+    ).toBeInTheDocument();
+    expect(submit).toBeDisabled();
+
+    // Valid Drive URL → submit enabled.
+    await user.clear(urlField);
+    await user.type(urlField, 'https://drive.google.com/file/d/abc123/view');
+    expect(submit).toBeEnabled();
+
+    await user.click(submit);
+    expect(docsData.addLinkAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'wksA',
+        projectId: 'p1',
+        taskId: 't1',
+        url: 'https://drive.google.com/file/d/abc123/view',
+        visibleToClient: true,
+        restrictedToDepartments: ['dep-ops'],
+        uid: 'u1',
+        userName: 'Alice Tan',
+      }),
+    );
+  });
+
+  it('closes the dialog on Cancel without attaching', async () => {
+    const user = userEvent.setup();
+    renderTaskAttachments();
+
+    await user.click(screen.getByRole('button', { name: 'Google Drive' }));
+    expect(screen.getByRole('dialog', { name: 'Attach a Google Drive link' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(docsData.addLinkAttachment).not.toHaveBeenCalled();
+  });
+});
+
+describe('TaskAttachments rows', () => {
+  it('renders a link row as an external Open anchor with a provider label and no size', () => {
+    docsData.state = { status: 'ready', rows: [linkRow()] };
+    renderTaskAttachments();
+
+    const item = screen.getByRole('listitem');
+    expect(within(item).getByText('Rebar spec (Drive)')).toBeInTheDocument();
+    expect(within(item).getByText('Google Drive link')).toBeInTheDocument();
+
+    const open = within(item).getByRole('link', { name: 'Open' });
+    expect(open).toHaveAttribute('href', 'https://drive.google.com/file/d/abc123/view');
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open.getAttribute('rel')).toContain('noopener');
+
+    // A link carries no bytes → no size text and no download button.
+    expect(screen.queryByText('0 B')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+  });
+
+  it('renders a file row with size + download and no external Open link', () => {
+    docsData.state = { status: 'ready', rows: [docRow({ scope: 'task', scopeId: 't1' })] };
+    renderTaskAttachments();
+
+    expect(screen.getByText(/2\.5 MB/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open' })).not.toBeInTheDocument();
+  });
+
+  it('remove (×) calls softDeleteDocument with the row', async () => {
+    const row = linkRow();
+    docsData.state = { status: 'ready', rows: [row] };
+    renderTaskAttachments();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Rebar spec (Drive)' }));
+    expect(docsData.softDeleteDocument).toHaveBeenCalledWith(
+      'wksA',
+      'p1',
+      row,
+      'u1',
+      'Alice Tan',
+    );
+  });
+
+  it('hides the remove control when canEdit is false', () => {
+    docsData.state = { status: 'ready', rows: [linkRow()] };
+    renderTaskAttachments({ canEdit: false });
+    expect(
+      screen.queryByRole('button', { name: 'Remove Rebar spec (Drive)' }),
+    ).not.toBeInTheDocument();
   });
 });

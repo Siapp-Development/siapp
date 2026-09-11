@@ -26,18 +26,22 @@ vi.mock('./useTasks.ts', () => ({
 const docsData = vi.hoisted(() => ({
   state: { status: 'ready', rows: [] } as TDocumentsState,
   uploadDocument: vi.fn(),
+  addLinkAttachment: vi.fn(),
   softDeleteDocument: vi.fn(),
   downloadDocument: vi.fn(),
   getPreviewUrl: vi.fn(),
   validateDocumentFile: vi.fn<(file: File) => string | null>(() => null),
+  validateDriveUrl: vi.fn<(raw: string) => string | null>(() => null),
 }));
 vi.mock('../documents/useDocuments.ts', () => ({
   useDocuments: () => docsData.state,
   uploadDocument: docsData.uploadDocument,
+  addLinkAttachment: docsData.addLinkAttachment,
   softDeleteDocument: docsData.softDeleteDocument,
   downloadDocument: docsData.downloadDocument,
   getPreviewUrl: docsData.getPreviewUrl,
   validateDocumentFile: docsData.validateDocumentFile,
+  validateDriveUrl: docsData.validateDriveUrl,
 }));
 
 vi.mock('../../settings/useTeamData.ts', () => ({
@@ -522,6 +526,9 @@ describe('TaskDetailPanel attachments', () => {
         {
           id: 'd1',
           name: 'rebar-specs.pdf',
+          attachmentType: 'file',
+          url: '',
+          linkProvider: '',
           mimeType: 'application/pdf',
           sizeBytes: 2048,
           storagePath: 'workspaces/wksA/projects/p1/uuid-rebar-specs.pdf',
@@ -539,7 +546,7 @@ describe('TaskDetailPanel attachments', () => {
     renderPanel();
 
     expect(screen.getByText('rebar-specs.pdf')).toBeInTheDocument();
-    expect(screen.getByText('2 KB')).toBeInTheDocument();
+    expect(screen.getByText(/2 KB/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
   });
 
@@ -566,8 +573,15 @@ describe('TaskDetailPanel attachments', () => {
     );
   });
 
-  it('hides the attach button when canEdit is false', () => {
+  it('renders the Upload File and Google Drive buttons when canEdit', () => {
+    renderPanel();
+    expect(screen.getByRole('button', { name: 'Upload File' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Google Drive' })).toBeInTheDocument();
+  });
+
+  it('hides both attachment buttons when canEdit is false', () => {
     renderPanel({ canEdit: false });
-    expect(screen.queryByRole('button', { name: 'Attach file' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upload File' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Google Drive' })).not.toBeInTheDocument();
   });
 });

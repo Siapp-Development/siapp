@@ -21,7 +21,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestEnv, memberClaims, seedDoc, seedWorkspace } from './helpers.ts';
 
 const WKS_A = 'wksA';
@@ -60,6 +60,24 @@ function dbAs(role: TMemberRole, wid: string = WKS_A, departments: string[] = []
     .firestore();
 }
 
+/** Firestore as a portal client principal (claims shape redeemPortalLink mints). */
+function dbAsPortal(pid: string = 'proj1', wid: string = WKS_A, cid: string = 'client1') {
+  return testEnv
+    .authenticatedContext(`portal_${wid}_${pid}_${cid}`, {
+      portal: { wid, pid, cid, linkId: 'link1' },
+    })
+    .firestore();
+}
+
+/** Firestore as a collaborator principal (claims shape redeemCollabLink mints). */
+function dbAsCollab(wid: string = WKS_A, colid: string = 'col1') {
+  return testEnv
+    .authenticatedContext(`collab_${wid}_${colid}`, {
+      collab: { wid, colid, linkId: 'link1' },
+    })
+    .firestore();
+}
+
 /** A document doc that passes the #14 create rule for `user-<role>` callers. */
 function validDocument(
   id: string,
@@ -81,6 +99,32 @@ function validDocument(
     visibleToCollaboratorIds: [],
     restrictedToDepartments: [],
     scanStatus: 'pending',
+    deletedAt: null,
+    ...extra,
+  };
+}
+
+/** A Google Drive link doc that passes the D-043 link-create rule (task-scoped). */
+function validLinkDocument(
+  id: string,
+  extra: Record<string, unknown> = {},
+  uploader = 'user-owner',
+): Record<string, unknown> {
+  return {
+    id,
+    name: 'Rebar spec (Drive)',
+    attachmentType: 'link',
+    url: 'https://drive.google.com/file/d/abc123/view',
+    linkProvider: 'google_drive',
+    scope: 'task',
+    scopeId: 'task1',
+    uploadedBy: uploader,
+    uploaderType: 'firm_member',
+    uploadedAt: Timestamp.now(),
+    visibleToClient: false,
+    visibleToCollaboratorIds: [],
+    restrictedToDepartments: [],
+    scanStatus: 'clean',
     deletedAt: null,
     ...extra,
   };
@@ -230,6 +274,174 @@ describe('document create', () => {
         validDocument('doc-x', { scope: 'project', scopeId: 'other-proj' }),
       ),
     );
+  });
+
+  it('still allows a legacy file create with no attachmentType field (backward compat)', async () => {
+    // The file-create path never writes attachmentType; mapDocument defaults
+    // it to 'file' at read time. Confirm the rule ignores its absence.
+    const payload = validDocument('doc-file');
+    expect('attachmentType' in payload).toBe(false);
+    await assertSucceeds(setDoc(doc(dbAs('owner'), `${DOCS_PATH}/doc-file`), payload));
+  });
+});
+
+describe('link document create (D-043)', () => {
+  it('allows owner, admin and pm to create a valid Drive link doc (both hosts)', async () => {
+    for (const role of ['owner', 'admin', 'pm'] as const) {
+      await assertSucceeds(
+        setDoc(
+          doc(dbAs(role), `${DOCS_PATH}/lnk-${role}`),
+          validLinkDocument(`lnk-${role}`, {}, `user-${role}`),
+        ),
+      );
+      await assertSucceeds(
+        setDoc(
+          doc(dbAs(role), `${DOCS_PATH}/lnk-docs-${role}`),
+          validLinkDocument(
+            `lnk-docs-${role}`,
+            { url: 'https://docs.google.com/document/d/abc123/edit' },
+            `user-${role}`,
+          ),
+        ),
+      );
+    }
+  });
+
+  it('denies a link doc carrying file-only keys (storagePath/sizeBytes/mimeType)', async () => {
+    for (const extra of [
+      { storagePath: `workspaces/${WKS_A}/projects/proj1/uuid-x.pdf` },
+      { sizeBytes: 1024 },
+      { mimeType: 'application/pdf' },
+    ]) {
+      await assertFails(
+        setDoc(doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`), validLinkDocument('lnk-x', extra)),
+      );
+    }
+  });
+
+  it('denies a non-Drive host or an http:// url', async () => {
+    for (const url of [
+      'https://evil.com/file/d/abc123',
+      'http://drive.google.com/file/d/abc123',
+      'https://drive.google.com.evil.com/x',
+      'ftp://drive.google.com/x',
+    ]) {
+      await assertFails(
+        setDoc(doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`), validLinkDocument('lnk-x', { url })),
+      );
+    }
+  });
+
+  it('denies a scanStatus other than clean', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { scanStatus: 'pending' }),
+      ),
+    );
+  });
+
+  it('denies a linkProvider other than google_drive', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { linkProvider: 'dropbox' }),
+      ),
+    );
+  });
+
+  it('denies a project-scoped link doc (task scope only at MVP)', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { scope: 'project', scopeId: 'proj1' }),
+      ),
+    );
+  });
+
+  it('denies a link doc with a non-empty visibleToCollaboratorIds', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { visibleToCollaboratorIds: ['col1'] }),
+      ),
+    );
+  });
+
+  it('denies a spoofed uploadedBy or a non-firm uploaderType', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', {}, 'someone-else'),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(dbAs('owner'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { uploaderType: 'client' }),
+      ),
+    );
+  });
+
+  it('enforces need-to-know: pm cannot create a link restricted to a department they lack', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('pm', WKS_A, [DEP_SITE]), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', { restrictedToDepartments: [DEP_FINANCE] }, 'user-pm'),
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(dbAs('pm', WKS_A, [DEP_FINANCE]), `${DOCS_PATH}/lnk-ok`),
+        validLinkDocument('lnk-ok', { restrictedToDepartments: [DEP_FINANCE] }, 'user-pm'),
+      ),
+    );
+  });
+
+  it('denies a viewer and a non-member from creating a link doc', async () => {
+    await assertFails(
+      setDoc(
+        doc(dbAs('viewer'), `${DOCS_PATH}/lnk-x`),
+        validLinkDocument('lnk-x', {}, 'user-viewer'),
+      ),
+    );
+    // Owner of a different workspace is a non-member here (cross-workspace).
+    await assertFails(
+      setDoc(doc(dbAs('owner', WKS_B), `${DOCS_PATH}/lnk-x`), validLinkDocument('lnk-x')),
+    );
+  });
+
+  it('denies a portal client and a collaborator from creating a link doc', async () => {
+    await assertFails(
+      setDoc(doc(dbAsPortal(), `${DOCS_PATH}/lnk-x`), validLinkDocument('lnk-x', {}, 'portal-user')),
+    );
+    await assertFails(
+      setDoc(doc(dbAsCollab(), `${DOCS_PATH}/lnk-x`), validLinkDocument('lnk-x', {}, 'collab-user')),
+    );
+  });
+});
+
+describe('link document soft delete + hard delete (D-043)', () => {
+  const LINK_PATH = `${DOCS_PATH}/lnk-del`;
+
+  beforeEach(async () => {
+    await seedDoc(testEnv, LINK_PATH, validLinkDocument('lnk-del'));
+  });
+
+  it('allows a permitted firm member to soft-delete a link doc', async () => {
+    await assertSucceeds(
+      updateDoc(doc(dbAs('pm'), LINK_PATH), {
+        deletedAt: Timestamp.now(),
+        deletedBy: 'user-pm',
+        deletedByType: 'firm_member',
+      }),
+    );
+  });
+
+  it('denies hard delete of a link doc for every role', async () => {
+    for (const role of ['owner', 'admin', 'pm', 'viewer'] as const) {
+      await assertFails(deleteDoc(doc(dbAs(role), LINK_PATH)));
+    }
   });
 });
 
