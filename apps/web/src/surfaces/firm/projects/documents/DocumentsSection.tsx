@@ -139,10 +139,13 @@ function DocumentRowItem({
   onDownload,
   onDelete,
 }: IDocumentRowItemProps) {
+  const isLink = row.attachmentType === 'link';
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-2 text-sm hover:bg-muted">
       <span className="min-w-40 flex-1 font-medium">{row.name}</span>
-      <span className="text-xs text-muted-foreground">{formatBytes(row.sizeBytes)}</span>
+      <span className="text-xs text-muted-foreground">
+        {isLink ? 'Google Drive link' : formatBytes(row.sizeBytes)}
+      </span>
       <span className="text-xs text-muted-foreground">
         {uploaderName}
         {row.uploadedAt !== null && ` · ${row.uploadedAt.toLocaleDateString()}`}
@@ -156,20 +159,31 @@ function DocumentRowItem({
           {row.restrictedToDepartments.map((dep) => departmentNames.get(dep) ?? dep).join(', ')}
         </span>
       )}
-      {row.scanStatus === 'pending' && (
+      {!isLink && row.scanStatus === 'pending' && (
         <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
           Scan pending
         </span>
       )}
       <span className="flex gap-1">
-        {isPreviewable(row.mimeType) && (
-          <Button type="button" variant="ghost" size="sm" onClick={onPreview}>
-            Preview
+        {isLink ? (
+          <Button asChild variant="ghost" size="sm">
+            <a href={row.url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              Open
+            </a>
           </Button>
+        ) : (
+          <>
+            {isPreviewable(row.mimeType) && (
+              <Button type="button" variant="ghost" size="sm" onClick={onPreview}>
+                Preview
+              </Button>
+            )}
+            <Button type="button" variant="ghost" size="sm" onClick={onDownload}>
+              Download
+            </Button>
+          </>
         )}
-        <Button type="button" variant="ghost" size="sm" onClick={onDownload}>
-          Download
-        </Button>
         {canEdit && (
           <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
             Delete
@@ -543,7 +557,9 @@ function deriveLinkName(rawUrl: string): string {
     const segments = pathname.split('/').filter((seg) => seg.length > 0);
     const last = segments.at(-1);
     if (last !== undefined && last !== 'view' && last !== 'edit') {
-      return decodeURIComponent(last);
+      // Cap to the rules' 255-char `name` limit — URLs allow up to 2000 chars,
+      // and a decoded segment can still exceed 255 (D-043 post-submit reject).
+      return decodeURIComponent(last).slice(0, 255);
     }
   } catch {
     // Fall through to the generic label for unparseable input.
@@ -611,11 +627,18 @@ function AddDriveLinkDialog({ open, onClose, onSubmit }: IAddDriveLinkDialogProp
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={urlFieldId}>Google Drive link</Label>
+          <Label htmlFor={urlFieldId}>
+            Google Drive link
+            <span aria-hidden="true" className="ml-0.5 text-danger">
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </Label>
           <Input
             id={urlFieldId}
             type="url"
             inputMode="url"
+            required
             placeholder="https://drive.google.com/…"
             value={url}
             aria-invalid={showValidation}

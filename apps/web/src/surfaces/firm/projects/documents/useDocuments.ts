@@ -243,6 +243,13 @@ export function validateDriveUrl(raw: string): string | null {
   if (parsed.protocol !== 'https:' || !DRIVE_LINK_HOSTS.includes(parsed.hostname)) {
     return 'Enter a Google Drive share link (drive.google.com/…).';
   }
+  // The rules regex requires `https://<host>/.*` — a bare host (pathname just
+  // '/' or empty) would pass the host check here but be rejected server-side,
+  // enabling Attach then failing the batch. Require a non-empty path so the
+  // client predicate stays identical to validLinkDocumentCreate.
+  if (parsed.pathname.length <= 1) {
+    return 'Paste the full Google Drive share link (it should include a file path).';
+  }
   return null;
 }
 

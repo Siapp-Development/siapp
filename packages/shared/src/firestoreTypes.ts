@@ -13,7 +13,6 @@
 import type {
   TActorType,
   TAdminAction,
-  TAttachmentType,
   TAuditAction,
   TBillingStatus,
   TCollaboratorStatus,
@@ -610,24 +609,13 @@ export interface ITaskUpdateDoc {
   createdAt: Date;
 }
 
-/** `/workspaces/{wid}/projects/{pid}/documents/{did}` */
-export interface IProjectDocumentDoc {
+/**
+ * Fields shared by every `/workspaces/{wid}/projects/{pid}/documents/{did}`
+ * record, regardless of `attachmentType`.
+ */
+export interface IProjectDocumentBaseDoc {
   id: string;
   name: string;
-  /**
-   * Discriminator between an uploaded-bytes doc and an external link doc
-   * (D-043). Absent on legacy/file docs → treat as `'file'`; only link docs
-   * write it explicitly. File-only fields (`mimeType`/`sizeBytes`/
-   * `storagePath`) are absent on link docs.
-   */
-  attachmentType?: TAttachmentType;
-  /** Present only on link docs: the external target URL (e.g. Google Drive). */
-  url?: string;
-  /** Present only on link docs: which provider the URL points at. */
-  linkProvider?: TLinkProvider;
-  mimeType: string;
-  sizeBytes: number;
-  storagePath: string;
   scope: TDocumentScope;
   scopeId: string;
   uploadedBy: string;
@@ -647,6 +635,43 @@ export interface IProjectDocumentDoc {
   deletedBy?: string;
   deletedByType?: TUploaderType;
 }
+
+/**
+ * Uploaded-bytes document (the existing/legacy shape). `attachmentType` is
+ * absent on legacy docs → treated as `'file'`; new file writes may omit it
+ * too, so it stays optional for backward compatibility.
+ */
+export interface IProjectFileDocumentDoc extends IProjectDocumentBaseDoc {
+  attachmentType?: 'file';
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  url?: undefined;
+  linkProvider?: undefined;
+}
+
+/**
+ * External-link document (D-043). Stores no Storage bytes — the file-only
+ * fields (`mimeType`/`sizeBytes`/`storagePath`) are absent; `url`/
+ * `linkProvider` describe the external target instead.
+ */
+export interface IProjectLinkDocumentDoc extends IProjectDocumentBaseDoc {
+  attachmentType: 'link';
+  url: string;
+  linkProvider: TLinkProvider;
+  mimeType?: undefined;
+  sizeBytes?: undefined;
+  storagePath?: undefined;
+}
+
+/**
+ * `/workspaces/{wid}/projects/{pid}/documents/{did}` — discriminated on
+ * `attachmentType` (D-043). A missing/`'file'` discriminator is an uploaded
+ * file; `'link'` is an external link (e.g. Google Drive).
+ */
+export type IProjectDocumentDoc =
+  | IProjectFileDocumentDoc
+  | IProjectLinkDocumentDoc;
 
 // ---------------------------------------------------------------------------
 // Messaging & audit

@@ -4,7 +4,7 @@
  * list of the task-scoped documents shared with this collaborator.
  */
 
-import { FileText, Upload } from 'lucide-react';
+import { ExternalLink, FileText, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { COLLAB_ALLOWED_DOCUMENT_MIME_TYPES } from '@siapp/shared';
@@ -153,33 +153,48 @@ export function CollabUploader({
         <p className="text-sm text-muted-foreground">No files shared yet.</p>
       ) : (
         <ul className="space-y-2">
-          {documents.rows.map((row) => (
-            <li
-              key={row.id}
-              className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
-            >
-              <span
-                aria-hidden="true"
-                className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger-tint text-danger"
+          {documents.rows.map((row) => {
+            const isLink = row.attachmentType === 'link';
+            return (
+              <li
+                key={row.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
               >
-                <FileText className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{row.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {sizeLabel(row.sizeBytes)}
-                  {row.uploadedAt !== null ? ` · ${DATE_FORMAT.format(row.uploadedAt)}` : ''}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void openDocument(row.storagePath)}
-                className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                Open
-              </button>
-            </li>
-          ))}
+                <span
+                  aria-hidden="true"
+                  className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-danger-tint text-danger"
+                >
+                  {isLink ? <ExternalLink className="size-5" /> : <FileText className="size-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{row.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isLink ? 'Google Drive link' : sizeLabel(row.sizeBytes)}
+                    {row.uploadedAt !== null ? ` · ${DATE_FORMAT.format(row.uploadedAt)}` : ''}
+                  </p>
+                </div>
+                {isLink ? (
+                  <a
+                    href={row.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    Open
+                    <span className="sr-only"> {row.name} (opens in a new tab)</span>
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void openDocument(row.storagePath)}
+                    className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    Open
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

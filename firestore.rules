@@ -402,9 +402,15 @@ service cloud.firestore {
     // (storagePath/sizeBytes/mimeType) are disallowed. Task-scoped only at
     // MVP. The Drive-host allow-list mirrors validateDriveUrl in the client
     // (defence in depth); the regexes are anchored and take no user-controlled
-    // metachars. Visibility inherits from the task, just like file uploads.
+    // metachars. Visibility is PINNED to the parent task (mirrors
+    // validCollabDocumentCreate) so a direct write cannot leak a
+    // client-visible Drive URL for a task whose real visibility differs.
     function validLinkDocumentCreate(wid, pid, did) {
       let d = request.resource.data;
+      // The link is task-parameterized — read the task at the SUBMITTED scopeId
+      // and pin the denorm visibility to it. The get() implicitly requires the
+      // task to exist (a missing task fails the rule).
+      let task = get(/databases/$(database)/documents/workspaces/$(wid)/projects/$(pid)/tasks/$(d.scopeId)).data;
       return d.keys().hasOnly([
           'id', 'name', 'attachmentType', 'url', 'linkProvider',
           'scope', 'scopeId', 'uploadedBy', 'uploaderType', 'uploadedAt',
@@ -427,11 +433,10 @@ service cloud.firestore {
         && d.uploadedBy == request.auth.uid
         && d.uploaderType == 'firm_member'
         && d.uploadedAt is timestamp
-        && d.visibleToClient is bool
+        && d.visibleToClient == task.get('visibleToClient', false)
         && d.visibleToCollaboratorIds is list
         && d.visibleToCollaboratorIds.size() == 0
-        && d.restrictedToDepartments is list
-        && d.restrictedToDepartments.size() <= 10
+        && d.restrictedToDepartments == task.get('restrictedToDepartments', [])
         && d.scanStatus == 'clean'
         && d.deletedAt == null;
     }
