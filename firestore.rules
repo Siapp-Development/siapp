@@ -397,6 +397,45 @@ service cloud.firestore {
         && d.deletedAt == null;
     }
 
+    // Field validation for firm Google Drive link attachments (#D-043).
+    // A link doc stores NO Storage bytes — the file-only keys
+    // (storagePath/sizeBytes/mimeType) are disallowed. Task-scoped only at
+    // MVP. The Drive-host allow-list mirrors validateDriveUrl in the client
+    // (defence in depth); the regexes are anchored and take no user-controlled
+    // metachars. Visibility inherits from the task, just like file uploads.
+    function validLinkDocumentCreate(wid, pid, did) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'id', 'name', 'attachmentType', 'url', 'linkProvider',
+          'scope', 'scopeId', 'uploadedBy', 'uploaderType', 'uploadedAt',
+          'visibleToClient', 'visibleToCollaboratorIds',
+          'restrictedToDepartments', 'scanStatus', 'deletedAt'
+        ])
+        && d.id == did
+        && d.name is string
+        && d.name.size() > 0
+        && d.name.size() <= 255
+        && d.attachmentType == 'link'
+        && d.url is string
+        && d.url.size() <= 2000
+        && (d.url.matches('https://drive[.]google[.]com/.*')
+          || d.url.matches('https://docs[.]google[.]com/.*'))
+        && d.linkProvider == 'google_drive'
+        && d.scope == 'task'
+        && d.scopeId is string
+        && d.scopeId.size() > 0
+        && d.uploadedBy == request.auth.uid
+        && d.uploaderType == 'firm_member'
+        && d.uploadedAt is timestamp
+        && d.visibleToClient is bool
+        && d.visibleToCollaboratorIds is list
+        && d.visibleToCollaboratorIds.size() == 0
+        && d.restrictedToDepartments is list
+        && d.restrictedToDepartments.size() <= 10
+        && d.scanStatus == 'clean'
+        && d.deletedAt == null;
+    }
+
     // Field validation for portal client uploads (#21, D7). Mirrors
     // CLIENT_ALLOWED_DOCUMENT_MIME_TYPES / MAX_CLIENT_DOCUMENT_SIZE_BYTES in
     // @siapp/shared. Every identity field is pinned to the portal claims and
@@ -1053,6 +1092,11 @@ service cloud.firestore {
             && ((hasRole(wid, ['owner', 'admin', 'pm'])
               && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
               && validDocumentCreate(wid, pid, did))
+            // D-043: firm Google Drive link attachments — same role/need-to-know
+            // gate as file uploads, but the link validator (no Storage bytes).
+            || (hasRole(wid, ['owner', 'admin', 'pm'])
+              && canSeeRestricted(wid, request.resource.data.restrictedToDepartments)
+              && validLinkDocumentCreate(wid, pid, did))
             // #21 (D7): client uploads write metadata directly under the
             // pinned-field validator; the trigger derives the activity entry.
             // #24 (D3): billing gate applies — portal reads stay open,

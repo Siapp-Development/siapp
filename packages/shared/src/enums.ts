@@ -91,6 +91,15 @@ export type TTaskUpdateAction =
 // Project document scope
 export type TDocumentScope = 'project' | 'task';
 
+// Whether a document record points at uploaded Storage bytes ('file') or an
+// external link ('link', e.g. a Google Drive share URL — D-043). Absent on a
+// document doc = 'file' (backward compat; existing docs predate this field).
+export type TAttachmentType = 'file' | 'link';
+
+// External link provider for link-type attachments (D-043). Google Drive only
+// at MVP.
+export type TLinkProvider = 'google_drive';
+
 // Who uploaded / deleted a project document
 export type TUploaderType = 'firm_member' | 'collaborator' | 'client';
 

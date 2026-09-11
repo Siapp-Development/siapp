@@ -7,22 +7,25 @@
  * task uploads inherit the task's restriction/visibility, no options row.
  */
 
-import { Alert, Button, Card, CardContent, CardHeader, cn } from '@siapp/ui';
+import { Alert, Button, Card, CardContent, CardHeader, Dialog, Input, Label, cn } from '@siapp/ui';
+import type { IButtonProps } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { ALLOWED_DOCUMENT_MIME_TYPES, PREVIEWABLE_MIME_TYPES } from '@siapp/shared';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Download, Paperclip } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Download, ExternalLink, FileText, Upload, X } from 'lucide-react';
 
 import { useDepartments, useMembers } from '../../settings/useTeamData.ts';
 import { DocumentPreview } from './DocumentPreview.tsx';
 import { formatBytes } from './formatBytes.ts';
 import {
+  addLinkAttachment,
   downloadDocument,
   getPreviewUrl,
   softDeleteDocument,
   uploadDocument,
   useDocuments,
   validateDocumentFile,
+  validateDriveUrl,
   type IDocumentRow,
 } from './useDocuments.ts';
 import { isZipContentType } from './zip.ts';
@@ -44,9 +47,24 @@ interface IUploadButtonProps {
   onInvalid: (message: string) => void;
   /** When provided, render an icon-only button using `label` as its aria-label. */
   icon?: ReactNode;
+  /** Leading icon shown before `label` in text mode (ignored when `icon` set). */
+  leadingIcon?: ReactNode;
+  /** Button style variant for text mode (default 'outline'). */
+  variant?: IButtonProps['variant'];
+  /** Extra classes for text mode (e.g. `flex-1 border-dashed`). */
+  className?: string;
 }
 
-function UploadButton({ label, disabled, onPick, onInvalid, icon }: IUploadButtonProps) {
+function UploadButton({
+  label,
+  disabled,
+  onPick,
+  onInvalid,
+  icon,
+  leadingIcon,
+  variant = 'outline',
+  className,
+}: IUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   return (
     <>
@@ -84,11 +102,13 @@ function UploadButton({ label, disabled, onPick, onInvalid, icon }: IUploadButto
       ) : (
         <Button
           type="button"
-          variant="outline"
+          variant={variant}
           size="sm"
+          className={className}
           disabled={disabled}
           onClick={() => inputRef.current?.click()}
         >
+          {leadingIcon}
           {label}
         </Button>
       )}
@@ -462,6 +482,182 @@ export function DocumentsSection({
 }
 
 // ---------------------------------------------------------------------------
+// Google Drive brand mark (D-043) — inline multicolour SVG. Decorative
+// (aria-hidden); the button/label carries the accessible name. Sized via
+// `className` from the caller.
+// ---------------------------------------------------------------------------
+
+function GoogleDriveIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 87.3 78"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+      role="presentation"
+    >
+      <path
+        d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z"
+        fill="#0066da"
+      />
+      <path
+        d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z"
+        fill="#00ac47"
+      />
+      <path
+        d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z"
+        fill="#ea4335"
+      />
+      <path
+        d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z"
+        fill="#00832d"
+      />
+      <path
+        d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z"
+        fill="#2684fc"
+      />
+      <path
+        d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z"
+        fill="#ffba00"
+      />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add-a-Drive-link dialog (D-043) — paste a Google Drive share URL, attach it
+// as a link-type document. No bytes are uploaded. Visibility inherits from the
+// task via the caller's `onSubmit`.
+// ---------------------------------------------------------------------------
+
+interface IAddDriveLinkDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (values: { url: string; name: string }) => Promise<void>;
+}
+
+/** Derive a friendly default display name from a Drive URL's last path segment. */
+function deriveLinkName(rawUrl: string): string {
+  try {
+    const { pathname } = new URL(rawUrl.trim());
+    const segments = pathname.split('/').filter((seg) => seg.length > 0);
+    const last = segments.at(-1);
+    if (last !== undefined && last !== 'view' && last !== 'edit') {
+      return decodeURIComponent(last);
+    }
+  } catch {
+    // Fall through to the generic label for unparseable input.
+  }
+  return 'Google Drive file';
+}
+
+function AddDriveLinkDialog({ open, onClose, onSubmit }: IAddDriveLinkDialogProps) {
+  const headingId = useId();
+  const urlFieldId = useId();
+  const nameFieldId = useId();
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [touched, setTouched] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset the form whenever the dialog opens so a re-open starts clean.
+  useEffect(() => {
+    if (open) {
+      setUrl('');
+      setName('');
+      setTouched(false);
+      setSubmitting(false);
+      setError(null);
+    }
+  }, [open]);
+
+  const validationMessage = validateDriveUrl(url);
+  const showValidation = touched && validationMessage !== null;
+
+  async function handleSubmit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setTouched(true);
+    if (validationMessage !== null) {
+      return;
+    }
+    const trimmedName = name.trim();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit({
+        url: url.trim(),
+        name: trimmedName === '' ? deriveLinkName(url) : trimmedName,
+      });
+      onClose();
+    } catch {
+      setError('Could not attach the link.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} aria-labelledby={headingId}>
+      <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
+        <div className="flex flex-col gap-1">
+          <h2 id={headingId} className="flex items-center gap-2 text-lg font-semibold">
+            <GoogleDriveIcon className="h-5 w-5" />
+            Attach a Google Drive link
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Paste a Drive share link. Make sure its sharing is set so your recipients can open it.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={urlFieldId}>Google Drive link</Label>
+          <Input
+            id={urlFieldId}
+            type="url"
+            inputMode="url"
+            placeholder="https://drive.google.com/…"
+            value={url}
+            aria-invalid={showValidation}
+            aria-describedby={showValidation ? `${urlFieldId}-error` : undefined}
+            onChange={(event) => setUrl(event.target.value)}
+            onBlur={() => setTouched(true)}
+          />
+          {showValidation && (
+            <p id={`${urlFieldId}-error`} className="text-xs text-danger">
+              {validationMessage}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={nameFieldId}>Display name (optional)</Label>
+          <Input
+            id={nameFieldId}
+            type="text"
+            maxLength={255}
+            placeholder="Google Drive file"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </div>
+
+        {error !== null && <Alert variant="destructive">{error}</Alert>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={submitting || validationMessage !== null}>
+            {submitting ? 'Attaching…' : 'Attach'}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Compact attachments block for TaskDetailPanel — uploads inherit the task's
 // restriction/visibility (no options row), list is download-only.
 // ---------------------------------------------------------------------------
@@ -495,6 +691,11 @@ export function TaskAttachments({
   const docsState = useDocuments(workspaceId, projectId, role, departments, filter);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const rows = docsState.status === 'ready' ? docsState.rows : [];
+  const count = rows.length;
 
   async function handlePick(file: File): Promise<void> {
     setProgress(0);
@@ -519,46 +720,159 @@ export function TaskAttachments({
     }
   }
 
+  async function handleAddLink(values: { url: string; name: string }): Promise<void> {
+    await addLinkAttachment({
+      workspaceId,
+      projectId,
+      taskId,
+      url: values.url,
+      name: values.name,
+      visibleToClient: taskVisibleToClient,
+      restrictedToDepartments: taskRestrictedToDepartments,
+      uid,
+      userName,
+    });
+  }
+
+  async function handleRemove(row: IDocumentRow): Promise<void> {
+    setRemovingId(row.id);
+    setError(null);
+    try {
+      await softDeleteDocument(workspaceId, projectId, row, uid, userName);
+    } catch {
+      setError('Could not remove the attachment.');
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">Attachments</p>
-        {canEdit && (
-          <UploadButton
-            label={progress !== null ? 'Uploading…' : 'Attach file'}
-            icon={<Paperclip className="h-5 w-5" aria-hidden="true" />}
-            disabled={progress !== null}
-            onPick={(file) => void handlePick(file)}
-            onInvalid={setError}
-          />
+        {docsState.status === 'ready' && (
+          <span className="text-xs text-muted-foreground">
+            {count} {count === 1 ? 'file' : 'files'}
+          </span>
         )}
       </div>
       {error !== null && <Alert variant="destructive">{error}</Alert>}
       {docsState.status === 'error' && (
         <Alert variant="destructive">Attachments could not be loaded.</Alert>
       )}
-      {docsState.status === 'ready' && docsState.rows.length === 0 && (
+      {docsState.status === 'ready' && count === 0 && (
         <p className="text-sm text-muted-foreground">No attachments yet.</p>
       )}
-      {docsState.status === 'ready' && docsState.rows.length > 0 && (
+      {docsState.status === 'ready' && count > 0 && (
         <ul className="flex flex-col gap-1">
-          {docsState.rows.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              <span className="min-w-32 flex-1">{row.name}</span>
-              <span className="text-xs text-muted-foreground">{formatBytes(row.sizeBytes)}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Download"
-                onClick={() => void downloadDocument(row.storagePath, row.name)}
-              >
-                <Download className="h-5 w-5" aria-hidden="true" />
-              </Button>
-            </li>
+          {rows.map((row) => (
+            <TaskAttachmentRow
+              key={row.id}
+              row={row}
+              canEdit={canEdit}
+              removing={removingId === row.id}
+              onRemove={() => void handleRemove(row)}
+            />
           ))}
         </ul>
       )}
+      {canEdit && (
+        <div className="flex gap-2">
+          <UploadButton
+            label={progress !== null ? 'Uploading…' : 'Upload File'}
+            leadingIcon={<Upload className="h-4 w-4" aria-hidden="true" />}
+            className="flex-1 border-dashed"
+            disabled={progress !== null}
+            onPick={(file) => void handlePick(file)}
+            onInvalid={setError}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => setLinkDialogOpen(true)}
+          >
+            <GoogleDriveIcon className="h-4 w-4" />
+            Google Drive
+          </Button>
+        </div>
+      )}
+      {canEdit && (
+        <AddDriveLinkDialog
+          open={linkDialogOpen}
+          onClose={() => setLinkDialogOpen(false)}
+          onSubmit={handleAddLink}
+        />
+      )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single attachment row for TaskAttachments — file rows show size + download;
+// link rows show a provider label + external "Open" link (D-043). Both carry
+// an accessible `×` remove control when the caller can edit.
+// ---------------------------------------------------------------------------
+
+interface ITaskAttachmentRowProps {
+  row: IDocumentRow;
+  canEdit: boolean;
+  removing: boolean;
+  onRemove: () => void;
+}
+
+function TaskAttachmentRow({ row, canEdit, removing, onRemove }: ITaskAttachmentRowProps) {
+  const isLink = row.attachmentType === 'link';
+  return (
+    <li className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted">
+      <span className="text-muted-foreground" aria-hidden="true">
+        {isLink ? (
+          <GoogleDriveIcon className="h-4 w-4" />
+        ) : (
+          <FileText className="h-4 w-4" />
+        )}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-medium">{row.name}</span>
+        <span className="text-xs text-muted-foreground">
+          {isLink
+            ? 'Google Drive link'
+            : `${formatBytes(row.sizeBytes)}${
+                row.uploadedAt !== null ? ` • Uploaded ${row.uploadedAt.toLocaleDateString()}` : ''
+              }`}
+        </span>
+      </span>
+      {isLink ? (
+        <Button asChild variant="ghost" size="sm">
+          <a href={row.url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            Open
+          </a>
+        </Button>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Download"
+          onClick={() => void downloadDocument(row.storagePath, row.name)}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
+      {canEdit && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={`Remove ${row.name}`}
+          disabled={removing}
+          onClick={onRemove}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
+    </li>
   );
 }

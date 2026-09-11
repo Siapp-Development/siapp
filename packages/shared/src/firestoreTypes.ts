@@ -13,6 +13,7 @@
 import type {
   TActorType,
   TAdminAction,
+  TAttachmentType,
   TAuditAction,
   TBillingStatus,
   TCollaboratorStatus,
@@ -21,6 +22,7 @@ import type {
   TDocumentScope,
   TInviteRole,
   TInviteStatus,
+  TLinkProvider,
   TLocale,
   TMagicLinkKind,
   TMagicLinkScopeType,
@@ -589,6 +591,8 @@ export interface ITaskUpdatePayload {
   mentions?: string[];
   storagePath?: string;
   mimeType?: string;
+  /** Link-attachment target URL for link-type doc activity (D-043). */
+  url?: string;
 }
 
 /**
@@ -610,6 +614,17 @@ export interface ITaskUpdateDoc {
 export interface IProjectDocumentDoc {
   id: string;
   name: string;
+  /**
+   * Discriminator between an uploaded-bytes doc and an external link doc
+   * (D-043). Absent on legacy/file docs → treat as `'file'`; only link docs
+   * write it explicitly. File-only fields (`mimeType`/`sizeBytes`/
+   * `storagePath`) are absent on link docs.
+   */
+  attachmentType?: TAttachmentType;
+  /** Present only on link docs: the external target URL (e.g. Google Drive). */
+  url?: string;
+  /** Present only on link docs: which provider the URL points at. */
+  linkProvider?: TLinkProvider;
   mimeType: string;
   sizeBytes: number;
   storagePath: string;
