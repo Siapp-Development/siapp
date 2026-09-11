@@ -82,23 +82,25 @@ export function TaskBulkActionsBar({
     <div
       role="region"
       aria-label="Bulk task actions"
-      className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 flex-col gap-2"
+      className="fixed inset-x-3 bottom-6 z-40 flex flex-col items-center gap-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2"
     >
       {error !== null && !confirmOpen && (
-        <Alert variant="destructive" role="alert" className="max-w-md">
+        <Alert variant="destructive" role="alert" className="w-full sm:max-w-md">
           {error}
         </Alert>
       )}
-      <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 shadow-raised">
-        <span className="px-1 text-sm font-medium">
+      <div className="flex w-full max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-3xl border border-border bg-card px-3 py-2 shadow-raised sm:w-auto sm:flex-nowrap sm:rounded-full">
+        <span className="px-1 text-xs font-medium">
           {count} {noun} selected
         </span>
 
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+        <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
 
         <Popover
           open={openMenu === 'status'}
           onClose={() => setOpenMenu(null)}
+          side="top"
+          align="end"
           trigger={
             <Button
               type="button"
@@ -108,6 +110,7 @@ export function TaskBulkActionsBar({
               aria-haspopup="menu"
               aria-expanded={openMenu === 'status'}
               onClick={() => setOpenMenu((prev) => (prev === 'status' ? null : 'status'))}
+              className="text-xs"
             >
               Update status
             </Button>
@@ -136,6 +139,7 @@ export function TaskBulkActionsBar({
         <Popover
           open={openMenu === 'assignee'}
           onClose={() => setOpenMenu(null)}
+          side="top"
           trigger={
             <Button
               type="button"
@@ -144,6 +148,7 @@ export function TaskBulkActionsBar({
               disabled={pending}
               aria-expanded={openMenu === 'assignee'}
               onClick={() => setOpenMenu((prev) => (prev === 'assignee' ? null : 'assignee'))}
+              className="text-xs"
             >
               <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
               Add assignee
@@ -167,13 +172,13 @@ export function TaskBulkActionsBar({
             setError(null);
             setConfirmOpen(true);
           }}
-          className="text-danger hover:bg-danger/10"
+          className="text-xs text-danger hover:bg-danger/10"
         >
           <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
           Delete
         </Button>
 
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+        <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden="true" />
 
         <Button
           type="button"
