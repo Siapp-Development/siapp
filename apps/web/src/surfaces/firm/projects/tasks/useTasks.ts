@@ -555,12 +555,54 @@ export async function updatePhase(
   });
 }
 
+/**
+ * Deletes a phase. Tasks that referenced it are detached first (phaseId
+ * cleared) so none briefly point at a missing phase — the caller passes the
+ * ids of the tasks it can read in that group. Restricted tasks it cannot read
+ * keep their stale phaseId, which the list simply regroups under "No phase".
+ */
 export async function deletePhase(
   workspaceId: string,
   projectId: string,
   phaseId: string,
+  taskIdsToDetach: readonly string[],
+  uid: string,
 ): Promise<void> {
+  const CHUNK_SIZE = 500;
+  for (let start = 0; start < taskIdsToDetach.length; start += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const taskId of taskIdsToDetach.slice(start, start + CHUNK_SIZE)) {
+      batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}`), {
+        phaseId: deleteField(),
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
   await deleteDoc(doc(db, `workspaces/${workspaceId}/projects/${projectId}/phases/${phaseId}`));
+}
+
+/**
+ * Persists phase order using 1-based slots. Caller passes phase ids in their
+ * desired visual order. Phase docs carry no updatedAt/updatedBy (validPhaseFields).
+ */
+export async function reorderPhases(
+  workspaceId: string,
+  projectId: string,
+  orderedPhaseIds: readonly string[],
+): Promise<void> {
+  const CHUNK_SIZE = 500;
+  for (let start = 0; start < orderedPhaseIds.length; start += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = orderedPhaseIds.slice(start, start + CHUNK_SIZE);
+    for (const [offset, phaseId] of chunk.entries()) {
+      batch.update(doc(db, `workspaces/${workspaceId}/projects/${projectId}/phases/${phaseId}`), {
+        order: start + offset + 1,
+      });
+    }
+    await batch.commit();
+  }
 }
 
 /**

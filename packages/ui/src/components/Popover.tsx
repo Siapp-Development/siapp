@@ -20,6 +20,8 @@ export interface IPopoverProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   /** Horizontal alignment of the panel against the anchor. */
   align?: 'start' | 'end';
+  /** Which side of the anchor the panel opens toward. */
+  side?: 'top' | 'bottom';
 }
 
 export function Popover({
@@ -28,6 +30,7 @@ export function Popover({
   trigger,
   children,
   align = 'start',
+  side = 'bottom',
   className,
   ...props
 }: IPopoverProps) {
@@ -78,7 +81,8 @@ export function Popover({
       {open && (
         <div
           className={cn(
-            'absolute top-full z-50 mt-1 min-w-56 rounded-lg border border-border bg-card p-1 shadow-raised',
+            'absolute z-50 min-w-56 rounded-lg border border-border bg-card p-1 shadow-raised',
+            side === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
             align === 'end' ? 'right-0' : 'left-0',
             className,
           )}

@@ -6,10 +6,10 @@
  * Selecting a task opens the detail panel in a right-side drawer (A5).
  */
 
-import { Alert, Avatar, Badge, Button, Checkbox, Dialog, Input, cn } from '@siapp/ui';
+import { Alert, Avatar, Badge, Button, Checkbox, ConfirmDialog, Dialog, Input, cn } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import type { TTaskAssignee, TTaskStatus } from '@siapp/shared';
-import { ChevronRight, Columns3, List, Plus, X } from 'lucide-react';
+import { ChevronRight, Columns3, List, Plus, Trash2, X } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -39,6 +39,9 @@ import {
   bulkUpdateTaskStatus,
   createPhase,
   createTask,
+  deletePhase,
+  deleteTask,
+  reorderPhases,
   reorderTasks,
   usePhases,
   useTasks,
@@ -82,6 +85,8 @@ interface ITaskRowItemProps {
   onHandleKeyDown: ((event: KeyboardEvent<HTMLButtonElement>) => void) | null;
   onDragOver: ((event: DragEvent<HTMLLIElement>) => void) | null;
   onDrop: ((event: DragEvent<HTMLLIElement>) => void) | null;
+  /** Inline delete (revealed on hover); null hides the control. */
+  onDelete: (() => void) | null;
   tags: ReadonlyMap<string, ITagEntry>;
 }
 
@@ -104,6 +109,7 @@ function TaskRowItem({
   onHandleKeyDown,
   onDragOver,
   onDrop,
+  onDelete,
   tags,
 }: ITaskRowItemProps) {
   return (
@@ -218,6 +224,24 @@ function TaskRowItem({
           </button>
           <TagChipList tagIds={task.tags} tags={tags} label={task.title} />
         </div>
+        {onDelete !== null && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            aria-label={`Delete ${task.title}`}
+            className={cn(
+              'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-danger',
+              'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+              'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+            )}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
     </li>
   );
@@ -238,13 +262,13 @@ function isReadableTask(row: TTaskListRow): row is ITaskRow {
   return !row.restricted;
 }
 
-function moveTaskWithinRows(
-  rows: readonly ITaskRow[],
-  fromTaskId: string,
-  toTaskId: string,
-): readonly ITaskRow[] {
-  const sourceIndex = rows.findIndex((row) => row.id === fromTaskId);
-  const targetIndex = rows.findIndex((row) => row.id === toTaskId);
+function moveWithinById<T extends { id: string }>(
+  rows: readonly T[],
+  fromId: string,
+  toId: string,
+): readonly T[] {
+  const sourceIndex = rows.findIndex((row) => row.id === fromId);
+  const targetIndex = rows.findIndex((row) => row.id === toId);
   if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
     return rows;
   }
@@ -257,12 +281,12 @@ function moveTaskWithinRows(
   return nextRows;
 }
 
-function moveTaskByOffset(
-  rows: readonly ITaskRow[],
-  taskId: string,
+function moveByOffsetById<T extends { id: string }>(
+  rows: readonly T[],
+  id: string,
   offset: number,
-): readonly ITaskRow[] {
-  const sourceIndex = rows.findIndex((row) => row.id === taskId);
+): readonly T[] {
+  const sourceIndex = rows.findIndex((row) => row.id === id);
   if (sourceIndex < 0) {
     return rows;
   }
@@ -283,6 +307,13 @@ function focusReorderHandle(taskId: string, view: 'list' | 'timeline'): void {
   const handleId =
     view === 'list' ? `task-reorder-handle-${taskId}` : `timeline-reorder-handle-${taskId}`;
   const handle = document.getElementById(handleId);
+  if (handle instanceof HTMLButtonElement) {
+    handle.focus();
+  }
+}
+
+function focusPhaseReorderHandle(phaseId: string): void {
+  const handle = document.getElementById(`phase-reorder-handle-${phaseId}`);
   if (handle instanceof HTMLButtonElement) {
     handle.focus();
   }
@@ -418,6 +449,15 @@ export function TasksSection({
   const [addingPhase, setAddingPhase] = useState(false);
   const [phaseName, setPhaseName] = useState('');
   const [phasePending, setPhasePending] = useState(false);
+  const [phaseReorderPending, setPhaseReorderPending] = useState(false);
+  const [activePhaseDrag, setActivePhaseDrag] = useState<string | null>(null);
+  const [phaseDropTarget, setPhaseDropTarget] = useState<string | null>(null);
+  const [phaseToDelete, setPhaseToDelete] = useState<IPhaseRow | null>(null);
+  const [phaseDeletePending, setPhaseDeletePending] = useState(false);
+  const [phaseDeleteError, setPhaseDeleteError] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<ITaskRow | null>(null);
+  const [taskDeletePending, setTaskDeletePending] = useState(false);
+  const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
 
   const departmentRows = departmentsState.status === 'ready' ? departmentsState.rows : [];
   const departmentNames = useMemo(
@@ -616,6 +656,13 @@ export function TasksSection({
     }
   }, [activeDrag, grouped]);
 
+  useEffect(() => {
+    if (activePhaseDrag !== null && !phases.some((phase) => phase.id === activePhaseDrag)) {
+      setActivePhaseDrag(null);
+      setPhaseDropTarget(null);
+    }
+  }, [activePhaseDrag, phases]);
+
   if (isLoading) {
     return <p className="text-sm">Loading tasks…</p>;
   }
@@ -742,7 +789,7 @@ export function TasksSection({
       return;
     }
     const rows = (grouped.get(groupKey) ?? []).filter(isReadableTask);
-    const reordered = moveTaskWithinRows(rows, activeDrag.taskId, targetTaskId);
+    const reordered = moveWithinById(rows, activeDrag.taskId, targetTaskId);
     clearDragState();
     if (reordered === rows) {
       return;
@@ -771,7 +818,7 @@ export function TasksSection({
     event.stopPropagation();
 
     const rows = (grouped.get(groupKey) ?? []).filter(isReadableTask);
-    const reordered = moveTaskByOffset(rows, taskId, offset);
+    const reordered = moveByOffsetById(rows, taskId, offset);
     if (reordered === rows) {
       return;
     }
@@ -779,6 +826,129 @@ export function TasksSection({
     window.requestAnimationFrame(() => {
       focusReorderHandle(taskId, view);
     });
+  }
+
+  // --- Phase reorder + delete (list view) ----------------------------------
+  const canReorderPhases = canEdit && !phaseReorderPending;
+
+  async function persistPhaseOrder(ordered: readonly IPhaseRow[]): Promise<void> {
+    setPhaseReorderPending(true);
+    try {
+      await reorderPhases(
+        workspaceId,
+        projectId,
+        ordered.map((phase) => phase.id),
+      );
+    } finally {
+      setPhaseReorderPending(false);
+    }
+  }
+
+  function clearPhaseDragState(): void {
+    setActivePhaseDrag(null);
+    setPhaseDropTarget(null);
+  }
+
+  function handlePhaseDragStart(phaseId: string, event: DragEvent<HTMLElement>): void {
+    if (!canReorderPhases) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', phaseId);
+    setActivePhaseDrag(phaseId);
+    setPhaseDropTarget(null);
+  }
+
+  function handlePhaseDragOver(event: DragEvent<HTMLElement>, targetPhaseId: string): void {
+    if (activePhaseDrag === null || !canReorderPhases || activePhaseDrag === targetPhaseId) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setPhaseDropTarget((prev) => (prev === targetPhaseId ? prev : targetPhaseId));
+  }
+
+  async function handlePhaseDrop(targetPhaseId: string): Promise<void> {
+    if (activePhaseDrag === null || !canReorderPhases) {
+      clearPhaseDragState();
+      return;
+    }
+    const reordered = moveWithinById(phases, activePhaseDrag, targetPhaseId);
+    clearPhaseDragState();
+    if (reordered === phases) {
+      return;
+    }
+    await persistPhaseOrder(reordered);
+  }
+
+  async function handlePhaseKeyboardReorder(
+    event: KeyboardEvent<HTMLButtonElement>,
+    phaseId: string,
+  ): Promise<void> {
+    if (!canReorderPhases) {
+      return;
+    }
+    const offset = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : null;
+    if (offset === null) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const reordered = moveByOffsetById(phases, phaseId, offset);
+    if (reordered === phases) {
+      return;
+    }
+    await persistPhaseOrder(reordered);
+    window.requestAnimationFrame(() => {
+      focusPhaseReorderHandle(phaseId);
+    });
+  }
+
+  async function handleConfirmDeletePhase(): Promise<void> {
+    if (phaseToDelete === null) {
+      return;
+    }
+    setPhaseDeletePending(true);
+    setPhaseDeleteError(null);
+    try {
+      const taskIds = (grouped.get(phaseToDelete.id) ?? [])
+        .filter(isReadableTask)
+        .map((row) => row.id);
+      await deletePhase(workspaceId, projectId, phaseToDelete.id, taskIds, uid);
+      if (selectedRow !== null && !selectedRow.restricted && selectedRow.phaseId === phaseToDelete.id) {
+        // The open task was detached to "No phase"; keep the panel in sync by
+        // closing it rather than showing a stale phase reference.
+        setSelectedId(null);
+      }
+      setPhaseToDelete(null);
+    } catch {
+      setPhaseDeleteError('The phase could not be deleted. Please try again.');
+    } finally {
+      setPhaseDeletePending(false);
+    }
+  }
+
+  async function handleConfirmDeleteTask(): Promise<void> {
+    if (taskToDelete === null) {
+      return;
+    }
+    setTaskDeletePending(true);
+    setTaskDeleteError(null);
+    try {
+      await deleteTask(workspaceId, projectId, taskToDelete.id);
+      if (selectedId === taskToDelete.id) {
+        setSelectedId(null);
+      }
+      // Deleting a task can shift the restricted-header projection (mirrors the
+      // detail panel + bulk delete paths).
+      tasksState.refreshRestricted();
+      setTaskToDelete(null);
+    } catch {
+      setTaskDeleteError('The task could not be deleted. Please try again.');
+    } finally {
+      setTaskDeletePending(false);
+    }
   }
 
   function renderGroup(key: string, phase: IPhaseRow | null): ReactNode {
@@ -795,13 +965,32 @@ export function TasksSection({
     const selectableGroupIds = rows.filter(isReadableTask).map((row) => row.id);
     const groupState = selection.groupState(selectableGroupIds);
     const showGroupCheckbox = canEdit && selectableGroupIds.length > 0;
+    const isPhase = phase !== null;
+    const phaseDragEnabled = isPhase && canReorderPhases;
     return (
       <section
         key={key}
         aria-label={label}
-        className="rounded-lg border border-border bg-card shadow-card"
+        onDragOver={isPhase ? (event) => handlePhaseDragOver(event, phase.id) : undefined}
+        onDrop={
+          isPhase
+            ? (event) => {
+                event.preventDefault();
+                void handlePhaseDrop(phase.id);
+              }
+            : undefined
+        }
+        className={cn(
+          'rounded-lg border border-border bg-card shadow-card',
+          isPhase && activePhaseDrag === phase.id && 'opacity-60',
+          isPhase &&
+            activePhaseDrag !== null &&
+            activePhaseDrag !== phase.id &&
+            phaseDropTarget === phase.id &&
+            'ring-2 ring-primary',
+        )}
       >
-        <div className="flex items-center gap-2 px-3">
+        <div className="group flex items-center gap-2 px-3">
           {showGroupCheckbox && (
             <Checkbox
               checked={groupState === 'all'}
@@ -809,6 +998,33 @@ export function TasksSection({
               onChange={() => selection.toggleGroup(selectableGroupIds)}
               aria-label={`Select all tasks in ${label}`}
             />
+          )}
+          {isPhase && canEdit && (
+            <button
+              type="button"
+              draggable={phaseDragEnabled}
+              disabled={!phaseDragEnabled}
+              id={`phase-reorder-handle-${phase.id}`}
+              onDragStart={
+                phaseDragEnabled ? (event) => handlePhaseDragStart(phase.id, event) : undefined
+              }
+              onDragEnd={phaseDragEnabled ? clearPhaseDragState : undefined}
+              onKeyDown={(event) => {
+                void handlePhaseKeyboardReorder(event, phase.id);
+              }}
+              onClick={(event) => event.stopPropagation()}
+              aria-label={`Drag to reorder phase ${label}`}
+              className={cn(
+                'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed',
+                'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+                phaseDragEnabled && 'cursor-grab',
+                activePhaseDrag === phase.id && 'cursor-grabbing',
+              )}
+            >
+              <span aria-hidden="true" className="leading-none">
+                ⋮⋮
+              </span>
+            </button>
           )}
           <button
             type="button"
@@ -827,6 +1043,23 @@ export function TasksSection({
             <Badge variant="neutral">{rows.length}</Badge>
           </button>
           {rows.length > 0 && <TaskProgressRing completed={doneCount} total={rows.length} />}
+          {isPhase && canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setPhaseDeleteError(null);
+                setPhaseToDelete(phase);
+              }}
+              aria-label={`Delete phase ${label}`}
+              className={cn(
+                'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-danger/10 hover:text-danger',
+                'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                'focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
+              )}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
         {!isCollapsed && (
           <div className="border-t border-border">
@@ -888,6 +1121,10 @@ export function TasksSection({
                             }
                           : null
                       }
+                      onDelete={canEdit ? () => {
+                        setTaskDeleteError(null);
+                        setTaskToDelete(row);
+                      } : null}
                       tags={taskTags.tags}
                     />
                   ),
@@ -1073,6 +1310,36 @@ export function TasksSection({
             />
           ))}
       </Dialog>
+
+      <ConfirmDialog
+        open={phaseToDelete !== null}
+        title={phaseToDelete !== null ? `Delete phase “${phaseToDelete.name}”?` : 'Delete phase?'}
+        description="Its tasks are kept and moved to “No phase”. This cannot be undone."
+        confirmLabel="Delete phase"
+        variant="destructive"
+        pending={phaseDeletePending}
+        error={phaseDeleteError}
+        onConfirm={() => void handleConfirmDeletePhase()}
+        onCancel={() => {
+          setPhaseToDelete(null);
+          setPhaseDeleteError(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={taskToDelete !== null}
+        title={taskToDelete !== null ? `Delete “${taskToDelete.title}”?` : 'Delete task?'}
+        description="Its activity history is removed too. This cannot be undone."
+        confirmLabel="Delete task"
+        variant="destructive"
+        pending={taskDeletePending}
+        error={taskDeleteError}
+        onConfirm={() => void handleConfirmDeleteTask()}
+        onCancel={() => {
+          setTaskToDelete(null);
+          setTaskDeleteError(null);
+        }}
+      />
     </div>
   );
 }
