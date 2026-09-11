@@ -12,6 +12,32 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-09-10 — Task attachments may be external Google Drive links stored as link-type document records (D-043)
+
+**Decision:** Extend the #14 Documents model so a task attachment can be an **external link** (a Google Drive share URL) in addition to an uploaded file. Link attachments are stored as ordinary `documents/{did}` records under `workspaces/{wid}/projects/{pid}/documents`, discriminated by a new **`attachmentType: 'file' | 'link'`** field, with `url` + `linkProvider: 'google_drive'` and **no** `storagePath`/`sizeBytes`/`mimeType` (no Storage bytes, nothing to scan → `scanStatus: 'clean'`). Firm members (owner/admin/pm with `canEdit`) create them from a redesigned two-button Attachments block in the task detail panel (**Upload File** + **Google Drive**).
+
+Scoping decisions locked for MVP:
+
+1. **In scope for MVP.** This is an additive, backward-compatible extension of the file-only Documents surface in `11-mvp-scope.md`. Existing file docs carry no `attachmentType` and are read as `'file'` — zero migration.
+2. **Provider validation: Google Drive hosts only.** Only `https://drive.google.com/…` and `https://docs.google.com/…` are accepted (client `validateDriveUrl` + a mirrored `validLinkDocumentCreate` host allow-list in `firestore.rules`, defence in depth). Anything else is rejected with a friendly message.
+3. **Visibility inherits from the task.** Link attachments copy the task's `visibleToClient` / `restrictedToDepartments`, exactly like file uploads — so a firm-shared Drive link *can* surface in the client portal / collaborator surfaces under the firm's existing curation toggles. No firm-internal-only guard.
+4. **Link creation is firm-only.** Portal (`/p`) and collaborator (`/t`) surfaces may *see* inherited link rows but cannot create them (their rules branches are unchanged).
+
+**Why:**
+- Firms already keep large/working files (CAD sets, shared folders) in Google Drive; forcing a re-upload to attach them to a task is friction. A pasted link keeps the task as the source of truth without duplicating bytes or paying scan/storage cost.
+- Modelling links as `documents` records (not a new collection) reuses the existing need-to-know queries, soft-delete, activity feed (`doc_added`/`doc_deleted`), and portal/collab visibility rules — minimal surface area, no new access-control path.
+
+**Consequences (honest):**
+- **Off-platform egress.** A client-visible Drive link sends the client to Google; the firm — not Siapp — controls the link's sharing. We cannot verify the link resolves or is shared correctly (recipients may hit Google's permission wall). Mitigated by UX copy ("make sure the link's sharing is set for your recipients") and firm control via `visibleToClient`.
+- **Trademark.** We embed a small inline multicolour Google Drive brand SVG in the firm surface only (decorative, `aria-hidden`).
+- **No liveness/health checks, no OAuth/Picker/Drive API, no thumbnails** — we store a user-pasted URL only. Other providers (Dropbox/OneDrive) are out of scope.
+
+**Reversal cost:** Low. The feature is additive: remove the Google Drive button + `validLinkDocumentCreate` branch and stop reading `attachmentType`; existing link docs would simply stop being creatable (existing ones remain valid records).
+
+**Revisit when:** a customer needs non-Drive providers, in-app Drive preview/permission checks, or link health monitoring — or if off-platform client egress proves undesirable (fallback: force `visibleToClient=false` for links + a rules assertion).
+
+---
+
 ## 2026-08-24 — Client portal is a single-screen dashboard with a client-visible task list, Gantt timeline, and print/export (D-042)
 
 **Decision:** Redesign the client portal ([B2], #126) from a tabbed/route-changing layout into a **single-screen dashboard** at `siapp.app/p/:token` with exactly four sections: **Overall Progress** (a circular % ring on the server-maintained `summary.progressPct`), **Project Tasks**, **Recent Updates**, and **Documents** (preview + upload). Two substantive additions:
