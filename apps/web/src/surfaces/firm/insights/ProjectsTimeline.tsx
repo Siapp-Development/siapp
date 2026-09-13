@@ -150,21 +150,65 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
     });
   }, [todayOffset]);
 
+  /**
+   * Print handler: measure the timeline's full content width and set the
+   * `--insights-print-scale` custom property so the whole date range fits one
+   * landscape page width (see the <style media="print"> block below). Never
+   * upscales (`Math.min(1, …)`). The `scrollWidth > 0` guard keeps jsdom/tests
+   * from computing a degenerate scale when layout is unavailable.
+   */
+  const printTimeline = useCallback(() => {
+    const el = scrollRef.current;
+    if (el !== null && el.scrollWidth > 0) {
+      // Safe landscape content width (A4/Letter, ~8mm margins) at 96dpi.
+      const PRINT_TARGET_PX = 980;
+      const scale = Math.min(1, PRINT_TARGET_PX / el.scrollWidth);
+      el.style.setProperty('--insights-print-scale', String(scale));
+    }
+    window.print();
+  }, []);
+
   return (
     <div className="flex flex-col gap-4">
-      {/*
-       * Print: this feature prints as a clean, LANDSCAPE rendering of the full
-       * timeline. The `@page` rule below sets landscape + margins (Tailwind has
-       * no `@page` utility, so a dependency-free scoped <style media="print"> is
-       * used). The scroll container drops its clip (`print:overflow-visible`) and
-       * the inner track renders at natural width so nothing is cut off. v1 does
-       * not attempt fine-grained pagination of a very wide timeline across
-       * sheets — the requirement is landscape + full timeline visible + no
-       * clipping; the browser may split a very wide track across pages.
-       */}
-      <style media="print">{'@page { size: landscape; margin: 12mm; }'}</style>
       {dated.length > 0 && (
         <>
+          {/*
+           * Print: this feature prints ONLY the timeline as a clean, LANDSCAPE
+           * rendering that is scaled to fit one page width so nothing is cropped.
+           *
+           * Isolation: `body * { visibility: hidden }` hides the whole app, then
+           * the `#insights-timeline-print` subtree is revealed — so the header,
+           * snapshot cards, status donut, sidebar, toolbar and the "No dates set"
+           * list (all outside this subtree) never appear on paper.
+           *
+           * Scale-to-fit: `printTimeline` measures the timeline's full content
+           * width (`scrollWidth`) and sets `--insights-print-scale` so the entire
+           * date range fits the safe landscape content width (PRINT_TARGET_PX ≈
+           * 980px at 96dpi for A4/Letter with ~8mm margins). It never upscales.
+           *
+           * Tailwind has no `@page` utility, so a dependency-free static
+           * <style media="print"> is used. v1 does not paginate a very tall
+           * timeline horizontally — a tall list may flow onto extra sheets
+           * vertically, but the full width is always visible (never cropped).
+           */}
+          <style media="print">
+            {
+              '@page { size: landscape; margin: 8mm; }\n' +
+                '@media print {\n' +
+                '  body * { visibility: hidden !important; }\n' +
+                '  #insights-timeline-print, #insights-timeline-print * { visibility: visible !important; }\n' +
+                '  #insights-timeline-print {\n' +
+                '    position: absolute !important; left: 0; top: 0;\n' +
+                '    width: auto !important; max-width: none !important; overflow: visible !important;\n' +
+                '    border: none !important; border-radius: 0 !important;\n' +
+                '    transform: scale(var(--insights-print-scale, 1)); transform-origin: top left;\n' +
+                '  }\n' +
+                '  #insights-timeline-print .timeline-track { min-width: 0 !important; }\n' +
+                '  #insights-timeline-print .timeline-label-col { position: static !important; }\n' +
+                '  #insights-timeline-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }\n' +
+                '}'
+            }
+          </style>
           <div className="flex items-center justify-between gap-2 print:hidden">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={scrollToToday}>
@@ -178,20 +222,21 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
                 size="sm"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
+            <Button variant="outline" size="sm" onClick={printTimeline}>
               <Printer className="h-4 w-4" aria-hidden="true" />
               Print
             </Button>
           </div>
           <div
             ref={scrollRef}
+            id="insights-timeline-print"
             className="overflow-x-auto rounded-lg border border-border bg-card print:overflow-visible"
             role="region"
             aria-label="Projects timeline"
             tabIndex={0}
           >
             <div
-              className="relative print:w-auto print:min-w-0"
+              className="timeline-track relative print:w-auto print:min-w-0"
               style={{ width: LABEL_COL_PX + trackWidth, minWidth: '100%' }}
             >
               {/* Axis ticks — decorative; the accessible dates live on each bar's label. */}
@@ -221,7 +266,7 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
                     className="relative flex h-11 items-center border-b border-border/60 print:break-inside-avoid"
                   >
                     <div
-                      className="sticky left-0 z-10 flex h-full shrink-0 items-center gap-2 truncate border-r border-border bg-card px-3 text-sm"
+                      className="timeline-label-col sticky left-0 z-10 flex h-full shrink-0 items-center gap-2 truncate border-r border-border bg-card px-3 text-sm"
                       style={{ width: LABEL_COL_PX }}
                     >
                       <Link

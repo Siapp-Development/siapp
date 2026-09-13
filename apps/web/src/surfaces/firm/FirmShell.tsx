@@ -154,7 +154,7 @@ export function FirmShell() {
       <SkipLink />
       <aside
         className={cn(
-          'on-dark sticky top-0 z-30 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none print:hidden',
+          'on-dark sticky top-0 z-30 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none',
           collapsed ? 'w-16 px-2' : 'w-60 px-4',
         )}
       >
@@ -256,11 +256,9 @@ export function FirmShell() {
           </Button>
         </div>
       </aside>
-      <main id="main" className="min-w-0 flex-1 px-8 py-8 print:px-0 print:py-0">
+      <main id="main" className="min-w-0 flex-1 px-8 py-8">
         {/* #24: read-only / usage banners on every firm page */}
-        <div className="print:hidden">
-          <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
-        </div>
+        <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
         <Routes>
           <Route
             index

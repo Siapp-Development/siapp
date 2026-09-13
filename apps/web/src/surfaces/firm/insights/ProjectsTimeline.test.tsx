@@ -356,6 +356,59 @@ describe('ProjectsTimeline', () => {
     }
   });
 
+  it('does not throw and still prints when the timeline has no measurable width', async () => {
+    // jsdom reports scrollWidth === 0 (no layout); the handler must skip the
+    // scale computation and still call window.print without dividing oddly.
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    try {
+      const user = userEvent.setup();
+      const { container } = renderTimeline([projectRow()]);
+      const printRoot = container.querySelector('#insights-timeline-print') as HTMLElement;
+
+      await user.click(screen.getByRole('button', { name: 'Print' }));
+
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      // No scale set because scrollWidth is 0 in jsdom.
+      expect(printRoot.style.getPropertyValue('--insights-print-scale')).toBe('');
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
+  it('sets --insights-print-scale to fit the page width when the timeline is wider than the page', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    try {
+      const user = userEvent.setup();
+      const { container } = renderTimeline([projectRow()]);
+      const printRoot = container.querySelector('#insights-timeline-print') as HTMLElement;
+      // Stub layout: a 2000px-wide track should scale to 980 / 2000 = 0.49.
+      Object.defineProperty(printRoot, 'scrollWidth', { value: 2000, configurable: true });
+
+      await user.click(screen.getByRole('button', { name: 'Print' }));
+
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      expect(printRoot.style.getPropertyValue('--insights-print-scale')).toBe('0.49');
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
+  it('never upscales a narrow timeline (scale clamped to 1)', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    try {
+      const user = userEvent.setup();
+      const { container } = renderTimeline([projectRow()]);
+      const printRoot = container.querySelector('#insights-timeline-print') as HTMLElement;
+      Object.defineProperty(printRoot, 'scrollWidth', { value: 400, configurable: true });
+
+      await user.click(screen.getByRole('button', { name: 'Print' }));
+
+      expect(printRoot.style.getPropertyValue('--insights-print-scale')).toBe('1');
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
   it('marks the toolbar as print-hidden so controls do not print', () => {
     renderTimeline([projectRow()]);
 
@@ -364,12 +417,20 @@ describe('ProjectsTimeline', () => {
     expect(toolbar).toHaveClass('print:hidden');
   });
 
-  it('includes a landscape @page print stylesheet', () => {
+  it('isolates the timeline as the sole print root with a landscape @page stylesheet', () => {
     const { container } = renderTimeline([projectRow()]);
+
+    const printRoot = container.querySelector('#insights-timeline-print');
+    expect(printRoot).not.toBeNull();
 
     const style = container.querySelector('style[media="print"]');
     expect(style).not.toBeNull();
     expect(style?.textContent).toContain('size: landscape');
+    // Visibility isolation reveals only the timeline subtree.
+    expect(style?.textContent).toContain('body * { visibility: hidden');
+    expect(style?.textContent).toContain(
+      '#insights-timeline-print, #insights-timeline-print * { visibility: visible',
+    );
   });
 
   it('has no axe violations for a populated timeline', async () => {
