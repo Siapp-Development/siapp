@@ -1,5 +1,6 @@
 import { Avatar, Button, cn } from '@siapp/ui';
 import {
+  BarChart3,
   FolderKanban,
   Handshake,
   Home,
@@ -19,6 +20,7 @@ import { BillingSettingsPage } from './billing/BillingSettingsPage.tsx';
 import { ClientsListPage } from './clients/ClientsListPage.tsx';
 import { CollaboratorsListPage } from './collaborators/CollaboratorsListPage.tsx';
 import { DashboardPage } from './dashboard/DashboardPage.tsx';
+import { InsightsPage } from './insights/InsightsPage.tsx';
 import { ProjectDetailPage } from './projects/ProjectDetailPage.tsx';
 import { ProjectsListPage } from './projects/ProjectsListPage.tsx';
 import { NotificationSettingsPage } from './settings/NotificationSettingsPage.tsx';
@@ -76,6 +78,7 @@ const ICON_STROKE = 1.8;
 const NAV_ICONS = {
   home: <Home size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
   projects: <FolderKanban size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+  insights: <BarChart3 size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
   clients: <Users size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
   collaborators: <Handshake size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
   settings: <Settings size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
@@ -190,6 +193,12 @@ export function FirmShell() {
               collapsed={collapsed}
             />
             <NavItem
+              to={`/${workspace.slug}/insights`}
+              label="Insights"
+              icon={NAV_ICONS.insights}
+              collapsed={collapsed}
+            />
+            <NavItem
               to={`/${workspace.slug}/clients`}
               label="Clients"
               icon={NAV_ICONS.clients}
@@ -290,6 +299,18 @@ export function FirmShell() {
                 departments={state.claims.workspaces[workspace.id]?.departments ?? []}
                 uid={state.user.uid}
                 userName={state.user.displayName ?? state.user.email ?? ''}
+              />
+            }
+          />
+          <Route
+            path="insights"
+            element={
+              <InsightsPage
+                workspaceId={workspace.id}
+                workspaceSlug={workspace.slug}
+                workspaceName={workspace.name}
+                role={role}
+                uid={state.user.uid}
               />
             }
           />
