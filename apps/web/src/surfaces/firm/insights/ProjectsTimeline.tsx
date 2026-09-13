@@ -79,13 +79,20 @@ interface IBarGeometry {
 }
 
 function barGeometry(project: IProjectRow, axis: ITimelineAxis, dayPx: number): IBarGeometry | null {
-  const barStart = project.startDate ?? project.targetEndDate;
-  const barEnd = project.targetEndDate ?? project.startDate;
-  if (barStart === null || barEnd === null) {
+  const first = project.startDate ?? project.targetEndDate;
+  const second = project.targetEndDate ?? project.startDate;
+  if (first === null || second === null) {
     return null;
   }
-  const leftDays = timelineDiffDays(axis.start, timelineDayStart(barStart));
-  const spanDays = timelineDiffDays(timelineDayStart(barStart), timelineDayStart(barEnd)) + 1;
+  // Normalize the endpoints: input/rules allow a target date earlier than the
+  // start, and without this the span would go negative and clamp to a sliver at
+  // the later date. Ordering by day-start renders the full stored range instead.
+  const firstDay = timelineDayStart(first);
+  const secondDay = timelineDayStart(second);
+  const barStartDay = Math.min(firstDay, secondDay);
+  const barEndDay = Math.max(firstDay, secondDay);
+  const leftDays = timelineDiffDays(axis.start, barStartDay);
+  const spanDays = timelineDiffDays(barStartDay, barEndDay) + 1;
   return {
     left: LABEL_COL_PX + leftDays * dayPx,
     width: Math.max(spanDays * dayPx, MIN_BAR_PX),

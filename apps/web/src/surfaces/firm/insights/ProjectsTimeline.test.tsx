@@ -170,6 +170,23 @@ describe('ProjectsTimeline', () => {
     expect(Number.parseFloat(bar.style.width)).toBeCloseTo(10 * dayPx, 5);
   });
 
+  it('renders the full span for a reversed range (target before start), not a sliver', () => {
+    // Input/rules allow targetEndDate < startDate; the bar must still show the
+    // full stored span rather than clamping to a minimum sliver at the later date.
+    renderTimeline([
+      projectRow({
+        name: 'Reversed range',
+        startDate: day('2026-07-10'),
+        targetEndDate: day('2026-07-01'),
+      }),
+    ]);
+
+    const dayPx = TIMELINE_DAY_PX.month;
+    const bar = screen.getByRole('img', { name: /Reversed range/ });
+    // Same 10-day inclusive span as Jul 1 → Jul 10, just entered reversed.
+    expect(Number.parseFloat(bar.style.width)).toBeCloseTo(10 * dayPx, 5);
+  });
+
   it('still renders a bar for a project with only one endpoint', () => {
     renderTimeline([
       projectRow({ id: 'one', name: 'One endpoint', startDate: null, targetEndDate: new Date('2026-08-15T00:00:00') }),

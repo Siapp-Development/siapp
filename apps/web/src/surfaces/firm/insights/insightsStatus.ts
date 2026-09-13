@@ -8,11 +8,12 @@
  * Pure and dependency-free — classifies over already-loaded `useProjects` rows,
  * no new Firestore reads/fields/rules/indexes.
  *
- * Precedence matters: a project is Completed when EITHER its lifecycle or its
- * status says so, and that wins over the plain status bucket (so a
- * lifecycle-completed/status-active project is Completed everywhere, not
- * "In progress"). `archived` (and any lifecycle the page hasn't already
- * filtered out) resolves to `null` and is excluded from the vocabulary.
+ * Precedence matters: `archived`/`deleted` are excluded first (a project is
+ * dropped from the vocabulary before anything else). Otherwise a project is
+ * Completed when EITHER its lifecycle or its status says so, and that wins over
+ * the plain status bucket (so a lifecycle-completed/status-active project is
+ * Completed everywhere, not "In progress"). Anything the page hasn't already
+ * filtered out that doesn't map resolves to `null`.
  */
 
 import type { IProjectRow } from '../projects/useProjects.ts';
@@ -28,6 +29,19 @@ export type TStatusBucketKey = 'upcoming' | 'in_progress' | 'on_hold' | 'complet
 export function deriveStatusBucket(
   project: Pick<IProjectRow, 'lifecycle' | 'status'>,
 ): TStatusBucketKey | null {
+  // Exclusions come first, before the completed precedence: a lifecycle
+  // transition only updates `lifecycle`, so archiving a completed project leaves
+  // `status === 'completed'` and an archived project may still read
+  // `status === 'active'`. Checking archived/deleted up front keeps those out of
+  // the vocabulary instead of leaking in as "completed"/"in progress".
+  if (
+    project.lifecycle === 'archived' ||
+    project.lifecycle === 'deleted' ||
+    project.status === 'archived'
+  ) {
+    return null;
+  }
+
   if (project.lifecycle === 'completed' || project.status === 'completed') {
     return 'completed';
   }

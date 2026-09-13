@@ -31,4 +31,17 @@ describe('deriveStatusBucket', () => {
     expect(deriveStatusBucket(proj('published', 'archived'))).toBeNull();
     expect(deriveStatusBucket(proj('archived', 'archived'))).toBeNull();
   });
+
+  it('excludes archived lifecycle before applying completed precedence', () => {
+    // Archiving a completed project leaves status 'completed'; it must still drop
+    // out of the vocabulary rather than surface as "completed".
+    expect(deriveStatusBucket(proj('archived', 'completed'))).toBeNull();
+    // An archived project whose status is still 'active' must not read as
+    // "in progress" either.
+    expect(deriveStatusBucket(proj('archived', 'active'))).toBeNull();
+  });
+
+  it('excludes deleted lifecycle (returns null)', () => {
+    expect(deriveStatusBucket(proj('deleted', 'active'))).toBeNull();
+  });
 });

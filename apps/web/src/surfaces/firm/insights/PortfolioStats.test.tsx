@@ -108,6 +108,16 @@ describe('computePortfolioStats', () => {
     expect(computePortfolioStats(rows, NOW).wrappingUpSoonCount).toBe(0);
   });
 
+  it('excludes lifecycle-completed/archived projects from wrapping up soon even with a near target date', () => {
+    // Lifecycle transitions leave `status` unchanged, so status-only guards would
+    // miss these; the count derives its exclusion from the shared status bucket.
+    const rows = [
+      projectRow({ id: 'life-done', lifecycle: 'completed', status: 'active', targetEndDate: day('2026-09-10') }),
+      projectRow({ id: 'life-arch', lifecycle: 'archived', status: 'active', targetEndDate: day('2026-09-10') }),
+    ];
+    expect(computePortfolioStats(rows, NOW).wrappingUpSoonCount).toBe(0);
+  });
+
   it('counts completed via lifecycle OR status, without double counting', () => {
     const rows = [
       projectRow({ id: 'a', lifecycle: 'completed', status: 'active' }),

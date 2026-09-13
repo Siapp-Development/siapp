@@ -77,7 +77,11 @@ export function computePortfolioStats(
     if (project.targetEndDate === null) {
       return false;
     }
-    if (project.status === 'completed' || project.status === 'archived') {
+    // Exclude completed/archived via the shared bucket so lifecycle-only
+    // transitions are honoured (e.g. a lifecycle-completed/status-active project
+    // must not be counted, matching this card's documented exclusion).
+    const bucket = deriveStatusBucket(project);
+    if (bucket === null || bucket === 'completed') {
       return false;
     }
     const target = startOfDay(project.targetEndDate);
