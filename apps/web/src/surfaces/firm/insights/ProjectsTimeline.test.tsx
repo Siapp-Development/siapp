@@ -319,6 +319,59 @@ describe('ProjectsTimeline', () => {
     expect(screen.getByText('Archived')).toBeInTheDocument();
   });
 
+  it('renders a Today button that scrolls the timeline toward today', async () => {
+    const scrollTo = vi.fn();
+    const original = HTMLElement.prototype.scrollTo;
+    HTMLElement.prototype.scrollTo = scrollTo as typeof HTMLElement.prototype.scrollTo;
+    try {
+      const user = userEvent.setup();
+      renderTimeline([projectRow()]);
+
+      const todayButton = screen.getByRole('button', { name: 'Today' });
+      expect(todayButton).toBeInTheDocument();
+      await user.click(todayButton);
+
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      const arg = scrollTo.mock.calls[0][0] as ScrollToOptions;
+      expect(typeof arg.left).toBe('number');
+      expect(arg.left).toBeGreaterThanOrEqual(0);
+    } finally {
+      HTMLElement.prototype.scrollTo = original;
+    }
+  });
+
+  it('renders a Print button that calls window.print', async () => {
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    try {
+      const user = userEvent.setup();
+      renderTimeline([projectRow()]);
+
+      const printButton = screen.getByRole('button', { name: 'Print' });
+      expect(printButton).toBeInTheDocument();
+      await user.click(printButton);
+
+      expect(printSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      printSpy.mockRestore();
+    }
+  });
+
+  it('marks the toolbar as print-hidden so controls do not print', () => {
+    renderTimeline([projectRow()]);
+
+    const toolbar = screen.getByRole('button', { name: 'Today' }).closest('div')?.parentElement;
+    expect(toolbar).not.toBeNull();
+    expect(toolbar).toHaveClass('print:hidden');
+  });
+
+  it('includes a landscape @page print stylesheet', () => {
+    const { container } = renderTimeline([projectRow()]);
+
+    const style = container.querySelector('style[media="print"]');
+    expect(style).not.toBeNull();
+    expect(style?.textContent).toContain('size: landscape');
+  });
+
   it('has no axe violations for a populated timeline', async () => {
     const { container } = renderTimeline([
       projectRow(),

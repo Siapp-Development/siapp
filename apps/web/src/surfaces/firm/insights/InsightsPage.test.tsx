@@ -102,6 +102,17 @@ describe('InsightsPage', () => {
     expect(screen.getByRole('region', { name: 'Projects timeline' })).toBeInTheDocument();
   });
 
+  it('renders the portfolio snapshot cards and the status donut in the ready state', () => {
+    projectsData.state = { status: 'ready', rows: [projectRow()] };
+    renderPage();
+
+    // A portfolio snapshot metric label…
+    expect(screen.getByText('In flight')).toBeInTheDocument();
+    // …and the status donut legend label.
+    expect(screen.getByText('In progress')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /project status/i })).toBeInTheDocument();
+  });
+
   it('shows the workspace name as an eyebrow above the heading', () => {
     projectsData.state = { status: 'ready', rows: [projectRow()] };
     renderPage();
