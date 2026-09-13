@@ -304,7 +304,10 @@ declarations.
   scaffold is added).
 - No drag/reorder, no date editing, no task-level bars, no milestones lane on this
   view (it is project-level, read-only).
-- No print/`fitToWidth`/export mode for the Insights timeline in v1.
+- No `fitToWidth`/CSV/PDF export mode for the Insights timeline in v1. (Iteration 3
+  later added a browser **Print** action that isolates the timeline and scales it
+  to fit a landscape page — see the Print notes below; data export remains out of
+  scope.)
 - No changes to portal/collaborator/marketing/admin surfaces or to `@siapp/ui`.
 - No role-based filtering of which projects appear (whole-workspace portfolio,
   same visibility as the Projects list); department scoping is not applied in v1.
