@@ -14,6 +14,7 @@
  */
 
 import {
+  Button,
   SegmentedControl,
   TIMELINE_DAY_PX,
   buildTimelineTicks,
@@ -23,8 +24,9 @@ import {
   timelineDiffDays,
 } from '@siapp/ui';
 import type { ITimelineAxis, TTimelineGranularity } from '@siapp/ui';
+import { Printer } from 'lucide-react';
 import { Link } from 'react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { LifecycleBadge } from '../projects/LifecycleBadge.tsx';
 import { LIFECYCLE_LABELS } from '../projects/projectLabels.ts';
@@ -130,26 +132,68 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
   const trackWidth = axis.days * dayPx;
   const todayOffset = timelineDiffDays(axis.start, timelineDayStart(now)) * dayPx;
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  /** Scroll the timeline so today's marker is centered horizontally when possible. */
+  const scrollToToday = useCallback(() => {
+    const el = scrollRef.current;
+    if (el === null) {
+      return;
+    }
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({
+      left: Math.max(0, LABEL_COL_PX + todayOffset - el.clientWidth / 2),
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+  }, [todayOffset]);
+
   return (
     <div className="flex flex-col gap-4">
+      {/*
+       * Print: this feature prints as a clean, LANDSCAPE rendering of the full
+       * timeline. The `@page` rule below sets landscape + margins (Tailwind has
+       * no `@page` utility, so a dependency-free scoped <style media="print"> is
+       * used). The scroll container drops its clip (`print:overflow-visible`) and
+       * the inner track renders at natural width so nothing is cut off. v1 does
+       * not attempt fine-grained pagination of a very wide timeline across
+       * sheets — the requirement is landscape + full timeline visible + no
+       * clipping; the browser may split a very wide track across pages.
+       */}
+      <style media="print">{'@page { size: landscape; margin: 12mm; }'}</style>
       {dated.length > 0 && (
         <>
-          <div className="flex items-center justify-end">
-            <SegmentedControl
-              aria-label="Timeline granularity"
-              value={granularity}
-              onChange={setGranularity}
-              options={GRANULARITY_OPTIONS}
-              size="sm"
-            />
+          <div className="flex items-center justify-between gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={scrollToToday}>
+                Today
+              </Button>
+              <SegmentedControl
+                aria-label="Timeline granularity"
+                value={granularity}
+                onChange={setGranularity}
+                options={GRANULARITY_OPTIONS}
+                size="sm"
+              />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              Print
+            </Button>
           </div>
           <div
-            className="overflow-x-auto rounded-lg border border-border bg-card"
+            ref={scrollRef}
+            className="overflow-x-auto rounded-lg border border-border bg-card print:overflow-visible"
             role="region"
             aria-label="Projects timeline"
             tabIndex={0}
           >
-            <div className="relative" style={{ width: LABEL_COL_PX + trackWidth, minWidth: '100%' }}>
+            <div
+              className="relative print:w-auto print:min-w-0"
+              style={{ width: LABEL_COL_PX + trackWidth, minWidth: '100%' }}
+            >
               {/* Axis ticks — decorative; the accessible dates live on each bar's label. */}
               <div className="relative h-7 border-b border-border" aria-hidden="true">
                 {ticks.map((tick) => (
@@ -174,7 +218,7 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
                 return (
                   <div
                     key={project.id}
-                    className="relative flex h-11 items-center border-b border-border/60"
+                    className="relative flex h-11 items-center border-b border-border/60 print:break-inside-avoid"
                   >
                     <div
                       className="sticky left-0 z-10 flex h-full shrink-0 items-center gap-2 truncate border-r border-border bg-card px-3 text-sm"

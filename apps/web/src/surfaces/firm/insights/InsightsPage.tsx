@@ -16,7 +16,9 @@ import type { TMemberRole } from '@siapp/shared';
 import { Link } from 'react-router';
 
 import { useProjects } from '../projects/useProjects.ts';
+import { PortfolioStats } from './PortfolioStats.tsx';
 import { ProjectsTimeline } from './ProjectsTimeline.tsx';
+import { StatusDonut } from './StatusDonut.tsx';
 
 export interface IInsightsPageProps {
   workspaceId: string;
@@ -41,7 +43,7 @@ export function InsightsPage({ workspaceId, workspaceSlug, workspaceName }: IIns
         </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Insights</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A timeline of every project across the workspace, from start to target date.
+          A high-level view of your workspace's projects and their progress.
         </p>
       </div>
 
@@ -61,7 +63,11 @@ export function InsightsPage({ workspaceId, workspaceSlug, workspaceName }: IIns
         </p>
       )}
       {projects.status === 'ready' && rows.length > 0 && (
-        <ProjectsTimeline projects={rows} workspaceSlug={workspaceSlug} />
+        <div className="flex flex-col gap-8">
+          <PortfolioStats projects={rows} />
+          <StatusDonut projects={rows} />
+          <ProjectsTimeline projects={rows} workspaceSlug={workspaceSlug} />
+        </div>
       )}
     </div>
   );

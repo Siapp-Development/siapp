@@ -154,7 +154,7 @@ export function FirmShell() {
       <SkipLink />
       <aside
         className={cn(
-          'on-dark sticky top-0 z-30 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none',
+          'on-dark sticky top-0 z-30 flex h-screen flex-col bg-sidebar py-5 transition-[width] duration-200 motion-reduce:transition-none print:hidden',
           collapsed ? 'w-16 px-2' : 'w-60 px-4',
         )}
       >
@@ -193,12 +193,6 @@ export function FirmShell() {
               collapsed={collapsed}
             />
             <NavItem
-              to={`/${workspace.slug}/insights`}
-              label="Insights"
-              icon={NAV_ICONS.insights}
-              collapsed={collapsed}
-            />
-            <NavItem
               to={`/${workspace.slug}/clients`}
               label="Clients"
               icon={NAV_ICONS.clients}
@@ -208,6 +202,12 @@ export function FirmShell() {
               to={`/${workspace.slug}/collaborators`}
               label="Collaborators"
               icon={NAV_ICONS.collaborators}
+              collapsed={collapsed}
+            />
+            <NavItem
+              to={`/${workspace.slug}/insights`}
+              label="Insights"
+              icon={NAV_ICONS.insights}
               collapsed={collapsed}
             />
             <NavItem
@@ -256,9 +256,11 @@ export function FirmShell() {
           </Button>
         </div>
       </aside>
-      <main id="main" className="min-w-0 flex-1 px-8 py-8">
+      <main id="main" className="min-w-0 flex-1 px-8 py-8 print:px-0 print:py-0">
         {/* #24: read-only / usage banners on every firm page */}
-        <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
+        <div className="print:hidden">
+          <BillingBanners workspaceId={workspace.id} workspaceSlug={workspace.slug} />
+        </div>
         <Routes>
           <Route
             index
