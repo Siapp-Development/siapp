@@ -17,7 +17,7 @@ import { Link } from 'react-router';
 
 import { useProjects } from '../projects/useProjects.ts';
 import { PortfolioStats } from './PortfolioStats.tsx';
-import { ProjectsTimeline } from './ProjectsTimeline.tsx';
+import { ProjectsTimeline } from '../projects/timeline/ProjectsTimeline.tsx';
 import { StatusDonut } from './StatusDonut.tsx';
 
 export interface IInsightsPageProps {
