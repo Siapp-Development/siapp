@@ -31,11 +31,6 @@ vi.mock('./projects/ProjectsListPage.tsx', () => ({
     <h1>Projects — {workspaceName}</h1>
   ),
 }));
-vi.mock('./insights/InsightsPage.tsx', () => ({
-  InsightsPage: ({ workspaceName }: { workspaceName: string }) => (
-    <h1>Insights — {workspaceName}</h1>
-  ),
-}));
 vi.mock('./projects/ProjectDetailPage.tsx', () => ({ ProjectDetailPage: () => null }));
 vi.mock('./settings/TeamSettingsPage.tsx', () => ({
   TeamSettingsPage: ({ workspaceName }: { workspaceName: string }) => (
@@ -109,26 +104,14 @@ describe('FirmShell', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders the insights section at /insights', () => {
-    renderShell('/acme/insights');
-
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'Insights — Acme Builders' }),
-    ).toBeInTheDocument();
-  });
-
-  it('exposes an Insights nav link, active on /insights', () => {
+  it('does not expose an Insights nav link, and /insights renders no Insights heading', () => {
     renderShell('/acme/insights');
 
     const nav = screen.getByRole('navigation', { name: 'Workspace' });
-    expect(within(nav).getByRole('link', { name: 'Insights' })).toHaveAttribute(
-      'href',
-      '/acme/insights',
-    );
-    expect(within(nav).getByRole('link', { name: 'Insights' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(nav).queryByRole('link', { name: 'Insights' })).toBeNull();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Insights — Acme Builders' }),
+    ).toBeNull();
   });
 
   it('marks the active nav item with aria-current', () => {
@@ -232,7 +215,6 @@ describe('FirmShell', () => {
       // Labels visually collapse to icons, but the accessible names persist.
       expect(within(nav).getByRole('link', { name: 'Home' })).toBeInTheDocument();
       expect(within(nav).getByRole('link', { name: 'Projects' })).toBeInTheDocument();
-      expect(within(nav).getByRole('link', { name: 'Insights' })).toBeInTheDocument();
       // The avatar link keeps its accessible name too.
       expect(screen.getByRole('link', { name: 'Your profile' })).toHaveAttribute(
         'href',

@@ -12,5 +12,5 @@ export {
   type IStatusDonutProps,
   type TStatusBucketKey,
 } from './StatusDonut.tsx';
-export { ProjectsTimeline, projectsTimelineDates } from './ProjectsTimeline.tsx';
+export { ProjectsTimeline, projectsTimelineDates } from '../projects/timeline/ProjectsTimeline.tsx';
 export { deriveStatusBucket } from './insightsStatus.ts';
