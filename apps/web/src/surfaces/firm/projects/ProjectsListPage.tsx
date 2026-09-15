@@ -8,8 +8,8 @@
 
 import { Badge, Button, Dialog, Label, Progress } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
-import { Plus } from 'lucide-react';
-import { useId, useMemo, useState } from 'react';
+import { Plus, Printer } from 'lucide-react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { useClients } from '../clients/useClients.ts';
@@ -27,6 +27,17 @@ import {
   writeProjectsListParams,
   type IProjectsListParams,
 } from './projectsListFilter.ts';
+import { ProjectsViewSwitcher } from './ProjectsViewSwitcher.tsx';
+import { parseProjectsView, writeProjectsView, type TProjectsView } from './projectsView.ts';
+import { ProjectsTableView } from './matrix/ProjectsTableView.tsx';
+import { ProjectsTimeline } from './timeline/ProjectsTimeline.tsx';
+import { ProjectsPrintStyle } from './print/ProjectsPrintStyle.tsx';
+import {
+  PROJECTS_PRINT_ROOT_ID,
+  PROJECTS_PRINT_SCALE_VAR,
+  computeScaleToFit,
+  type TPrintOrientation,
+} from './print/printView.ts';
 import { STATUS_LABELS, clientSummaryLabel } from './projectLabels.ts';
 import { TagChipList } from './tags/TagChipList.tsx';
 import { useTags, type ITagEntry } from './tags/useTags.ts';
@@ -122,10 +133,42 @@ export function ProjectsListPage({
   const newProjectHeadingId = useId();
 
   const listParams = useMemo(() => parseProjectsListParams(searchParams), [searchParams]);
+  const view = parseProjectsView(searchParams);
+  const orientation: TPrintOrientation = view === 'list' ? 'portrait' : 'landscape';
 
   function updateListParams(next: IProjectsListParams): void {
     setSearchParams(writeProjectsListParams(next, searchParams), { replace: true });
   }
+
+  function selectView(next: TProjectsView): void {
+    setSearchParams(writeProjectsView(searchParams, next), { replace: true });
+  }
+
+  const printRootRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Print the active view. List prints portrait at 1:1. Table/Timeline are wide,
+   * so we measure the widest scrollable region and set `--projects-print-scale`
+   * (scale-to-fit, never upscaling) before `window.print()`. The `scrollWidth`
+   * guard keeps jsdom/tests from computing a degenerate scale.
+   */
+  const handlePrint = useCallback(() => {
+    const el = printRootRef.current;
+    if (el !== null) {
+      if (view === 'list') {
+        el.style.removeProperty(PROJECTS_PRINT_SCALE_VAR);
+      } else {
+        const regions = el.querySelectorAll<HTMLElement>('[data-print-region], .timeline-track');
+        let widest = 0;
+        regions.forEach((region) => {
+          widest = Math.max(widest, region.scrollWidth);
+        });
+        const contentWidth = widest > 0 ? widest : el.scrollWidth;
+        el.style.setProperty(PROJECTS_PRINT_SCALE_VAR, String(computeScaleToFit(contentWidth)));
+      }
+    }
+    window.print();
+  }, [view]);
 
   const rows = projects.status === 'ready' ? projects.rows : [];
   const clientOptions = clients.status === 'ready' ? clients.rows : [];
@@ -290,12 +333,21 @@ export function ProjectsListPage({
       </Dialog>
 
       {projects.status === 'ready' && rows.length > 0 && (
-        <ProjectsListControls
-          params={listParams}
-          onChange={updateListParams}
-          projectTags={projectTags.tags}
-          clients={clientOptions}
-        />
+        <>
+          <ProjectsListControls
+            params={listParams}
+            onChange={updateListParams}
+            projectTags={projectTags.tags}
+            clients={clientOptions}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+            <ProjectsViewSwitcher value={view} onChange={selectView} />
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              Print
+            </Button>
+          </div>
+        </>
       )}
 
       {projects.status === 'loading' && <p className="text-sm">Loading projects…</p>}
@@ -307,16 +359,39 @@ export function ProjectsListPage({
         <p className="text-sm">No projects match your filters.</p>
       )}
       {projects.status === 'ready' && visible.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {visible.map((project) => (
-            <ProjectListItem
-              key={project.id}
-              project={project}
-              workspaceSlug={workspaceSlug}
-              tags={projectTags.tags}
-            />
-          ))}
-        </ul>
+        <>
+          <ProjectsPrintStyle orientation={orientation} />
+          <div id={PROJECTS_PRINT_ROOT_ID} ref={printRootRef} data-print-orientation={orientation}>
+            {view === 'list' && (
+              <ul className="flex flex-col gap-2">
+                {visible.map((project) => (
+                  <ProjectListItem
+                    key={project.id}
+                    project={project}
+                    workspaceSlug={workspaceSlug}
+                    tags={projectTags.tags}
+                  />
+                ))}
+              </ul>
+            )}
+            {view === 'table' && (
+              <ProjectsTableView
+                workspaceId={workspaceId}
+                workspaceSlug={workspaceSlug}
+                projects={visible}
+                role={role}
+                departments={departments}
+              />
+            )}
+            {view === 'timeline' && (
+              <ProjectsTimeline
+                projects={visible}
+                workspaceSlug={workspaceSlug}
+                showInternalPrint={false}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );
