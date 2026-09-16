@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IClientRow } from '../clients/useClients.ts';
@@ -113,7 +113,13 @@ function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
 /** Renders the page with a location readout and optional initial URL. */
 function LocationDisplay() {
   const location = useLocation();
-  return <div data-testid="location">{location.search}</div>;
+  const navType = useNavigationType();
+  return (
+    <>
+      <div data-testid="location">{location.search}</div>
+      <div data-testid="nav-type">{navType}</div>
+    </>
+  );
 }
 
 function renderPageAt(initialUrl: string, role: 'owner' | 'pm' | 'viewer' = 'owner') {
@@ -253,6 +259,23 @@ describe('ProjectsListPage', () => {
       'zzz-no-match',
     );
 
+    expect(screen.getByText('No projects match your filters.')).toBeInTheDocument();
+  });
+
+  it('hides the view switcher and Print toolbar but keeps the filters when filters exclude every project (Finding 1)', async () => {
+    projectsData.state = { status: 'ready', rows: [projectRow({ name: 'Riverside Villa' })] };
+    renderPage();
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /search projects by title/i }),
+      'zzz-no-match',
+    );
+
+    // No visible projects → no print-isolation root, so the toolbar is gone…
+    expect(screen.queryByRole('radiogroup', { name: 'Projects view' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Print' })).not.toBeInTheDocument();
+    // …but the filters stay mounted so the user can clear them.
+    expect(screen.getByRole('searchbox', { name: /search projects by title/i })).toBeInTheDocument();
     expect(screen.getByText('No projects match your filters.')).toBeInTheDocument();
   });
 
@@ -512,6 +535,27 @@ describe('ProjectsListPage', () => {
       expect(screen.getByTestId('table-view')).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: 'Bungalow build' })).not.toBeInTheDocument();
       expect(screen.getByTestId('location')).toHaveTextContent('view=table');
+    });
+
+    it('pushes a history entry on a view change so Back returns to the previous view (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/');
+
+      // Switching the view must PUSH (not REPLACE) so browser Back works.
+      await userEvent.click(screen.getByRole('radio', { name: 'Table' }));
+      expect(screen.getByTestId('nav-type')).toHaveTextContent('PUSH');
+    });
+
+    it('replaces history on a filter edit (view switch alone pushes) (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow({ name: 'Riverside Villa' })] };
+      renderPageAt('/');
+
+      // Filter edits stay REPLACE so they do not litter the Back stack.
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: /search projects by title/i }),
+        'River',
+      );
+      expect(screen.getByTestId('nav-type')).toHaveTextContent('REPLACE');
     });
 
     it('swaps to the Timeline view and suppresses its internal Print', async () => {

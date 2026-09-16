@@ -5,12 +5,13 @@
  * tasks band (`<tbody>`). A trailing "No phase" column appears only when the
  * project has tasks without a resolvable phase.
  *
- * Data: phases come from the parent's `useAllProjectsPhases` fan-out; tasks come
- * from the existing `useTasks(workspaceId, projectId, role, departments)` hook
+ * Data: each block loads its OWN phases via `usePhases(workspaceId, projectId)`
+ * and its tasks via `useTasks(workspaceId, projectId, role, departments)` —
  * UNCHANGED — so owner/admin see the raw list while pm/viewer get the
- * department fan-out plus dimmed restricted-header rows. We never read tasks a
- * role cannot see; restricted tasks surface only as a muted "Restricted (N
- * hidden)" entry.
+ * department fan-out plus dimmed restricted-header rows. Because both listeners
+ * are scoped to this block, one slow/failed project never blocks the others. We
+ * never read tasks a role cannot see; restricted tasks surface only as a muted
+ * "Restricted (N hidden)" entry.
  */
 
 import { cn } from '@siapp/ui';
@@ -23,7 +24,7 @@ import { LifecycleBadge } from '../LifecycleBadge.tsx';
 import { clientSummaryLabel } from '../projectLabels.ts';
 import type { IProjectRow } from '../useProjects.ts';
 import { TaskStatusRing } from '../tasks/TaskStatusRing.tsx';
-import { useTasks, type IPhaseRow, type TTaskListRow } from '../tasks/useTasks.ts';
+import { usePhases, useTasks, type TTaskListRow } from '../tasks/useTasks.ts';
 import { buildProjectPhaseColumns, groupTasksByPhase } from './projectsMatrix.ts';
 
 const DATE_FMT = new Intl.DateTimeFormat(undefined, {
@@ -54,7 +55,6 @@ interface IProjectTableRowProps {
   workspaceId: string;
   workspaceSlug: string;
   project: IProjectRow;
-  phases: readonly IPhaseRow[];
   role: TMemberRole;
   departments: string[];
 }
@@ -92,20 +92,34 @@ export function ProjectTableRow({
   workspaceId,
   workspaceSlug,
   project,
-  phases,
   role,
   departments,
 }: IProjectTableRowProps) {
+  const phasesState = usePhases(workspaceId, project.id);
   const tasks = useTasks(workspaceId, project.id, role, departments);
 
+  // Combined block state: this project's phases AND tasks load independently of
+  // every other block. Error wins over loading so a failed listener surfaces a
+  // scoped message rather than an endless skeleton.
+  const blockStatus: 'loading' | 'error' | 'ready' =
+    phasesState.status === 'error' || tasks.status === 'error'
+      ? 'error'
+      : phasesState.status === 'loading' || tasks.status === 'loading'
+        ? 'loading'
+        : 'ready';
+
+  const phaseRows = useMemo(
+    () => (phasesState.status === 'ready' ? phasesState.rows : []),
+    [phasesState],
+  );
   const taskRows = useMemo(
     () => (tasks.status === 'ready' ? tasks.rows : []),
     [tasks],
   );
-  const knownPhaseIds = useMemo(() => new Set(phases.map((p) => p.id)), [phases]);
+  const knownPhaseIds = useMemo(() => new Set(phaseRows.map((p) => p.id)), [phaseRows]);
   const columns = useMemo(
-    () => buildProjectPhaseColumns(phases, taskRows),
-    [phases, taskRows],
+    () => buildProjectPhaseColumns(phaseRows, taskRows),
+    [phaseRows, taskRows],
   );
   const grouped = useMemo(
     () => groupTasksByPhase(taskRows, knownPhaseIds),
@@ -146,23 +160,25 @@ export function ProjectTableRow({
         <table className="w-full border-collapse text-left">
           <caption className="mb-2 text-left">{heading}</caption>
 
-          {tasks.status === 'loading' && (
+          {blockStatus === 'loading' && (
             <tbody>
               <tr>
-                <td className="py-2 text-sm text-muted-foreground">Loading tasks…</td>
+                <td className="py-2 text-sm text-muted-foreground">Loading…</td>
               </tr>
             </tbody>
           )}
 
-          {tasks.status === 'error' && (
+          {blockStatus === 'error' && (
             <tbody>
               <tr>
-                <td className="py-2 text-sm text-danger">Tasks could not be loaded.</td>
+                <td className="py-2 text-sm text-danger">
+                  This project&rsquo;s phases/tasks could not be loaded.
+                </td>
               </tr>
             </tbody>
           )}
 
-          {tasks.status === 'ready' && columns.length === 0 && (
+          {blockStatus === 'ready' && columns.length === 0 && (
             <tbody>
               <tr>
                 <td className="py-2 text-sm text-muted-foreground">No phases yet.</td>
@@ -170,7 +186,7 @@ export function ProjectTableRow({
             </tbody>
           )}
 
-          {tasks.status === 'ready' && columns.length > 0 && (
+          {blockStatus === 'ready' && columns.length > 0 && (
             <>
               <thead>
                 <tr>

@@ -141,7 +141,9 @@ export function ProjectsListPage({
   }
 
   function selectView(next: TProjectsView): void {
-    setSearchParams(writeProjectsView(searchParams, next), { replace: true });
+    // View changes push a history entry so browser Back returns to the previous
+    // view (filter edits stay `replace: true` via updateListParams).
+    setSearchParams(writeProjectsView(searchParams, next));
   }
 
   const printRootRef = useRef<HTMLDivElement>(null);
@@ -340,13 +342,15 @@ export function ProjectsListPage({
             projectTags={projectTags.tags}
             clients={clientOptions}
           />
-          <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-            <ProjectsViewSwitcher value={view} onChange={selectView} />
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              Print
-            </Button>
-          </div>
+          {visible.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+              <ProjectsViewSwitcher value={view} onChange={selectView} />
+              <Button variant="outline" size="sm" onClick={handlePrint}>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Print
+              </Button>
+            </div>
+          )}
         </>
       )}
 

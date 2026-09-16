@@ -3,20 +3,23 @@ import axe from 'axe-core';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { IPhaseRow, IRestrictedHeaderRow, ITaskRow, TTasksState } from '../tasks/useTasks.ts';
+import type {
+  IPhaseRow,
+  IRestrictedHeaderRow,
+  ITaskRow,
+  TPhasesState,
+  TTasksState,
+} from '../tasks/useTasks.ts';
 import type { IProjectRow } from '../useProjects.ts';
-import type { TAllPhasesState } from './useAllProjectsPhases.ts';
 
 const tableData = vi.hoisted(() => ({
-  phasesState: { status: 'loading' } as TAllPhasesState,
+  phasesByProject: {} as Record<string, TPhasesState>,
   tasksByProject: {} as Record<string, TTasksState>,
 }));
 
-vi.mock('./useAllProjectsPhases.ts', () => ({
-  useAllProjectsPhases: () => tableData.phasesState,
-}));
-
 vi.mock('../tasks/useTasks.ts', () => ({
+  usePhases: (_workspaceId: string, projectId: string): TPhasesState =>
+    tableData.phasesByProject[projectId] ?? { status: 'loading' },
   useTasks: (_workspaceId: string, projectId: string) => ({
     ...(tableData.tasksByProject[projectId] ?? { status: 'loading' }),
     refreshRestricted: vi.fn(),
@@ -24,6 +27,8 @@ vi.mock('../tasks/useTasks.ts', () => ({
 }));
 
 import { PROJECT_TABLE_CAP, ProjectsTableView } from './ProjectsTableView.tsx';
+
+const BLOCK_ERROR = "This project’s phases/tasks could not be loaded.";
 
 function project(overrides: Partial<IProjectRow> = {}): IProjectRow {
   return {
@@ -64,6 +69,10 @@ function phase(overrides: Partial<IPhaseRow> = {}): IPhaseRow {
     status: 'todo',
     ...overrides,
   };
+}
+
+function phasesReady(rows: IPhaseRow[]): TPhasesState {
+  return { status: 'ready', rows };
 }
 
 function task(overrides: Partial<ITaskRow> = {}): ITaskRow {
@@ -122,30 +131,56 @@ function renderView(projects: IProjectRow[]) {
 }
 
 beforeEach(() => {
-  tableData.phasesState = { status: 'loading' };
+  tableData.phasesByProject = {};
   tableData.tasksByProject = {};
 });
 
 describe('ProjectsTableView', () => {
-  it('shows a phases skeleton while phases load', () => {
-    tableData.phasesState = { status: 'loading' };
-    renderView([project()]);
-    expect(screen.getByText('Loading phases…')).toBeInTheDocument();
+  it('shows a per-row loading state (with caption) while this row\u2019s phases load', () => {
+    tableData.phasesByProject = { p1: { status: 'loading' } };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([project({ id: 'p1', name: 'Lot 12' })]);
+
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    // The block's identity (caption + name link) still renders while loading.
+    expect(screen.getByRole('link', { name: 'Lot 12' })).toBeInTheDocument();
   });
 
-  it('shows an error when phases fail', () => {
-    tableData.phasesState = { status: 'error' };
-    renderView([project()]);
-    expect(screen.getByText('Phases could not be loaded.')).toBeInTheDocument();
+  it('shows a per-row error (with caption/name) when this row\u2019s phases fail', () => {
+    tableData.phasesByProject = { p1: { status: 'error' } };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([project({ id: 'p1', name: 'Lot 12' })]);
+
+    expect(screen.getByText(BLOCK_ERROR)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Lot 12' })).toBeInTheDocument();
+  });
+
+  it('keeps rows independent: one failed row does not block a ready row (Finding 3)', () => {
+    // Project A's phases fail; Project B's phases (and tasks) are ready.
+    tableData.phasesByProject = {
+      p1: { status: 'error' },
+      p2: phasesReady([phase({ id: 'b', name: 'Excavation', order: 0 })]),
+    };
+    tableData.tasksByProject = {
+      p1: { status: 'ready', rows: [] },
+      p2: { status: 'ready', rows: [task({ id: 't2', phaseId: 'b', title: 'Dig' })] },
+    };
+    renderView([project({ id: 'p1', name: 'Lot 12' }), project({ id: 'p2', name: 'Lot 7' })]);
+
+    // A shows its own scoped error but still renders its caption/name.
+    expect(screen.getByText(BLOCK_ERROR)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Lot 12' })).toBeInTheDocument();
+
+    // B renders its full table/columns/tasks regardless of A's failure.
+    const regionB = screen.getByRole('region', { name: 'Lot 7 phases' });
+    expect(within(regionB).getByRole('columnheader', { name: 'Excavation' })).toBeInTheDocument();
+    expect(within(regionB).getByText('Dig')).toBeInTheDocument();
   });
 
   it('renders two projects with different phase sets independently', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([
-        ['p1', [phase({ id: 'a', name: 'Earthworks', order: 0 })]],
-        ['p2', [phase({ id: 'b', name: 'Excavation', order: 0 })]],
-      ]),
+    tableData.phasesByProject = {
+      p1: phasesReady([phase({ id: 'a', name: 'Earthworks', order: 0 })]),
+      p2: phasesReady([phase({ id: 'b', name: 'Excavation', order: 0 })]),
     };
     tableData.tasksByProject = {
       p1: { status: 'ready', rows: [task({ id: 't1', phaseId: 'a', title: 'Clear site' })] },
@@ -166,10 +201,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('renders a task status ring per task (sr-only label)', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: { status: 'ready', rows: [task({ id: 't1', phaseId: 'a', status: 'done' })] },
     };
@@ -178,30 +210,21 @@ describe('ProjectsTableView', () => {
   });
 
   it('renders an empty tasks band with sr-only "No tasks"', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([project({ id: 'p1' })]);
     expect(screen.getByText('No tasks')).toBeInTheDocument();
   });
 
   it('shows "No phases yet." for a project with no phases and no tasks', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', []]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([project({ id: 'p1' })]);
     expect(screen.getByText('No phases yet.')).toBeInTheDocument();
   });
 
   it('appends a "No phase" column only for null-phase tasks', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: { status: 'ready', rows: [task({ id: 't1', phaseId: null, title: 'Site photos' })] },
     };
@@ -211,10 +234,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('omits the "No phase" column when every task has a resolvable phase', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: { status: 'ready', rows: [task({ id: 't1', phaseId: 'a', title: 'Clear site' })] },
     };
@@ -225,10 +245,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('renders restricted-header rows as a dimmed "Restricted (N hidden)" entry', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: {
         status: 'ready',
@@ -246,31 +263,26 @@ describe('ProjectsTableView', () => {
   });
 
   it('shows a per-block loading state while tasks load', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a' })]) };
     tableData.tasksByProject = { p1: { status: 'loading' } };
     renderView([project({ id: 'p1' })]);
-    expect(screen.getByText('Loading tasks…')).toBeInTheDocument();
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
   });
 
   it('shows a per-block error state when tasks fail', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a' })]) };
     tableData.tasksByProject = { p1: { status: 'error' } };
     renderView([project({ id: 'p1' })]);
-    expect(screen.getByText('Tasks could not be loaded.')).toBeInTheDocument();
+    expect(screen.getByText(BLOCK_ERROR)).toBeInTheDocument();
   });
 
   it('caps the table and shows an over-cap notice', () => {
     const projects = Array.from({ length: PROJECT_TABLE_CAP + 3 }, (_, index) =>
       project({ id: `p${index}`, name: `Project ${index}` }),
     );
-    const phasesByProject = new Map(projects.map((p) => [p.id, [phase({ id: `${p.id}-a` })]]));
-    tableData.phasesState = { status: 'ready', phasesByProject };
+    tableData.phasesByProject = Object.fromEntries(
+      projects.map((p) => [p.id, phasesReady([phase({ id: `${p.id}-a` })])]),
+    );
     tableData.tasksByProject = Object.fromEntries(
       projects.map((p) => [p.id, { status: 'ready', rows: [] }]),
     );
@@ -286,8 +298,9 @@ describe('ProjectsTableView', () => {
     const projects = Array.from({ length: PROJECT_TABLE_CAP }, (_, index) =>
       project({ id: `p${index}`, name: `Project ${index}` }),
     );
-    const phasesByProject = new Map(projects.map((p) => [p.id, [phase({ id: `${p.id}-a` })]]));
-    tableData.phasesState = { status: 'ready', phasesByProject };
+    tableData.phasesByProject = Object.fromEntries(
+      projects.map((p) => [p.id, phasesReady([phase({ id: `${p.id}-a` })])]),
+    );
     tableData.tasksByProject = Object.fromEntries(
       projects.map((p) => [p.id, { status: 'ready', rows: [] }]),
     );
@@ -302,8 +315,9 @@ describe('ProjectsTableView', () => {
     const projects = Array.from({ length: PROJECT_TABLE_CAP + 1 }, (_, index) =>
       project({ id: `p${index}`, name: `Project ${index}` }),
     );
-    const phasesByProject = new Map(projects.map((p) => [p.id, [phase({ id: `${p.id}-a` })]]));
-    tableData.phasesState = { status: 'ready', phasesByProject };
+    tableData.phasesByProject = Object.fromEntries(
+      projects.map((p) => [p.id, phasesReady([phase({ id: `${p.id}-a` })])]),
+    );
     tableData.tasksByProject = Object.fromEntries(
       projects.map((p) => [p.id, { status: 'ready', rows: [] }]),
     );
@@ -318,10 +332,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('wraps each block in a labelled scroll region with a caption', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([project({ id: 'p1', name: 'Lot 12' })]);
 
@@ -334,10 +345,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('shows the client name and formatted start → target-end range in the header', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([
       project({
@@ -356,10 +364,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('summarises multiple clients with a "＋N" overflow marker in the header', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([
       project({
@@ -377,10 +382,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('renders "No client" when the project has no linked clients', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([project({ id: 'p1', name: 'Lot 12', clients: [] })]);
 
@@ -388,10 +390,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('shows a "From …" range when only the start date is set', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([
       project({ id: 'p1', name: 'Lot 12', startDate: new Date('2026-07-01T00:00:00Z') }),
@@ -401,10 +400,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('shows a "Due …" range when only the target end date is set', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([
       project({ id: 'p1', name: 'Lot 12', targetEndDate: new Date('2026-09-01T00:00:00Z') }),
@@ -414,10 +410,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('shows "No dates set" when neither start nor target end date is set', () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
     renderView([project({ id: 'p1', name: 'Lot 12', startDate: null, targetEndDate: null })]);
 
@@ -425,10 +418,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('has no axe violations in a ready table', async () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: { status: 'ready', rows: [task({ id: 't1', phaseId: 'a' })] },
     };
@@ -440,10 +430,7 @@ describe('ProjectsTableView', () => {
   });
 
   it('has no axe violations for a table that includes a "No phase" column', async () => {
-    tableData.phasesState = {
-      status: 'ready',
-      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
-    };
+    tableData.phasesByProject = { p1: phasesReady([phase({ id: 'a', name: 'Earthworks' })]) };
     tableData.tasksByProject = {
       p1: {
         status: 'ready',
