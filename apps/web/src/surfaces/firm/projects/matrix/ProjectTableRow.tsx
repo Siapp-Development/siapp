@@ -73,13 +73,13 @@ function PhaseTasksCell({ rows }: { rows: readonly TTaskListRow[] }) {
       {visibleTasks.map((task) => (
         <li key={task.id} className="flex items-center gap-1.5 text-sm">
           <TaskStatusRing status={task.status} />
-          <span className="truncate" title={task.title}>
+          <span className="min-w-0 truncate" title={task.title}>
             {task.title}
           </span>
         </li>
       ))}
       {restrictedCount > 0 && (
-        <li className="flex items-center gap-1.5 text-sm text-muted-foreground/70 italic">
+        <li className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
           <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>Restricted ({restrictedCount} hidden)</span>
         </li>

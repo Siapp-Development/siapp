@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IClientRow } from '../clients/useClients.ts';
 import type { IProjectRow, TProjectsState } from './useProjects.ts';
+import { computeScaleToFit } from './print/printView.ts';
 
 const projectsData = vi.hoisted(() => ({
   state: { status: 'ready', rows: [] } as TProjectsState,
@@ -53,7 +54,7 @@ vi.mock('./tags/useTags.ts', () => ({
 }));
 
 vi.mock('./matrix/ProjectsTableView.tsx', () => ({
-  ProjectsTableView: () => <div data-testid="table-view" />,
+  ProjectsTableView: () => <div data-testid="table-view" data-print-region />,
 }));
 vi.mock('./timeline/ProjectsTimeline.tsx', () => ({
   ProjectsTimeline: (props: { showInternalPrint?: boolean }) => (
@@ -629,6 +630,41 @@ describe('ProjectsListPage', () => {
       // jsdom reports scrollWidth 0, so the guard clamps the scale to 1 (no NaN/throw).
       expect(root.style.getPropertyValue('--projects-print-scale')).toBe('1');
       expect(printSpy).toHaveBeenCalledTimes(1);
+      printSpy.mockRestore();
+    });
+
+    it('scales the print root to fit the widest print region in the Table view (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const { container } = renderPageAt('/?view=table');
+
+      // Stub an oversized scrollable print region (jsdom has no layout).
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 2400 });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe(
+        String(computeScaleToFit(2400)),
+      );
+      printSpy.mockRestore();
+    });
+
+    it('clears a stale print scale when the view changes (Finding 3)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const { container } = renderPageAt('/?view=table');
+
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 2400 });
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).not.toBe('');
+
+      // Switching to List must drop the stale scale so a native print isn't mis-sized.
+      await userEvent.click(screen.getByRole('radio', { name: 'List' }));
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe('');
       printSpy.mockRestore();
     });
 

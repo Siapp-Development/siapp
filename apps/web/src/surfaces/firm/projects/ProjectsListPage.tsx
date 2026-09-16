@@ -9,7 +9,7 @@
 import { Badge, Button, Dialog, Label, Progress } from '@siapp/ui';
 import type { TMemberRole } from '@siapp/shared';
 import { Plus, Printer } from 'lucide-react';
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import { useClients } from '../clients/useClients.ts';
@@ -177,6 +177,17 @@ export function ProjectsListPage({
   const visible = filterAndSortProjects(rows, listParams, projectTags.tags);
   const duplicatable = rows.filter((project) => project.lifecycle !== 'deleted');
   const source = duplicatable.find((project) => project.id === sourceId);
+
+  /**
+   * The scale-to-fit value is written onto the persistent `#projects-print-root`
+   * only inside `handlePrint`, so a native browser print (Ctrl/Cmd+P) after
+   * switching views or filters could otherwise reuse a previous view's scale and
+   * crop/mis-size the output. Clear it whenever the active view or filtered
+   * content changes; `handlePrint` recomputes it right before `window.print()`.
+   */
+  useEffect(() => {
+    printRootRef.current?.style.removeProperty(PROJECTS_PRINT_SCALE_VAR);
+  }, [view, listParams, visible.length]);
 
   function openCreateCard(): void {
     setCreateMode('blank');
