@@ -20,10 +20,35 @@ import { Link } from 'react-router';
 import type { TMemberRole } from '@siapp/shared';
 
 import { LifecycleBadge } from '../LifecycleBadge.tsx';
+import { clientSummaryLabel } from '../projectLabels.ts';
 import type { IProjectRow } from '../useProjects.ts';
 import { TaskStatusRing } from '../tasks/TaskStatusRing.tsx';
 import { useTasks, type IPhaseRow, type TTaskListRow } from '../tasks/useTasks.ts';
 import { buildProjectPhaseColumns, groupTasksByPhase } from './projectsMatrix.ts';
+
+const DATE_FMT = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
+
+/**
+ * Plain-text (screen-reader friendly) start → target-end range for a project
+ * block header. Handles every null combination gracefully. Non-exported to keep
+ * this module's only export the component (react-refresh/only-export-components).
+ */
+function formatProjectDateRange(start: Date | null, end: Date | null): string {
+  if (start && end) {
+    return `${DATE_FMT.format(start)} → ${DATE_FMT.format(end)}`;
+  }
+  if (start) {
+    return `From ${DATE_FMT.format(start)}`;
+  }
+  if (end) {
+    return `Due ${DATE_FMT.format(end)}`;
+  }
+  return 'No dates set';
+}
 
 interface IProjectTableRowProps {
   workspaceId: string;
@@ -88,17 +113,24 @@ export function ProjectTableRow({
   );
 
   const heading = (
-    <span className="flex flex-wrap items-center gap-2">
-      <Link
-        to={`/${workspaceSlug}/projects/${project.id}`}
-        className={cn(
-          'font-semibold text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline',
-          'focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
-        )}
-      >
-        {project.name}
-      </Link>
-      <LifecycleBadge lifecycle={project.lifecycle} />
+    <span className="flex flex-col gap-0.5">
+      <span className="flex flex-wrap items-center gap-2">
+        <Link
+          to={`/${workspaceSlug}/projects/${project.id}`}
+          className={cn(
+            'font-semibold text-foreground underline-offset-2 transition-colors hover:text-primary hover:underline',
+            'focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:outline-none',
+          )}
+        >
+          {project.name}
+        </Link>
+        <LifecycleBadge lifecycle={project.lifecycle} />
+      </span>
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+        <span>{clientSummaryLabel(project.clients) || 'No client'}</span>
+        <span aria-hidden="true">·</span>
+        <span>{formatProjectDateRange(project.startDate, project.targetEndDate)}</span>
+      </span>
     </span>
   );
 

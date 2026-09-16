@@ -333,6 +333,97 @@ describe('ProjectsTableView', () => {
     );
   });
 
+  it('shows the client name and formatted start → target-end range in the header', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([
+      project({
+        id: 'p1',
+        name: 'Lot 12',
+        clients: [{ id: 'c1', name: 'Acme' }],
+        startDate: new Date('2026-07-01T00:00:00Z'),
+        targetEndDate: new Date('2026-09-01T00:00:00Z'),
+      }),
+    ]);
+
+    const region = screen.getByRole('region', { name: 'Lot 12 phases' });
+    expect(within(region).getByText('Acme')).toBeInTheDocument();
+    expect(within(region).getByText(/2026.*→.*2026/)).toBeInTheDocument();
+    expect(within(region).queryByText('No client')).not.toBeInTheDocument();
+  });
+
+  it('summarises multiple clients with a "＋N" overflow marker in the header', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([
+      project({
+        id: 'p1',
+        name: 'Lot 12',
+        clients: [
+          { id: 'c1', name: 'Acme' },
+          { id: 'c2', name: 'Globex' },
+          { id: 'c3', name: 'Initech' },
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText('Acme ＋2')).toBeInTheDocument();
+  });
+
+  it('renders "No client" when the project has no linked clients', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([project({ id: 'p1', name: 'Lot 12', clients: [] })]);
+
+    expect(screen.getByText('No client')).toBeInTheDocument();
+  });
+
+  it('shows a "From …" range when only the start date is set', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([
+      project({ id: 'p1', name: 'Lot 12', startDate: new Date('2026-07-01T00:00:00Z') }),
+    ]);
+
+    expect(screen.getByText(/^From /)).toBeInTheDocument();
+  });
+
+  it('shows a "Due …" range when only the target end date is set', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([
+      project({ id: 'p1', name: 'Lot 12', targetEndDate: new Date('2026-09-01T00:00:00Z') }),
+    ]);
+
+    expect(screen.getByText(/^Due /)).toBeInTheDocument();
+  });
+
+  it('shows "No dates set" when neither start nor target end date is set', () => {
+    tableData.phasesState = {
+      status: 'ready',
+      phasesByProject: new Map([['p1', [phase({ id: 'a', name: 'Earthworks' })]]]),
+    };
+    tableData.tasksByProject = { p1: { status: 'ready', rows: [] } };
+    renderView([project({ id: 'p1', name: 'Lot 12', startDate: null, targetEndDate: null })]);
+
+    expect(screen.getByText('No dates set')).toBeInTheDocument();
+  });
+
   it('has no axe violations in a ready table', async () => {
     tableData.phasesState = {
       status: 'ready',
