@@ -11,7 +11,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectsTimeline, projectsTimelineDates } from './ProjectsTimeline.tsx';
-import type { IProjectRow } from '../projects/useProjects.ts';
+import type { IProjectRow } from '../useProjects.ts';
 
 const NOW = new Date('2026-08-25T00:00:00');
 
@@ -448,6 +448,24 @@ describe('ProjectsTimeline', () => {
     expect(style?.textContent).toContain(
       '#insights-timeline-print, #insights-timeline-print * { visibility: visible',
     );
+  });
+
+  it('suppresses its own Print button and print stylesheet when showInternalPrint is false', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ProjectsTimeline
+          projects={[projectRow()]}
+          workspaceSlug="acme"
+          now={NOW}
+          showInternalPrint={false}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Print' })).not.toBeInTheDocument();
+    expect(container.querySelector('style[media="print"]')).toBeNull();
+    // The rest of the timeline still renders.
+    expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
   });
 
   it('has no axe violations for a populated timeline', async () => {

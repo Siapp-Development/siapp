@@ -1,11 +1,12 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IClientRow } from '../clients/useClients.ts';
 import type { IProjectRow, TProjectsState } from './useProjects.ts';
+import { computeScaleToFit } from './print/printView.ts';
 
 const projectsData = vi.hoisted(() => ({
   state: { status: 'ready', rows: [] } as TProjectsState,
@@ -50,6 +51,15 @@ const tagsData = vi.hoisted(() => ({
 }));
 vi.mock('./tags/useTags.ts', () => ({
   useTags: () => tagsData.state,
+}));
+
+vi.mock('./matrix/ProjectsTableView.tsx', () => ({
+  ProjectsTableView: () => <div data-testid="table-view" data-print-region />,
+}));
+vi.mock('./timeline/ProjectsTimeline.tsx', () => ({
+  ProjectsTimeline: (props: { showInternalPrint?: boolean }) => (
+    <div data-testid="timeline-view" data-internal-print={String(props.showInternalPrint)} />
+  ),
 }));
 
 import { ProjectsListPage } from './ProjectsListPage.tsx';
@@ -97,6 +107,35 @@ function renderPage(role: 'owner' | 'pm' | 'viewer' = 'owner') {
         uid="u1"
         userName="Alice Tan"
       />
+    </MemoryRouter>,
+  );
+}
+
+/** Renders the page with a location readout and optional initial URL. */
+function LocationDisplay() {
+  const location = useLocation();
+  const navType = useNavigationType();
+  return (
+    <>
+      <div data-testid="location">{location.search}</div>
+      <div data-testid="nav-type">{navType}</div>
+    </>
+  );
+}
+
+function renderPageAt(initialUrl: string, role: 'owner' | 'pm' | 'viewer' = 'owner') {
+  return render(
+    <MemoryRouter initialEntries={[initialUrl]}>
+      <ProjectsListPage
+        workspaceId="wksA"
+        workspaceSlug="acme"
+        workspaceName="Acme Builders"
+        role={role}
+        departments={[]}
+        uid="u1"
+        userName="Alice Tan"
+      />
+      <LocationDisplay />
     </MemoryRouter>,
   );
 }
@@ -221,6 +260,23 @@ describe('ProjectsListPage', () => {
       'zzz-no-match',
     );
 
+    expect(screen.getByText('No projects match your filters.')).toBeInTheDocument();
+  });
+
+  it('hides the view switcher and Print toolbar but keeps the filters when filters exclude every project (Finding 1)', async () => {
+    projectsData.state = { status: 'ready', rows: [projectRow({ name: 'Riverside Villa' })] };
+    renderPage();
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /search projects by title/i }),
+      'zzz-no-match',
+    );
+
+    // No visible projects → no print-isolation root, so the toolbar is gone…
+    expect(screen.queryByRole('radiogroup', { name: 'Projects view' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Print' })).not.toBeInTheDocument();
+    // …but the filters stay mounted so the user can clear them.
+    expect(screen.getByRole('searchbox', { name: /search projects by title/i })).toBeInTheDocument();
     expect(screen.getByText('No projects match your filters.')).toBeInTheDocument();
   });
 
@@ -451,5 +507,192 @@ describe('ProjectsListPage', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
+  });
+
+  describe('view switcher + print', () => {
+    it('renders the switcher with List selected by default', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPage();
+
+      const group = screen.getByRole('radiogroup', { name: 'Projects view' });
+      expect(within(group).getByRole('radio', { name: 'List' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      expect(within(group).getByRole('radio', { name: 'Table' })).toBeInTheDocument();
+      expect(within(group).getByRole('radio', { name: 'Timeline' })).toBeInTheDocument();
+      // Default List view keeps the existing list markup.
+      expect(screen.getByRole('link', { name: 'Bungalow build' })).toBeInTheDocument();
+      expect(screen.queryByTestId('table-view')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('timeline-view')).not.toBeInTheDocument();
+    });
+
+    it('swaps to the Table view and writes view=table to the URL', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/');
+
+      await userEvent.click(screen.getByRole('radio', { name: 'Table' }));
+
+      expect(screen.getByTestId('table-view')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Bungalow build' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('view=table');
+    });
+
+    it('pushes a history entry on a view change so Back returns to the previous view (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/');
+
+      // Switching the view must PUSH (not REPLACE) so browser Back works.
+      await userEvent.click(screen.getByRole('radio', { name: 'Table' }));
+      expect(screen.getByTestId('nav-type')).toHaveTextContent('PUSH');
+    });
+
+    it('replaces history on a filter edit (view switch alone pushes) (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow({ name: 'Riverside Villa' })] };
+      renderPageAt('/');
+
+      // Filter edits stay REPLACE so they do not litter the Back stack.
+      await userEvent.type(
+        screen.getByRole('searchbox', { name: /search projects by title/i }),
+        'River',
+      );
+      expect(screen.getByTestId('nav-type')).toHaveTextContent('REPLACE');
+    });
+
+    it('swaps to the Timeline view and suppresses its internal Print', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/');
+
+      await userEvent.click(screen.getByRole('radio', { name: 'Timeline' }));
+
+      const timeline = screen.getByTestId('timeline-view');
+      expect(timeline).toHaveAttribute('data-internal-print', 'false');
+      expect(screen.getByTestId('location')).toHaveTextContent('view=timeline');
+    });
+
+    it('reads the initial view from the URL', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/?view=table');
+
+      expect(screen.getByTestId('table-view')).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Table' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+    });
+
+    it('falls back to the List view for an unknown/garbage view param', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      renderPageAt('/?view=not-a-view');
+
+      // Garbage param renders the List (existing markup), not Table/Timeline.
+      expect(screen.getByRole('link', { name: 'Bungalow build' })).toBeInTheDocument();
+      expect(screen.queryByTestId('table-view')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('timeline-view')).not.toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'List' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+    });
+
+    it('marks the print root portrait for the List view', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const { container } = renderPage();
+
+      const root = container.querySelector(`#projects-print-root`);
+      expect(root).not.toBeNull();
+      expect(root).toHaveAttribute('data-print-orientation', 'portrait');
+    });
+
+    it('marks the print root landscape for the Table and Timeline views', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const { container } = renderPageAt('/?view=table');
+      expect(container.querySelector('#projects-print-root')).toHaveAttribute(
+        'data-print-orientation',
+        'landscape',
+      );
+
+      await userEvent.click(screen.getByRole('radio', { name: 'Timeline' }));
+      expect(container.querySelector('#projects-print-root')).toHaveAttribute(
+        'data-print-orientation',
+        'landscape',
+      );
+    });
+
+    it('sets the scale-to-fit var and still prints in the Table view (jsdom guard)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const { container } = renderPageAt('/?view=table');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      // jsdom reports scrollWidth 0, so the guard clamps the scale to 1 (no NaN/throw).
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe('1');
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      printSpy.mockRestore();
+    });
+
+    it('scales the print root to fit the widest print region in the Table view (Finding 2)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const { container } = renderPageAt('/?view=table');
+
+      // Stub an oversized scrollable print region (jsdom has no layout).
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 2400 });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe(
+        String(computeScaleToFit(2400)),
+      );
+      printSpy.mockRestore();
+    });
+
+    it('clears a stale print scale when the view changes (Finding 3)', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const { container } = renderPageAt('/?view=table');
+
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 2400 });
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).not.toBe('');
+
+      // Switching to List must drop the stale scale so a native print isn't mis-sized.
+      await userEvent.click(screen.getByRole('radio', { name: 'List' }));
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe('');
+      printSpy.mockRestore();
+    });
+
+    it('recomputes the print scale from the current DOM on beforeprint (native print, Finding 2b)', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const { container } = renderPageAt('/?view=table');
+
+      // A live width change the [view, filters, count] deps can't observe.
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 3000 });
+
+      // Native Ctrl/Cmd+P fires beforeprint (no Print-button handler involved).
+      window.dispatchEvent(new Event('beforeprint'));
+
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe(
+        String(computeScaleToFit(3000)),
+      );
+    });
+
+    it('exposes a single Print button that calls window.print', async () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      renderPage();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Print' }));
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      printSpy.mockRestore();
+    });
   });
 });

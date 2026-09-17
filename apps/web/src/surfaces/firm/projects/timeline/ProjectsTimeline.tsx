@@ -28,9 +28,9 @@ import { Printer } from 'lucide-react';
 import { Link } from 'react-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { LifecycleBadge } from '../projects/LifecycleBadge.tsx';
-import { LIFECYCLE_LABELS } from '../projects/projectLabels.ts';
-import type { IProjectRow } from '../projects/useProjects.ts';
+import { LifecycleBadge } from '../LifecycleBadge.tsx';
+import { LIFECYCLE_LABELS } from '../projectLabels.ts';
+import type { IProjectRow } from '../useProjects.ts';
 
 const LABEL_COL_PX = 200;
 const MIN_BAR_PX = 6;
@@ -117,9 +117,21 @@ interface IProjectsTimelineProps {
   workspaceSlug: string;
   /** Injectable "today" for deterministic tests. */
   now?: Date;
+  /**
+   * When `true` (default) the component renders its own Print button and the
+   * `<style media="print">` isolation block targeting `#insights-timeline-print`
+   * — used by the dormant Insights page. When embedded in the Projects page
+   * (which owns a single shared Print control) pass `false` to suppress both.
+   */
+  showInternalPrint?: boolean;
 }
 
-export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: IProjectsTimelineProps) {
+export function ProjectsTimeline({
+  projects,
+  workspaceSlug,
+  now = new Date(),
+  showInternalPrint = true,
+}: IProjectsTimelineProps) {
   const [granularity, setGranularity] = useState<TTimelineGranularity>('month');
   const dayPx = TIMELINE_DAY_PX[granularity];
 
@@ -198,24 +210,26 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
            * timeline horizontally — a tall list may flow onto extra sheets
            * vertically, but the full width is always visible (never cropped).
            */}
-          <style media="print">
-            {
-              '@page { size: landscape; margin: 8mm; }\n' +
-                '@media print {\n' +
-                '  body * { visibility: hidden !important; }\n' +
-                '  #insights-timeline-print, #insights-timeline-print * { visibility: visible !important; }\n' +
-                '  #insights-timeline-print {\n' +
-                '    position: absolute !important; left: 0; top: 0;\n' +
-                '    width: auto !important; max-width: none !important; overflow: visible !important;\n' +
-                '    border: none !important; border-radius: 0 !important;\n' +
-                '    transform: scale(var(--insights-print-scale, 1)); transform-origin: top left;\n' +
-                '  }\n' +
-                '  #insights-timeline-print .timeline-track { min-width: 0 !important; }\n' +
-                '  #insights-timeline-print .timeline-label-col { position: static !important; }\n' +
-                '  #insights-timeline-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }\n' +
-                '}'
-            }
-          </style>
+          {showInternalPrint && (
+            <style media="print">
+              {
+                '@page { size: landscape; margin: 8mm; }\n' +
+                  '@media print {\n' +
+                  '  body * { visibility: hidden !important; }\n' +
+                  '  #insights-timeline-print, #insights-timeline-print * { visibility: visible !important; }\n' +
+                  '  #insights-timeline-print {\n' +
+                  '    position: absolute !important; left: 0; top: 0;\n' +
+                  '    width: auto !important; max-width: none !important; overflow: visible !important;\n' +
+                  '    border: none !important; border-radius: 0 !important;\n' +
+                  '    transform: scale(var(--insights-print-scale, 1)); transform-origin: top left;\n' +
+                  '  }\n' +
+                  '  #insights-timeline-print .timeline-track { min-width: 0 !important; }\n' +
+                  '  #insights-timeline-print .timeline-label-col { position: static !important; }\n' +
+                  '  #insights-timeline-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }\n' +
+                  '}'
+              }
+            </style>
+          )}
           <div className="flex items-center justify-between gap-2 print:hidden">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={scrollToToday}>
@@ -229,10 +243,12 @@ export function ProjectsTimeline({ projects, workspaceSlug, now = new Date() }: 
                 size="sm"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={printTimeline}>
-              <Printer className="h-4 w-4" aria-hidden="true" />
-              Print
-            </Button>
+            {showInternalPrint && (
+              <Button variant="outline" size="sm" onClick={printTimeline}>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Print
+              </Button>
+            )}
           </div>
           <div
             ref={scrollRef}
