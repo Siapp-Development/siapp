@@ -55,11 +55,12 @@ export function ProjectsTableView({
       <div className="flex flex-col gap-4">
         {capped.map((project) => (
           <ProjectTableRow
-            // Key on the permission context too: a role/department change must
-            // remount the row so `useTasks` starts fresh (loading) instead of
-            // reusing the previous role's ready rows for a render — otherwise
-            // restricted task titles could flash across a permission change.
-            key={`${project.id}::${role}::${departments.join(',')}`}
+            // Key on the workspace + permission context: navigating between
+            // workspace slugs reuses ProjectsListPage, and a role/department
+            // change reuses rows, so a same-id project must remount when any of
+            // these change — otherwise `usePhases`/`useTasks` could paint the
+            // previous workspace's (or role's) ready rows for a frame.
+            key={`${workspaceId}::${project.id}::${role}::${departments.join(',')}`}
             workspaceId={workspaceId}
             workspaceSlug={workspaceSlug}
             project={project}

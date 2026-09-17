@@ -149,28 +149,35 @@ export function ProjectsListPage({
   const printRootRef = useRef<HTMLDivElement>(null);
 
   /**
-   * Print the active view. List prints portrait at 1:1. Table/Timeline are wide,
-   * so we measure the widest scrollable region and set `--projects-print-scale`
-   * (scale-to-fit, never upscaling) before `window.print()`. The `scrollWidth`
-   * guard keeps jsdom/tests from computing a degenerate scale.
+   * Measure the active view straight from the DOM and set (or clear) the
+   * scale-to-fit var on `#projects-print-root`. List prints portrait at 1:1;
+   * Table/Timeline are wide, so we scale by the widest scrollable region
+   * (never upscaling). Reading the DOM at call time means live content/width
+   * changes are always reflected. The `scrollWidth` guard keeps jsdom/tests
+   * from computing a degenerate scale.
    */
-  const handlePrint = useCallback(() => {
+  const applyPrintScale = useCallback(() => {
     const el = printRootRef.current;
-    if (el !== null) {
-      if (view === 'list') {
-        el.style.removeProperty(PROJECTS_PRINT_SCALE_VAR);
-      } else {
-        const regions = el.querySelectorAll<HTMLElement>('[data-print-region], .timeline-track');
-        let widest = 0;
-        regions.forEach((region) => {
-          widest = Math.max(widest, region.scrollWidth);
-        });
-        const contentWidth = widest > 0 ? widest : el.scrollWidth;
-        el.style.setProperty(PROJECTS_PRINT_SCALE_VAR, String(computeScaleToFit(contentWidth)));
-      }
+    if (el === null) {
+      return;
     }
-    window.print();
+    if (view === 'list') {
+      el.style.removeProperty(PROJECTS_PRINT_SCALE_VAR);
+      return;
+    }
+    const regions = el.querySelectorAll<HTMLElement>('[data-print-region], .timeline-track');
+    let widest = 0;
+    regions.forEach((region) => {
+      widest = Math.max(widest, region.scrollWidth);
+    });
+    const contentWidth = widest > 0 ? widest : el.scrollWidth;
+    el.style.setProperty(PROJECTS_PRINT_SCALE_VAR, String(computeScaleToFit(contentWidth)));
   }, [view]);
+
+  const handlePrint = useCallback(() => {
+    applyPrintScale();
+    window.print();
+  }, [applyPrintScale]);
 
   const rows = projects.status === 'ready' ? projects.rows : [];
   const clientOptions = clients.status === 'ready' ? clients.rows : [];
@@ -179,12 +186,19 @@ export function ProjectsListPage({
   const source = duplicatable.find((project) => project.id === sourceId);
 
   /**
-   * The scale-to-fit value is written onto the persistent `#projects-print-root`
-   * only inside `handlePrint`, so a native browser print (Ctrl/Cmd+P) after
-   * switching views or filters could otherwise reuse a previous view's scale and
-   * crop/mis-size the output. Clear it whenever the active view or filtered
-   * content changes; `handlePrint` recomputes it right before `window.print()`.
+   * The scale-to-fit value lives on the persistent `#projects-print-root`, so a
+   * native browser print (Ctrl/Cmd+P) must not reuse a stale value:
+   * - Recompute from the current DOM on every `beforeprint` (covers native
+   *   prints and live phase/task/timeline width changes the deps below can't
+   *   see).
+   * - Also clear eagerly when the view or filtered content changes so the var
+   *   never lingers between prints.
    */
+  useEffect(() => {
+    window.addEventListener('beforeprint', applyPrintScale);
+    return () => window.removeEventListener('beforeprint', applyPrintScale);
+  }, [applyPrintScale]);
+
   useEffect(() => {
     printRootRef.current?.style.removeProperty(PROJECTS_PRINT_SCALE_VAR);
   }, [view, listParams, visible.length]);

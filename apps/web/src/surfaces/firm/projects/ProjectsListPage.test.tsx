@@ -668,6 +668,23 @@ describe('ProjectsListPage', () => {
       printSpy.mockRestore();
     });
 
+    it('recomputes the print scale from the current DOM on beforeprint (native print, Finding 2b)', () => {
+      projectsData.state = { status: 'ready', rows: [projectRow()] };
+      const { container } = renderPageAt('/?view=table');
+
+      // A live width change the [view, filters, count] deps can't observe.
+      const region = container.querySelector('[data-print-region]') as HTMLElement;
+      Object.defineProperty(region, 'scrollWidth', { configurable: true, value: 3000 });
+
+      // Native Ctrl/Cmd+P fires beforeprint (no Print-button handler involved).
+      window.dispatchEvent(new Event('beforeprint'));
+
+      const root = container.querySelector('#projects-print-root') as HTMLElement;
+      expect(root.style.getPropertyValue('--projects-print-scale')).toBe(
+        String(computeScaleToFit(3000)),
+      );
+    });
+
     it('exposes a single Print button that calls window.print', async () => {
       projectsData.state = { status: 'ready', rows: [projectRow()] };
       const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
