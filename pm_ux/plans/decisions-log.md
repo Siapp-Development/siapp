@@ -40,6 +40,11 @@ Scoping locked:
 6. **Activity is server-derived.** The `onProjectDocumentWrite` trigger emits `doc_deleted` on the
    null→timestamp transition, so the client/collab hooks issue a single `updateDoc` and **do not**
    append task `updates` (rules also forbid these principals writing updates).
+7. **FILE-only self-delete, enforced in rules (defense in depth).** The portal/collab branches also
+   require `resource.data.get('attachmentType', 'file') == 'file'`, so external Google Drive link
+   rows (`attachmentType == 'link'`, D-043) are **never** client/collab-deletable — only the firm may
+   remove links. The guard is enforced in `firestore.rules` independent of the UI and of who currently
+   creates links; a missing discriminator is treated as a legacy file row (predates the field).
 
 **Why:** Clients/collaborators need to clean up a wrong-file upload without emailing the firm; the
 soft-delete model already retains bytes and derives activity, so this is a scoped rule extension plus

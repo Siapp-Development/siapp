@@ -695,6 +695,9 @@ describe('client and collaborator self-delete (#168)', () => {
   const COLLAB_OWN = `${DOCS}/col-own`; // collaborator col1, on an assigned task
   const COLLAB_OWN_UNASSIGNED = `${DOCS}/col-own-unassigned`; // col1 upload, task not assigned
   const COLLAB_PEER = `${DOCS}/col-peer`; // collaborator col-other
+  const CLIENT_LINK = `${DOCS}/cli-link`; // client-authored EXTERNAL Drive link (not a file)
+  const COLLAB_LINK = `${DOCS}/col-link`; // collaborator-authored EXTERNAL Drive link (not a file)
+  const CLIENT_OWN_FILE = `${DOCS}/cli-own-file`; // client upload with explicit attachmentType 'file'
 
   /** A client-uploaded file doc (soft-deletable by its owning client). */
   function clientFile(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -718,6 +721,32 @@ describe('client and collaborator self-delete (#168)', () => {
       scopeId: TASK_ASSIGNED,
       visibleToCollaboratorIds: [COLID],
       storagePath: `workspaces/${WKS_A}/projects/${PROJ}/collab-uploads/uuid-${id}.png`,
+      ...extra,
+    });
+  }
+
+  /**
+   * A client-authored doc that is an EXTERNAL Drive link (attachmentType 'link'),
+   * carrying the correct client self-delete triple ownership but NOT a file row.
+   */
+  function clientLink(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return clientFile(id, {
+      attachmentType: 'link',
+      url: 'https://drive.google.com/file/d/cli-abc123/view',
+      linkProvider: 'google_drive',
+      ...extra,
+    });
+  }
+
+  /**
+   * A collaborator-authored doc that is an EXTERNAL Drive link (attachmentType
+   * 'link'), on an assigned task and owned by col1, but NOT a file row.
+   */
+  function collabLink(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return collabFile(id, {
+      attachmentType: 'link',
+      url: 'https://drive.google.com/file/d/col-abc123/view',
+      linkProvider: 'google_drive',
       ...extra,
     });
   }
@@ -803,6 +832,12 @@ describe('client and collaborator self-delete (#168)', () => {
       COLLAB_PEER,
       collabFile('col-peer', { uploadedBy: OTHER_COL, visibleToCollaboratorIds: [OTHER_COL] }),
     );
+    // #168 link-hardening fixtures: client- and collaborator-authored EXTERNAL
+    // Drive links (attachmentType 'link') that carry the correct ownership.
+    await seedDoc(testEnv, CLIENT_LINK, clientLink('cli-link'));
+    await seedDoc(testEnv, COLLAB_LINK, collabLink('col-link'));
+    // Client upload with the attachmentType discriminator set explicitly to 'file'.
+    await seedDoc(testEnv, CLIENT_OWN_FILE, clientFile('cli-own-file', { attachmentType: 'file' }));
     // Read-only workspace mirror docs.
     await seedDoc(testEnv, `${RO_DOCS}/cli-own`, clientFile('cli-own'));
     await seedDoc(testEnv, `${RO_DOCS}/col-own`, collabFile('col-own'));
@@ -815,6 +850,23 @@ describe('client and collaborator self-delete (#168)', () => {
 
   it('allows a collaborator to soft-delete their own upload on an assigned task', async () => {
     await assertSucceeds(updateDoc(doc(dbAsCollab(), COLLAB_OWN), collabDelete()));
+  });
+
+  it('allows a portal client to soft-delete an own upload with attachmentType set to file (#168)', async () => {
+    // Guards the explicit-discriminator path: attachmentType == 'file' is deletable.
+    await assertSucceeds(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN_FILE), clientDelete()));
+  });
+
+  it('allows a portal client to soft-delete a legacy own upload with attachmentType absent (#168)', async () => {
+    // CLIENT_OWN is seeded via validDocument, which never writes attachmentType;
+    // the rule falls back to get('attachmentType', 'file') == 'file' for legacy
+    // file rows, so the self-delete must still succeed.
+    await seedDoc(testEnv, CLIENT_OWN, clientFile('cli-own'));
+    await assertSucceeds(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), clientDelete()));
+  });
+
+  it('still allows a firm member to soft-delete an external Drive link (#168, firm branch unaffected)', async () => {
+    await assertSucceeds(updateDoc(doc(dbAs('owner'), FIRM_LINK), firmDelete('user-owner')));
   });
 
   it('still allows firm owner/admin/pm to soft-delete (regression)', async () => {
@@ -842,6 +894,12 @@ describe('client and collaborator self-delete (#168)', () => {
     await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OTHER), clientDelete()));
   });
 
+  it('denies a client soft-deleting their OWN external Drive link (#168 link hardening)', async () => {
+    // Correct client self-delete triple + own upload, but attachmentType 'link'
+    // (an external Drive link) must never be client self-deletable.
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_LINK), clientDelete()));
+  });
+
   // ---- DENY: collaborator deleting non-own / unassigned rows --------------
   it('denies a collaborator deleting a firm, client, or peer-collaborator doc', async () => {
     await assertFails(updateDoc(doc(dbAsCollab(), FIRM_FILE), collabDelete()));
@@ -851,6 +909,12 @@ describe('client and collaborator self-delete (#168)', () => {
 
   it('denies a collaborator deleting their own upload on a task they are NOT assigned to', async () => {
     await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_OWN_UNASSIGNED), collabDelete()));
+  });
+
+  it('denies a collaborator soft-deleting their OWN external Drive link (#168 link hardening)', async () => {
+    // Correct collaborator self-delete triple, own upload, assigned task — but
+    // attachmentType 'link' (external Drive link) must never be self-deletable.
+    await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_LINK), collabDelete()));
   });
 
   // ---- DENY: mismatched deletedByType / spoofed deletedBy -----------------

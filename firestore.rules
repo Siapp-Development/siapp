@@ -1134,6 +1134,10 @@ service cloud.firestore {
                 && portalProjectLive(wid, pid)
                 && workspaceActive(wid)
                 && resource.data.uploaderType == 'client'
+                // Enforce the no-external-link guarantee independent of the UI:
+                // only uploaded FILE rows are self-deletable. Absent field ==
+                // legacy file rows that predate the attachmentType discriminator.
+                && resource.data.get('attachmentType', 'file') == 'file'
                 && resource.data.uploadedBy == request.auth.token.portal.cid
                 && request.resource.data.deletedBy == request.auth.token.portal.cid
                 && request.resource.data.deletedByType == 'client')
@@ -1143,6 +1147,10 @@ service cloud.firestore {
                 && projectLive(wid, pid)
                 && workspaceActive(wid)
                 && resource.data.uploaderType == 'collaborator'
+                // Enforce the no-external-link guarantee independent of the UI:
+                // only uploaded FILE rows are self-deletable. Absent field ==
+                // legacy file rows that predate the attachmentType discriminator.
+                && resource.data.get('attachmentType', 'file') == 'file'
                 && resource.data.uploadedBy == request.auth.token.collab.colid
                 && collabAssignedTaskAt(wid, pid, resource.data.scopeId)
                 && request.resource.data.deletedBy == request.auth.token.collab.colid
