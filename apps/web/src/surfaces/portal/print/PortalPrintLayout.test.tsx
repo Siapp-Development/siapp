@@ -237,6 +237,7 @@ describe('PortalPrintLayout — print-color-adjust scoping (#151)', () => {
       sizeBytes: 2048,
       uploadedAt: new Date('2026-08-01T00:00:00Z'),
       uploaderType: 'firm_member',
+      uploadedBy: '',
       scanStatus: 'infected',
       storagePath: 'workspaces/w1/projects/p1/documents/d1.pdf',
     };
