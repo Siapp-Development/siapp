@@ -16,7 +16,9 @@ import {
   doc,
   onSnapshot,
   query,
+  serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   type DocumentData,
 } from 'firebase/firestore';
@@ -38,6 +40,8 @@ export interface IPortalDocument {
   sizeBytes: number;
   uploadedAt: Date | null;
   uploaderType: string;
+  /** Stable id of the uploader (cid for clients) — used to gate self-delete. */
+  uploadedBy: string;
   scanStatus: string;
   storagePath: string;
 }
@@ -62,6 +66,7 @@ function mapDocument(id: string, data: DocumentData): IPortalDocument {
     sizeBytes: typeof data['sizeBytes'] === 'number' ? data['sizeBytes'] : 0,
     uploadedAt: data['uploadedAt'] instanceof Timestamp ? data['uploadedAt'].toDate() : null,
     uploaderType: String(data['uploaderType'] ?? ''),
+    uploadedBy: String(data['uploadedBy'] ?? ''),
     scanStatus: String(data['scanStatus'] ?? ''),
     storagePath: String(data['storagePath'] ?? ''),
   };
@@ -166,4 +171,26 @@ export async function uploadPortalDocument(options: {
     scanStatus: 'pending',
     deletedAt: null,
   });
+}
+
+/**
+ * #168: client soft-deletes their OWN upload. Single updateDoc (no batch, no
+ * activity append) — the onProjectDocumentWrite trigger derives the
+ * `doc_deleted` activity entry. The live query drops the row on success.
+ */
+export async function softDeletePortalDocument(options: {
+  workspaceId: string;
+  projectId: string;
+  clientId: string;
+  documentId: string;
+}): Promise<void> {
+  const { workspaceId, projectId, clientId, documentId } = options;
+  await updateDoc(
+    doc(db, `workspaces/${workspaceId}/projects/${projectId}/documents/${documentId}`),
+    {
+      deletedAt: serverTimestamp(),
+      deletedBy: clientId,
+      deletedByType: 'client',
+    },
+  );
 }

@@ -6,7 +6,8 @@
 
 import { COLLAB_ALLOWED_DOCUMENT_MIME_TYPES } from '@siapp/shared';
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/firebase.ts', () => ({ db: {}, storage: {} }));
 vi.mock('firebase/firestore', () => ({
@@ -24,6 +25,19 @@ vi.mock('firebase/storage', () => ({
   ref: vi.fn(),
   uploadBytesResumable: vi.fn(),
 }));
+
+// #168: mock the writer so we can assert its call shape and simulate rejection
+// without touching Firestore. Everything else (types, validateCollabFile) is
+// the real module.
+const softDeleteCollabDocumentMock = vi.fn();
+vi.mock('./useCollabTask.ts', async () => {
+  const actual =
+    await vi.importActual<typeof import('./useCollabTask.ts')>('./useCollabTask.ts');
+  return {
+    ...actual,
+    softDeleteCollabDocument: (...args: unknown[]) => softDeleteCollabDocumentMock(...args),
+  };
+});
 
 import { CollabUploader } from './CollabUploader.tsx';
 import {
@@ -55,6 +69,7 @@ function docRow(overrides: Partial<ICollabDocument> = {}): ICollabDocument {
     sizeBytes: 2048,
     uploadedAt: new Date('2026-08-01T00:00:00Z'),
     uploaderType: 'firm_member',
+    uploadedBy: '',
     storagePath: 'workspaces/wksA/projects/p1/tasks/t1/d1.pdf',
     ...overrides,
   };
@@ -134,9 +149,98 @@ describe('CollabUploader rows (D-043)', () => {
     renderUploader({ status: 'ready', rows: [docRow({ name: 'floor-plan.pdf', sizeBytes: 2048 })] });
 
     const item = screen.getByRole('listitem');
-    expect(within(item).getByText('floor-plan.pdf')).toBeInTheDocument();
-    expect(within(item).getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(within(item).getByText('floor-plan.pdf', { selector: 'p' })).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: /open floor-plan\.pdf/i })).toBeInTheDocument();
     expect(within(item).queryByRole('link', { name: /open/i })).not.toBeInTheDocument();
     expect(within(item).queryByText(/Google Drive link/)).not.toBeInTheDocument();
+  });
+});
+
+describe('CollabUploader self-delete (#168)', () => {
+  afterEach(() => {
+    softDeleteCollabDocumentMock.mockReset();
+  });
+
+  const ownFile = () =>
+    docRow({ id: 'own1', name: 'my-shot.jpg', uploaderType: 'collaborator', uploadedBy: 'col1' });
+
+  it('shows a Delete control only on the caller’s own collaborator file rows', () => {
+    renderUploader({ status: 'ready', rows: [ownFile()] });
+    expect(screen.getByRole('button', { name: /delete my-shot\.jpg/i })).toBeInTheDocument();
+  });
+
+  it('hides Delete on firm-uploaded, peer-collaborator, and link rows', () => {
+    renderUploader({
+      status: 'ready',
+      rows: [
+        docRow({ id: 'firm1', name: 'firm.pdf', uploaderType: 'firm_member', uploadedBy: 'user-x' }),
+        docRow({ id: 'peer1', name: 'peer.pdf', uploaderType: 'collaborator', uploadedBy: 'col2' }),
+        docRow({
+          id: 'lnk1',
+          name: 'Drive link',
+          attachmentType: 'link',
+          uploaderType: 'collaborator',
+          uploadedBy: 'col1',
+          url: 'https://drive.google.com/file/d/abc/view',
+          linkProvider: 'google_drive',
+          storagePath: '',
+        }),
+      ],
+    });
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+  });
+
+  it('confirms then calls softDeleteCollabDocument with the correct args', async () => {
+    const user = userEvent.setup();
+    softDeleteCollabDocumentMock.mockResolvedValue(undefined);
+    renderUploader({ status: 'ready', rows: [ownFile()] });
+
+    await user.click(screen.getByRole('button', { name: /delete my-shot\.jpg/i }));
+    // Confirm affordance appears (accessible group), no write yet.
+    expect(screen.getByRole('group', { name: /confirm deleting my-shot\.jpg/i })).toBeInTheDocument();
+    expect(softDeleteCollabDocumentMock).not.toHaveBeenCalled();
+
+    const group = screen.getByRole('group', { name: /confirm deleting my-shot\.jpg/i });
+    await user.click(within(group).getByRole('button', { name: /^delete/i }));
+
+    expect(softDeleteCollabDocumentMock).toHaveBeenCalledTimes(1);
+    expect(softDeleteCollabDocumentMock).toHaveBeenCalledWith({
+      workspaceId: 'wksA',
+      projectId: 'p1',
+      collaboratorId: 'col1',
+      documentId: 'own1',
+    });
+  });
+
+  it('cancels without calling the writer', async () => {
+    const user = userEvent.setup();
+    renderUploader({ status: 'ready', rows: [ownFile()] });
+
+    await user.click(screen.getByRole('button', { name: /delete my-shot\.jpg/i }));
+    const group = screen.getByRole('group', { name: /confirm deleting my-shot\.jpg/i });
+    await user.click(within(group).getByRole('button', { name: /cancel/i }));
+
+    expect(softDeleteCollabDocumentMock).not.toHaveBeenCalled();
+    // Back to the initial single Delete affordance.
+    expect(screen.getByRole('button', { name: /delete my-shot\.jpg/i })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /confirm deleting/i })).not.toBeInTheDocument();
+  });
+
+  it('surfaces an alert when the writer rejects', async () => {
+    const user = userEvent.setup();
+    softDeleteCollabDocumentMock.mockRejectedValue(new Error('permission-denied'));
+    renderUploader({ status: 'ready', rows: [ownFile()] });
+
+    await user.click(screen.getByRole('button', { name: /delete my-shot\.jpg/i }));
+    const group = screen.getByRole('group', { name: /confirm deleting my-shot\.jpg/i });
+    await user.click(within(group).getByRole('button', { name: /^delete/i }));
+
+    const alert = await screen.findByRole('alert');
+    // Text spans multiple nodes (sr-only filename in the middle); assert on the
+    // alert container's concatenated text content, not the sr-only filename mid-string.
+    expect(alert).toHaveTextContent(/couldn.?t delete/i);
+    expect(alert).toHaveTextContent(
+      /this task may be read-only or no longer active — please refresh and try again/i,
+    );
   });
 });

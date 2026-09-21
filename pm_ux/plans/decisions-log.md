@@ -12,6 +12,56 @@ When superseded, do not delete — add a new entry that supersedes the old one (
 
 ---
 
+## 2026-09-21 — Clients and collaborators may soft-delete only their own uploads; blocked during read_only; firm retains full delete (D-044)
+
+**Decision:** Extend the `documents/{did}` soft-delete rule (#168) so portal clients (`/p`) and
+collaborators (`/t`) can soft-delete attachments **they uploaded**, using the existing soft-delete
+triple (`deletedAt` / `deletedBy` / `deletedByType`; Storage bytes retained — no hard delete). Firm
+owner/admin/pm keep their existing full soft-delete of any visible doc (byte-for-byte unchanged).
+
+Scoping locked:
+
+1. **Own uploads only.** A client may delete only a doc with `uploaderType == 'client'` and
+   `uploadedBy == request.auth.token.portal.cid`; a collaborator only a doc with
+   `uploaderType == 'collaborator'`, `uploadedBy == request.auth.token.collab.colid`, **and** while
+   still assigned to the doc's task (`collabAssignedTaskAt`). Never firm-, peer-, or client/collab
+   cross-authored rows, and **never external Google Drive link rows** (D-043 links are firm-created).
+2. **Ownership keys off `uploadedBy` (the cid/colid), not `request.auth.uid`.** The anonymous session
+   uid (`portal_…` / `collab_…`) does not equal `uploadedBy`; the issue's `uploadedBy == auth.uid`
+   suggestion is wrong for this codebase and was corrected.
+3. **`deletedByType` = `'client'` / `'collaborator'`; `deletedBy` = the principal's cid/colid.** These
+   are already valid `TUploaderType` values, so no `packages/shared` change.
+4. **Blocked during billing suspension.** The portal/collab branches include `workspaceActive(wid)`,
+   so self-deletes are denied on a `read_only` workspace, mirroring the upload create gate (D-3). The
+   firm branch keeps its existing `workspaceActive` gate.
+5. **Diff-lock and precondition preserved.** `affectedKeys().hasOnly(['deletedAt','deletedBy',
+   'deletedByType'])`, `deletedAt is timestamp`, `resource.data.deletedAt == null` (no double-delete),
+   and `allow delete: if false` are unchanged. No client/collab write can touch any other field.
+6. **Activity is server-derived.** The `onProjectDocumentWrite` trigger emits `doc_deleted` on the
+   null→timestamp transition, so the client/collab hooks issue a single `updateDoc` and **do not**
+   append task `updates` (rules also forbid these principals writing updates).
+7. **FILE-only self-delete, enforced in rules (defense in depth).** The portal/collab branches also
+   require `resource.data.get('attachmentType', 'file') == 'file'`, so external Google Drive link
+   rows (`attachmentType == 'link'`, D-043) are **never** client/collab-deletable — only the firm may
+   remove links. The guard is enforced in `firestore.rules` independent of the UI and of who currently
+   creates links; a missing discriminator is treated as a legacy file row (predates the field).
+
+**Why:** Clients/collaborators need to clean up a wrong-file upload without emailing the firm; the
+soft-delete model already retains bytes and derives activity, so this is a scoped rule extension plus
+thin UI, with multi-tenant isolation preserved by the existing identity gates.
+
+**Consequences (honest):** A collaborator who uploaded then got unassigned from the task can no longer
+delete their own file (the firm still can). Soft-delete only — bytes remain in Storage (retention GC
+is out of scope). Deletes are blocked while a workspace is `read_only`.
+
+**Reversal cost:** Low. Drop the two new rule branches and the surface delete buttons; existing
+soft-deleted docs remain valid records.
+
+**Revisit when:** product wants self-deletes allowed during suspension, an undo/restore flow, or a
+collaborator to retain delete rights after unassignment.
+
+---
+
 ## 2026-09-10 — Task attachments may be external Google Drive links stored as link-type document records (D-043)
 
 **Decision:** Extend the #14 Documents model so a task attachment can be an **external link** (a Google Drive share URL) in addition to an uploaded file. Link attachments are stored as ordinary `documents/{did}` records under `workspaces/{wid}/projects/{pid}/documents`, discriminated by a new **`attachmentType: 'file' | 'link'`** field, with `url` + `linkProvider: 'google_drive'` and **no** `storagePath`/`sizeBytes`/`mimeType` (no Storage bytes, nothing to scan → `scanStatus: 'clean'`). Firm members (owner/admin/pm with `canEdit`) create them from a redesigned two-button Attachments block in the task detail panel (**Upload File** + **Google Drive**).

@@ -665,3 +665,344 @@ describe('document list queries (need-to-know)', () => {
     await assertSucceeds(getDocs(collection(dbAs('owner'), DOCS_PATH)));
   });
 });
+
+/**
+ * #168 — clients and collaborators may soft-delete ONLY their own uploads
+ * (never firm-, peer-, or link-authored docs), diff-locked to the soft-delete
+ * triple, blocked on read_only billing, and never a hard delete. The firm
+ * branch remains byte-for-byte the prior behaviour (regressed here).
+ *
+ * These cases live on a dedicated live project (proj168) with its own tasks so
+ * they never disturb the firm create/delete fixtures that key off proj1/task1.
+ */
+describe('client and collaborator self-delete (#168)', () => {
+  const CID = 'client1'; // matches dbAsPortal() default cid
+  const OTHER_CID = 'client-other';
+  const COLID = 'col1'; // matches dbAsCollab() default colid
+  const OTHER_COL = 'col-other';
+  const PROJ = 'proj168';
+  const RO_WKS = 'wksRO'; // billing read_only workspace mirror
+  const TASK_ASSIGNED = 'task168-assigned'; // col1 is an assignee
+  const TASK_UNASSIGNED = 'task168-unassigned'; // col1 is NOT an assignee
+
+  const DOCS = `workspaces/${WKS_A}/projects/${PROJ}/documents`;
+  const RO_DOCS = `workspaces/${RO_WKS}/projects/${PROJ}/documents`;
+
+  const CLIENT_OWN = `${DOCS}/cli-own`; // uploaderType client, uploadedBy client1
+  const CLIENT_OTHER = `${DOCS}/cli-other`; // uploaderType client, uploadedBy client-other
+  const FIRM_FILE = `${DOCS}/firm-file`; // uploaderType firm_member (file)
+  const FIRM_LINK = `${DOCS}/firm-link`; // uploaderType firm_member (Drive link)
+  const COLLAB_OWN = `${DOCS}/col-own`; // collaborator col1, on an assigned task
+  const COLLAB_OWN_UNASSIGNED = `${DOCS}/col-own-unassigned`; // col1 upload, task not assigned
+  const COLLAB_PEER = `${DOCS}/col-peer`; // collaborator col-other
+  const CLIENT_LINK = `${DOCS}/cli-link`; // client-authored EXTERNAL Drive link (not a file)
+  const COLLAB_LINK = `${DOCS}/col-link`; // collaborator-authored EXTERNAL Drive link (not a file)
+  const CLIENT_OWN_FILE = `${DOCS}/cli-own-file`; // client upload with explicit attachmentType 'file'
+
+  /** A client-uploaded file doc (soft-deletable by its owning client). */
+  function clientFile(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return validDocument(id, {
+      uploaderType: 'client',
+      uploadedBy: CID,
+      scope: 'project',
+      scopeId: PROJ,
+      visibleToClient: true,
+      storagePath: `workspaces/${WKS_A}/projects/${PROJ}/client-uploads/uuid-${id}.png`,
+      ...extra,
+    });
+  }
+
+  /** A collaborator-uploaded file doc scoped to the assigned task. */
+  function collabFile(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return validDocument(id, {
+      uploaderType: 'collaborator',
+      uploadedBy: COLID,
+      scope: 'task',
+      scopeId: TASK_ASSIGNED,
+      visibleToCollaboratorIds: [COLID],
+      storagePath: `workspaces/${WKS_A}/projects/${PROJ}/collab-uploads/uuid-${id}.png`,
+      ...extra,
+    });
+  }
+
+  /**
+   * A client-authored doc that is an EXTERNAL Drive link (attachmentType 'link'),
+   * carrying the correct client self-delete triple ownership but NOT a file row.
+   */
+  function clientLink(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return clientFile(id, {
+      attachmentType: 'link',
+      url: 'https://drive.google.com/file/d/cli-abc123/view',
+      linkProvider: 'google_drive',
+      ...extra,
+    });
+  }
+
+  /**
+   * A collaborator-authored doc that is an EXTERNAL Drive link (attachmentType
+   * 'link'), on an assigned task and owned by col1, but NOT a file row.
+   */
+  function collabLink(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return collabFile(id, {
+      attachmentType: 'link',
+      url: 'https://drive.google.com/file/d/col-abc123/view',
+      linkProvider: 'google_drive',
+      ...extra,
+    });
+  }
+
+  /** Task doc shaped so `collabAssignedTaskAt` resolves col1 as an assignee. */
+  function collabTask(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id,
+      title: 'Install rebar',
+      visibleToClient: false,
+      visibleToCollaboratorIds: [],
+      restrictedToDepartments: [],
+      assigneeCollaboratorIds: [COLID],
+      ...extra,
+    };
+  }
+
+  const clientDelete = () => ({
+    deletedAt: Timestamp.now(),
+    deletedBy: CID,
+    deletedByType: 'client',
+  });
+  const collabDelete = (colid: string = COLID) => ({
+    deletedAt: Timestamp.now(),
+    deletedBy: colid,
+    deletedByType: 'collaborator',
+  });
+  const firmDelete = (uid: string) => ({
+    deletedAt: Timestamp.now(),
+    deletedBy: uid,
+    deletedByType: 'firm_member',
+  });
+
+  beforeAll(async () => {
+    // Live project in the active workspace, with its own tasks.
+    await seedDoc(testEnv, `workspaces/${WKS_A}/projects/${PROJ}`, {
+      lifecycle: 'published',
+      clientId: CID,
+      clientIds: [CID],
+    });
+    await seedDoc(
+      testEnv,
+      `workspaces/${WKS_A}/projects/${PROJ}/tasks/${TASK_ASSIGNED}`,
+      collabTask(TASK_ASSIGNED),
+    );
+    await seedDoc(
+      testEnv,
+      `workspaces/${WKS_A}/projects/${PROJ}/tasks/${TASK_UNASSIGNED}`,
+      collabTask(TASK_UNASSIGNED, { assigneeCollaboratorIds: [OTHER_COL] }),
+    );
+
+    // Read-only (billing) workspace mirror: same live project + assigned task.
+    await seedDoc(testEnv, `workspaces/${RO_WKS}`, { billingStatus: 'read_only' });
+    await seedDoc(testEnv, `workspaces/${RO_WKS}/projects/${PROJ}`, {
+      lifecycle: 'published',
+      clientId: CID,
+      clientIds: [CID],
+    });
+    await seedDoc(
+      testEnv,
+      `workspaces/${RO_WKS}/projects/${PROJ}/tasks/${TASK_ASSIGNED}`,
+      collabTask(TASK_ASSIGNED),
+    );
+  });
+
+  beforeEach(async () => {
+    await seedDoc(testEnv, CLIENT_OWN, clientFile('cli-own'));
+    await seedDoc(testEnv, CLIENT_OTHER, clientFile('cli-other', { uploadedBy: OTHER_CID }));
+    await seedDoc(
+      testEnv,
+      FIRM_FILE,
+      validDocument('firm-file', { scope: 'task', scopeId: TASK_ASSIGNED, visibleToClient: true }),
+    );
+    await seedDoc(testEnv, FIRM_LINK, validLinkDocument('firm-link', { scopeId: TASK_ASSIGNED }));
+    await seedDoc(testEnv, COLLAB_OWN, collabFile('col-own'));
+    await seedDoc(
+      testEnv,
+      COLLAB_OWN_UNASSIGNED,
+      collabFile('col-own-unassigned', { scopeId: TASK_UNASSIGNED }),
+    );
+    await seedDoc(
+      testEnv,
+      COLLAB_PEER,
+      collabFile('col-peer', { uploadedBy: OTHER_COL, visibleToCollaboratorIds: [OTHER_COL] }),
+    );
+    // #168 link-hardening fixtures: client- and collaborator-authored EXTERNAL
+    // Drive links (attachmentType 'link') that carry the correct ownership.
+    await seedDoc(testEnv, CLIENT_LINK, clientLink('cli-link'));
+    await seedDoc(testEnv, COLLAB_LINK, collabLink('col-link'));
+    // Client upload with the attachmentType discriminator set explicitly to 'file'.
+    await seedDoc(testEnv, CLIENT_OWN_FILE, clientFile('cli-own-file', { attachmentType: 'file' }));
+    // Read-only workspace mirror docs.
+    await seedDoc(testEnv, `${RO_DOCS}/cli-own`, clientFile('cli-own'));
+    await seedDoc(testEnv, `${RO_DOCS}/col-own`, collabFile('col-own'));
+  });
+
+  // ---- ALLOW -------------------------------------------------------------
+  it('allows a portal client to soft-delete their own upload', async () => {
+    await assertSucceeds(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), clientDelete()));
+  });
+
+  it('allows a collaborator to soft-delete their own upload on an assigned task', async () => {
+    await assertSucceeds(updateDoc(doc(dbAsCollab(), COLLAB_OWN), collabDelete()));
+  });
+
+  it('allows a portal client to soft-delete an own upload with attachmentType set to file (#168)', async () => {
+    // Guards the explicit-discriminator path: attachmentType == 'file' is deletable.
+    await assertSucceeds(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN_FILE), clientDelete()));
+  });
+
+  it('allows a portal client to soft-delete a legacy own upload with attachmentType absent (#168)', async () => {
+    // CLIENT_OWN is seeded via validDocument, which never writes attachmentType;
+    // the rule falls back to get('attachmentType', 'file') == 'file' for legacy
+    // file rows, so the self-delete must still succeed.
+    await seedDoc(testEnv, CLIENT_OWN, clientFile('cli-own'));
+    await assertSucceeds(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), clientDelete()));
+  });
+
+  it('still allows a firm member to soft-delete an external Drive link (#168, firm branch unaffected)', async () => {
+    await assertSucceeds(updateDoc(doc(dbAs('owner'), FIRM_LINK), firmDelete('user-owner')));
+  });
+
+  it('still allows firm owner/admin/pm to soft-delete (regression)', async () => {
+    for (const role of ['owner', 'admin', 'pm'] as const) {
+      await seedDoc(
+        testEnv,
+        FIRM_FILE,
+        validDocument('firm-file', {
+          scope: 'task',
+          scopeId: TASK_ASSIGNED,
+          visibleToClient: true,
+        }),
+      );
+      await assertSucceeds(updateDoc(doc(dbAs(role), FIRM_FILE), firmDelete(`user-${role}`)));
+    }
+  });
+
+  // ---- DENY: client deleting non-own rows ---------------------------------
+  it('denies a client deleting a firm-uploaded file or a Drive link', async () => {
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), FIRM_FILE), clientDelete()));
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), FIRM_LINK), clientDelete()));
+  });
+
+  it("denies a client deleting another client's upload", async () => {
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OTHER), clientDelete()));
+  });
+
+  it('denies a client soft-deleting their OWN external Drive link (#168 link hardening)', async () => {
+    // Correct client self-delete triple + own upload, but attachmentType 'link'
+    // (an external Drive link) must never be client self-deletable.
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_LINK), clientDelete()));
+  });
+
+  // ---- DENY: collaborator deleting non-own / unassigned rows --------------
+  it('denies a collaborator deleting a firm, client, or peer-collaborator doc', async () => {
+    await assertFails(updateDoc(doc(dbAsCollab(), FIRM_FILE), collabDelete()));
+    await assertFails(updateDoc(doc(dbAsCollab(), CLIENT_OWN), collabDelete()));
+    await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_PEER), collabDelete()));
+  });
+
+  it('denies a collaborator deleting their own upload on a task they are NOT assigned to', async () => {
+    await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_OWN_UNASSIGNED), collabDelete()));
+  });
+
+  it('denies a collaborator soft-deleting their OWN external Drive link (#168 link hardening)', async () => {
+    // Correct collaborator self-delete triple, own upload, assigned task — but
+    // attachmentType 'link' (external Drive link) must never be self-deletable.
+    await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_LINK), collabDelete()));
+  });
+
+  // ---- DENY: mismatched deletedByType / spoofed deletedBy -----------------
+  it('denies a client writing deletedByType firm_member', async () => {
+    await assertFails(
+      updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), {
+        deletedAt: Timestamp.now(),
+        deletedBy: CID,
+        deletedByType: 'firm_member',
+      }),
+    );
+  });
+
+  it('denies a collaborator writing deletedByType client', async () => {
+    await assertFails(
+      updateDoc(doc(dbAsCollab(), COLLAB_OWN), {
+        deletedAt: Timestamp.now(),
+        deletedBy: COLID,
+        deletedByType: 'client',
+      }),
+    );
+  });
+
+  it('denies a client spoofing deletedBy to a different id', async () => {
+    await assertFails(
+      updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), {
+        deletedAt: Timestamp.now(),
+        deletedBy: 'someone-else',
+        deletedByType: 'client',
+      }),
+    );
+  });
+
+  it('denies a collaborator spoofing deletedBy to a different id', async () => {
+    await assertFails(
+      updateDoc(doc(dbAsCollab(), COLLAB_OWN), {
+        deletedAt: Timestamp.now(),
+        deletedBy: OTHER_COL,
+        deletedByType: 'collaborator',
+      }),
+    );
+  });
+
+  // ---- DENY: diff outside the triple --------------------------------------
+  it('denies a self-delete that also touches a key outside the triple', async () => {
+    await assertFails(
+      updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), { ...clientDelete(), name: 'renamed.png' }),
+    );
+    await assertFails(
+      updateDoc(doc(dbAsCollab(), COLLAB_OWN), { ...collabDelete(), name: 'renamed.png' }),
+    );
+  });
+
+  it('denies a client flipping visibleToClient (no soft-delete keys)', async () => {
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), { visibleToClient: false }));
+  });
+
+  // ---- DENY: double soft-delete -------------------------------------------
+  it('denies a double soft-delete (deletedAt already set) for client and collaborator', async () => {
+    await seedDoc(
+      testEnv,
+      CLIENT_OWN,
+      clientFile('cli-own', { deletedAt: Timestamp.now(), deletedBy: CID, deletedByType: 'client' }),
+    );
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ), CLIENT_OWN), clientDelete()));
+
+    await seedDoc(
+      testEnv,
+      COLLAB_OWN,
+      collabFile('col-own', {
+        deletedAt: Timestamp.now(),
+        deletedBy: COLID,
+        deletedByType: 'collaborator',
+      }),
+    );
+    await assertFails(updateDoc(doc(dbAsCollab(), COLLAB_OWN), collabDelete()));
+  });
+
+  // ---- DENY: read_only billing gate ---------------------------------------
+  it('denies self-delete on a read_only workspace for client and collaborator', async () => {
+    await assertFails(updateDoc(doc(dbAsPortal(PROJ, RO_WKS, CID), `${RO_DOCS}/cli-own`), clientDelete()));
+    await assertFails(updateDoc(doc(dbAsCollab(RO_WKS), `${RO_DOCS}/col-own`), collabDelete()));
+  });
+
+  // ---- DENY: hard delete for every principal ------------------------------
+  it('denies a hard delete for client, collaborator, and firm principals', async () => {
+    await assertFails(deleteDoc(doc(dbAsPortal(PROJ), CLIENT_OWN)));
+    await assertFails(deleteDoc(doc(dbAsCollab(), COLLAB_OWN)));
+    await assertFails(deleteDoc(doc(dbAs('owner'), FIRM_FILE)));
+  });
+});

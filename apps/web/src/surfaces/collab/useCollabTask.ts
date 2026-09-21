@@ -18,7 +18,9 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   type DocumentData,
 } from 'firebase/firestore';
@@ -163,6 +165,8 @@ export interface ICollabDocument {
   sizeBytes: number;
   uploadedAt: Date | null;
   uploaderType: string;
+  /** Stable id of the uploader (colid for collaborators) — gates self-delete. */
+  uploadedBy: string;
   storagePath: string;
 }
 
@@ -184,6 +188,7 @@ function mapDocument(id: string, data: DocumentData): ICollabDocument {
     sizeBytes: typeof data['sizeBytes'] === 'number' ? data['sizeBytes'] : 0,
     uploadedAt: data['uploadedAt'] instanceof Timestamp ? data['uploadedAt'].toDate() : null,
     uploaderType: String(data['uploaderType'] ?? ''),
+    uploadedBy: String(data['uploadedBy'] ?? ''),
     storagePath: String(data['storagePath'] ?? ''),
   };
 }
@@ -308,4 +313,26 @@ export async function uploadCollabDocument(options: {
     scanStatus: 'pending',
     deletedAt: null,
   });
+}
+
+/**
+ * #168: collaborator soft-deletes their OWN upload. Single updateDoc (no batch,
+ * no activity append) — the onProjectDocumentWrite trigger derives the
+ * `doc_deleted` activity entry. The live query drops the row on success.
+ */
+export async function softDeleteCollabDocument(options: {
+  workspaceId: string;
+  projectId: string;
+  collaboratorId: string;
+  documentId: string;
+}): Promise<void> {
+  const { workspaceId, projectId, collaboratorId, documentId } = options;
+  await updateDoc(
+    doc(db, `workspaces/${workspaceId}/projects/${projectId}/documents/${documentId}`),
+    {
+      deletedAt: serverTimestamp(),
+      deletedBy: collaboratorId,
+      deletedByType: 'collaborator',
+    },
+  );
 }

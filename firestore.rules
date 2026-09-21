@@ -1114,15 +1114,48 @@ service cloud.firestore {
             || (isCollabWorkspace(wid)
               && projectLive(wid, pid)
               && validCollabDocumentCreate(wid, pid, did)));
-          allow update: if hasRole(wid, ['owner', 'admin', 'pm'])
-            && workspaceActive(wid)
-            && canSeeRestricted(wid, restrictionsOf(resource.data))
-            && resource.data.deletedAt == null
+          // #168: soft-delete (deletedAt/deletedBy/deletedByType only). Shared
+          // diff-lock + precondition guards, then a disjunction of self-delete
+          // branches. Clients/collaborators may only soft-delete their OWN
+          // uploads; the firm branch is byte-for-byte the prior behaviour.
+          allow update: if resource.data.deletedAt == null
             && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['deletedAt', 'deletedBy', 'deletedByType'])
             && request.resource.data.deletedAt is timestamp
-            && request.resource.data.deletedBy == request.auth.uid
-            && request.resource.data.deletedByType == 'firm_member';
+            && (
+              // Firm owner/admin/pm — any visible doc (need-to-know respected).
+              (hasRole(wid, ['owner', 'admin', 'pm'])
+                && workspaceActive(wid)
+                && canSeeRestricted(wid, restrictionsOf(resource.data))
+                && request.resource.data.deletedBy == request.auth.uid
+                && request.resource.data.deletedByType == 'firm_member')
+              // Portal client — own uploads only; blocked on read_only billing.
+              || (isPortalClient(wid, pid)
+                && portalProjectLive(wid, pid)
+                && workspaceActive(wid)
+                && resource.data.uploaderType == 'client'
+                // Enforce the no-external-link guarantee independent of the UI:
+                // only uploaded FILE rows are self-deletable. Absent field ==
+                // legacy file rows that predate the attachmentType discriminator.
+                && resource.data.get('attachmentType', 'file') == 'file'
+                && resource.data.uploadedBy == request.auth.token.portal.cid
+                && request.resource.data.deletedBy == request.auth.token.portal.cid
+                && request.resource.data.deletedByType == 'client')
+              // Collaborator — own uploads only, still assigned to the task;
+              // blocked on read_only billing.
+              || (isCollabWorkspace(wid)
+                && projectLive(wid, pid)
+                && workspaceActive(wid)
+                && resource.data.uploaderType == 'collaborator'
+                // Enforce the no-external-link guarantee independent of the UI:
+                // only uploaded FILE rows are self-deletable. Absent field ==
+                // legacy file rows that predate the attachmentType discriminator.
+                && resource.data.get('attachmentType', 'file') == 'file'
+                && resource.data.uploadedBy == request.auth.token.collab.colid
+                && collabAssignedTaskAt(wid, pid, resource.data.scopeId)
+                && request.resource.data.deletedBy == request.auth.token.collab.colid
+                && request.resource.data.deletedByType == 'collaborator')
+            );
           allow delete: if false;
         }
 
