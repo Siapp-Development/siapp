@@ -4,13 +4,14 @@
  * list of the task-scoped documents shared with this collaborator.
  */
 
-import { ExternalLink, FileText, Upload } from 'lucide-react';
+import { ExternalLink, FileText, Trash2, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { COLLAB_ALLOWED_DOCUMENT_MIME_TYPES } from '@siapp/shared';
 
 import {
   collabDownloadUrl,
+  softDeleteCollabDocument,
   uploadCollabDocument,
   validateCollabFile,
   type ICollabTask,
@@ -51,6 +52,36 @@ export function CollabUploader({
 }) {
   const [upload, setUpload] = useState<TUploadState>({ phase: 'idle' });
   const inputRef = useRef<HTMLInputElement>(null);
+  // Per-row soft-delete phase, keyed by document id (only own uploads).
+  const [deletePhase, setDeletePhase] = useState<
+    Record<string, 'confirm' | 'deleting' | 'error'>
+  >({});
+
+  function setRowPhase(
+    documentId: string,
+    phase: 'confirm' | 'deleting' | 'error' | null,
+  ): void {
+    setDeletePhase((prev) => {
+      const next = { ...prev };
+      if (phase === null) {
+        delete next[documentId];
+      } else {
+        next[documentId] = phase;
+      }
+      return next;
+    });
+  }
+
+  async function handleDelete(documentId: string): Promise<void> {
+    setRowPhase(documentId, 'deleting');
+    try {
+      await softDeleteCollabDocument({ workspaceId, projectId, collaboratorId, documentId });
+      // Row disappears via the live snapshot; clear any lingering state.
+      setRowPhase(documentId, null);
+    } catch {
+      setRowPhase(documentId, 'error');
+    }
+  }
 
   async function handleFile(file: File): Promise<void> {
     const invalid = validateCollabFile({ name: file.name, size: file.size, type: file.type });
@@ -155,10 +186,17 @@ export function CollabUploader({
         <ul className="space-y-2">
           {documents.rows.map((row) => {
             const isLink = row.attachmentType === 'link';
+            // #168: only the caller's OWN uploaded files are deletable
+            // (never firm/client/peer rows, never link rows).
+            const isDeletable =
+              !isLink &&
+              row.uploaderType === 'collaborator' &&
+              row.uploadedBy === collaboratorId;
+            const rowPhase = deletePhase[row.id];
             return (
               <li
                 key={row.id}
-                className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-card"
               >
                 <span
                   aria-hidden="true"
@@ -190,7 +228,76 @@ export function CollabUploader({
                     className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                   >
                     Open
+                    <span className="sr-only"> {row.name}</span>
                   </button>
+                )}
+                {isDeletable && rowPhase === undefined && (
+                  <button
+                    type="button"
+                    onClick={() => setRowPhase(row.id, 'confirm')}
+                    className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-danger hover:bg-danger-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    <Trash2 aria-hidden="true" className="size-4" />
+                    Delete
+                    <span className="sr-only"> {row.name}</span>
+                  </button>
+                )}
+                {isDeletable && rowPhase === 'deleting' && (
+                  <span role="status" className="min-h-11 shrink-0 self-center text-sm text-muted-foreground">
+                    Deleting {row.name}…
+                  </span>
+                )}
+                {isDeletable && rowPhase === 'confirm' && (
+                  <span
+                    role="group"
+                    aria-label={`Confirm deleting ${row.name}`}
+                    className="flex shrink-0 flex-wrap items-center gap-2"
+                  >
+                    <span className="text-sm text-muted-foreground">Delete this file?</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(row.id)}
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
+                      Delete
+                      <span className="sr-only"> {row.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRowPhase(row.id, null)}
+                      className="min-h-11 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      Cancel
+                      <span className="sr-only"> deleting {row.name}</span>
+                    </button>
+                  </span>
+                )}
+                {isDeletable && rowPhase === 'error' && (
+                  <div role="alert" className="basis-full text-sm text-destructive">
+                    <p>
+                      We couldn&rsquo;t delete
+                      <span className="sr-only"> {row.name}</span> that file. Please try again.
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(row.id)}
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        <Trash2 aria-hidden="true" className="size-4" />
+                        Try again
+                        <span className="sr-only"> deleting {row.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRowPhase(row.id, null)}
+                        className="min-h-11 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </li>
             );

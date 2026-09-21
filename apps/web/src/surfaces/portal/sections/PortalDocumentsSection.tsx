@@ -7,11 +7,12 @@
  * a static list with no uploader or download buttons.
  */
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 
 import { usePortalDocumentUpload } from '../documents/usePortalDocumentUpload.ts';
 import {
   portalDownloadUrl,
+  softDeletePortalDocument,
   usePortalDocuments,
   type TClientFileError,
 } from '../documents/usePortalDocuments.ts';
@@ -52,6 +53,12 @@ export function PortalDocumentsSection({
   const upload = usePortalDocumentUpload({ workspaceId, projectId, clientId });
   const headingId = useId();
   const uploadId = useId();
+  // Per-row soft-delete UX state (only one row is ever mid-flow). Mirrors the
+  // firm inline-confirm pattern — no shared confirm dialog / window.confirm.
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    phase: 'confirm' | 'deleting' | 'error';
+  } | null>(null);
 
   async function handleDownload(storagePath: string): Promise<void> {
     try {
@@ -59,6 +66,17 @@ export function PortalDocumentsSection({
       window.open(url, '_blank', 'noopener');
     } catch {
       // Transient — the button stays available to retry.
+    }
+  }
+
+  async function handleDelete(documentId: string): Promise<void> {
+    setPendingDelete({ id: documentId, phase: 'deleting' });
+    try {
+      await softDeletePortalDocument({ workspaceId, projectId, clientId, documentId });
+      // Row disappears via the live snapshot; clear any lingering state.
+      setPendingDelete(null);
+    } catch {
+      setPendingDelete({ id: documentId, phase: 'error' });
     }
   }
 
@@ -137,10 +155,18 @@ export function PortalDocumentsSection({
           <ul aria-label="Shared documents" className="mt-3 space-y-2">
             {state.rows.map((row) => {
               const isLink = row.attachmentType === 'link';
+              // #168: only the caller's OWN uploaded files are deletable
+              // (never firm rows, never link rows). Hidden in print.
+              const isDeletable =
+                interactive &&
+                !isLink &&
+                row.uploaderType === 'client' &&
+                row.uploadedBy === clientId;
+              const rowDelete = pendingDelete?.id === row.id ? pendingDelete : null;
               return (
                 <li
                   key={row.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{row.name}</p>
@@ -150,33 +176,106 @@ export function PortalDocumentsSection({
                       {row.uploaderType === 'client' && ' · shared by you'}
                     </p>
                   </div>
-                  {isLink ? (
-                    interactive && (
-                      <a
-                        href={row.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isLink ? (
+                      interactive && (
+                        <a
+                          href={row.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                        >
+                          Open
+                          <span className="sr-only"> {row.name} (opens in a new tab)</span>
+                        </a>
+                      )
+                    ) : row.scanStatus === 'infected' ? (
+                      <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                        Blocked by virus scan
+                      </span>
+                    ) : (
+                      interactive && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDownload(row.storagePath)}
+                          className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                        >
+                          Download
+                          <span className="sr-only"> {row.name}</span>
+                        </button>
+                      )
+                    )}
+                    {isDeletable && rowDelete?.phase === 'confirm' && (
+                      <span
+                        role="group"
+                        aria-label={`Confirm deleting ${row.name}`}
+                        className="flex shrink-0 items-center gap-2 print:hidden"
                       >
-                        Open
-                        <span className="sr-only"> {row.name} (opens in a new tab)</span>
-                      </a>
-                    )
-                  ) : row.scanStatus === 'infected' ? (
-                    <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                      Blocked by virus scan
-                    </span>
-                  ) : (
-                    interactive && (
+                        <span className="text-xs text-muted-foreground">Delete this file?</span>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row.id)}
+                          className="shrink-0 rounded-md border border-destructive px-3 py-1 text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                          Delete
+                          <span className="sr-only"> {row.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(null)}
+                          className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                          Cancel
+                          <span className="sr-only"> deleting {row.name}</span>
+                        </button>
+                      </span>
+                    )}
+                    {isDeletable && rowDelete?.phase === 'deleting' && (
+                      <span
+                        role="status"
+                        className="shrink-0 text-xs text-muted-foreground print:hidden"
+                      >
+                        Deleting {row.name}…
+                      </span>
+                    )}
+                    {isDeletable && rowDelete === null && (
                       <button
                         type="button"
-                        onClick={() => void handleDownload(row.storagePath)}
-                        className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
+                        onClick={() => setPendingDelete({ id: row.id, phase: 'confirm' })}
+                        className="shrink-0 rounded-md border border-border px-3 py-1 text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
                       >
-                        Download
+                        Delete
                         <span className="sr-only"> {row.name}</span>
                       </button>
-                    )
+                    )}
+                  </div>
+                  {isDeletable && rowDelete?.phase === 'error' && (
+                    <div
+                      role="alert"
+                      className="basis-full text-sm text-destructive print:hidden"
+                    >
+                      <p>
+                        We couldn&rsquo;t delete
+                        <span className="sr-only"> {row.name}</span> that file. Please try again.
+                      </p>
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(row.id)}
+                          className="rounded-md border border-destructive px-3 py-1 text-sm font-medium text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                          Try again
+                          <span className="sr-only"> deleting {row.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(null)}
+                          className="rounded-md border border-border px-3 py-1 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </li>
               );
