@@ -256,7 +256,8 @@ export function PortalDocumentsSection({
                     >
                       <p>
                         We couldn&rsquo;t delete
-                        <span className="sr-only"> {row.name}</span> that file. Please try again.
+                        <span className="sr-only"> {row.name}</span> that file. Your project may be
+                        read-only or no longer active &mdash; please refresh and try again.
                       </p>
                       <div className="mt-1 flex gap-2">
                         <button

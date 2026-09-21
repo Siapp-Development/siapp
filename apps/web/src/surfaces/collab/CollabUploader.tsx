@@ -277,7 +277,8 @@ export function CollabUploader({
                   <div role="alert" className="basis-full text-sm text-destructive">
                     <p>
                       We couldn&rsquo;t delete
-                      <span className="sr-only"> {row.name}</span> that file. Please try again.
+                      <span className="sr-only"> {row.name}</span> that file. This task may be
+                      read-only or no longer active &mdash; please refresh and try again.
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2">
                       <button

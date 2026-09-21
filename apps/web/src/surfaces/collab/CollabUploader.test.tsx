@@ -235,6 +235,12 @@ describe('CollabUploader self-delete (#168)', () => {
     const group = screen.getByRole('group', { name: /confirm deleting my-shot\.jpg/i });
     await user.click(within(group).getByRole('button', { name: /^delete/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn.?t delete/i);
+    const alert = await screen.findByRole('alert');
+    // Text spans multiple nodes (sr-only filename in the middle); assert on the
+    // alert container's concatenated text content, not the sr-only filename mid-string.
+    expect(alert).toHaveTextContent(/couldn.?t delete/i);
+    expect(alert).toHaveTextContent(
+      /this task may be read-only or no longer active — please refresh and try again/i,
+    );
   });
 });
