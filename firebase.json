@@ -10,6 +10,13 @@
       ],
       "rewrites": [
         {
+          "source": "/webhooks/twilio/status",
+          "function": {
+            "functionId": "twilioStatusCallback",
+            "region": "asia-southeast1"
+          }
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }

@@ -12,6 +12,8 @@ import type { TNotificationTrigger } from './contentSids.js';
 /** Queue record fields a provider needs to perform one send. */
 export interface IQueuedMessage {
   id: string;
+  /** Workspace path segment used to build a tenant-scoped status callback. */
+  workspaceId: string;
   channel: 'whatsapp' | 'sms';
   recipientPhone: string;
   templateName: string;

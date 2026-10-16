@@ -41,7 +41,7 @@ import './globalOptions.js';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { onCall } from 'firebase-functions/v2/https';
+import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 
@@ -74,7 +74,12 @@ import { sweepDueSoon } from './scheduled/dueSoonSweep.js';
 import { sweepTrialExpiry } from './scheduled/trialExpirySweep.js';
 import { sweepMessageQueue } from './scheduled/dispatchQueue.js';
 import { selectProvider } from './lib/messaging/selectProvider.js';
-import { twilioAccountSid, twilioAuthToken } from './lib/messaging/twilioConfig.js';
+import {
+  twilioAccountSid,
+  twilioAuthToken,
+  waStatusCallbackUrl,
+} from './lib/messaging/twilioConfig.js';
+import { createTwilioStatusHandler } from './webhooks/twilioStatusCallback.js';
 import { recordMessageUsage } from './triggers/messageUsage.js';
 import { provisionWorkspace } from './admin/provisionWorkspace.js';
 import { adjustWorkspace } from './admin/adjustWorkspace.js';
@@ -458,6 +463,26 @@ export const onTrialExpirySweep = onSchedule('15 0 * * *', async () => {
   const expired = await sweepTrialExpiry(new Date());
   logger.info('onTrialExpirySweep: sweep complete', { expired });
 });
+
+/**
+ * Public but Twilio-signature-verified outbound delivery receipt webhook.
+ * No inbound-message, STOP, or auto-reply behavior belongs in this endpoint.
+ */
+export const twilioStatusCallback = onRequest(
+  {
+    secrets: [twilioAuthToken, twilioAccountSid],
+    invoker: 'public',
+    maxInstances: 10,
+    timeoutSeconds: 10,
+  },
+  createTwilioStatusHandler({
+    db: getFirestore(),
+    authToken: () => twilioAuthToken.value(),
+    accountSid: () => twilioAccountSid.value(),
+    callbackUrl: () => waStatusCallbackUrl.value(),
+    logger,
+  }),
+);
 
 /**
  * Outbound WhatsApp dispatch sweep (#133, the deferred #19) every 1 minute

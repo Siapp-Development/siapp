@@ -3,8 +3,9 @@
 **Issue:** Siapp-Development/siapp#171 — "Add message log view: show all WhatsApp messages sent to clients".
 **Verified against:** `origin/main` @ `1c1f6f9`. This includes #133 (Twilio dispatcher), #137 (snake_case variables, token-only links), #142 (durable client portal link and approved SIDs) and #157 (multi-client fan-out).
 **Type:** Read-only plan; the Planner wrote no code.
-**Status:** ✅ **Ready for approval.** The human answered every open question from the previous revision (H1–H6 below). No open question blocks the Builder.
-**Delivery:** 4 PR slices, all under #171. See *Diff estimate & PR slicing*.
+**Status:** ✅ **Approved; B implementation in progress under child issue #173.** H1–H6 are binding decisions.
+**Delivery:** Four PR slices under #171: #172 A (merged), #173 B (current), #174 C1 (merged), and #175 C2 (pending). The PR for B references #171 and #20 for receipts only; inbound auto-reply and STOP remain out of scope.
+**Deployment:** A deployment has not been confirmed. No deployment is authorized by this implementation task. Deployment dependencies and the post-deploy check are recorded below.
 
 ---
 
@@ -300,10 +301,7 @@ The current rank is the rank of the stored `providerStatus` if there is one. Oth
 
 - `IQueuedMessage` gains `workspaceId`; `toQueuedMessage` already has `workspaceSnap.id`.
 - `TwilioProvider` passes `statusCallback` on **every** `messages.create` whenever the URL is configured.
-- `recordResult` changes on the **success branch only**. It becomes a transaction:
-  - It always sets `providerSid` and `contentSid`.
-  - It sets `status:'sent'` and `sentAt` only when the current rank is below 2. A fast callback may already have written `delivered` or `read`.
-- The failure branch stays a plain update, plus `contentSid`. A synchronous failure has no SID, so no callback can arrive for it.
+- `recordResult` uses a Firestore transaction for both provider outcomes. On success, it always sets `providerSid` and `contentSid`, and sets status to `sent` plus `sentAt` only when current rank is below 2. On provider error it writes `contentSid` and sets failure fields only when current rank is below 2. This additionally protects a callback arriving after Twilio accepted a request but before the SDK times out/rejects; a plain failure update could erase delivery evidence.
 
 **What #20 still owns after this.** The list comes from D-035 and 13-tech-architecture. The #20 issue body could not be fetched from this environment; see R9.
 - The inbound message webhook on the sender ("A message comes in", e.g. `/webhooks/twilio/inbound`).
@@ -557,11 +555,12 @@ Also add `'duplicate_phone'` to `TSuppressedReason`. `deliveredAt` and `errorCod
   - the `selectProvider` test passes the param through.
 
 **B5. Monotonic `recordResult`.**
-- Make the success branch a transaction (Design §2).
+- Make provider outcome recording transactional (Design §2).
 - *Verify:* dispatcher tests:
-  - a doc already `delivered` or `read` stays so, but gains `providerSid` and `contentSid`;
+  - a doc already `delivered` or `read` stays so, but a successful result still stamps `providerSid` and `contentSid`;
   - a `queued` doc becomes `sent`;
-  - the failure branch is unchanged;
+  - a provider error marks a still-queued doc failed;
+  - if a signed receipt has already advanced to `sent`, `delivered`, `failed`, or `read`, neither provider success nor error regresses it;
   - the existing claim and idempotency tests stay green.
 
 **B6. Config.**
@@ -728,26 +727,27 @@ Mock hooks with `vi.mock` as `ClientsListPage.test.tsx` does, and mock the SDK a
    3. Rules.
 
    Nothing in the web app reads `messages` yet, so tightening the rules breaks no UI. The functions go first so that new docs carry `restrictedToDepartments` before pm can query.
-2. **PR B:** one `firebase deploy --only functions,hosting:apex`. The CLI deploys functions before Hosting, so the rewrite points at a live function.
-   - Between the two steps, sends that already carry `statusCallback` may get a 404 (Twilio error 11200). That is harmless: delivery isn't affected, and those docs simply stay `sent`.
-   - Then run the post-deploy check from the runbook.
-3. **PR C1:** no runtime effect until C2.
-4. **PR C2:** web (`dashboard` target), and only after A's indexes are Ready.
+2. **PR B (#173):** when separately authorized, deploy Functions and apex Hosting together (`firebase deploy --only functions,hosting:apex`). The CLI deploys functions before Hosting, so the rewrite points at a live function. No deployment was performed or authorized for this task.
+   - Between the Functions and Hosting phases, sends that already carry `statusCallback` may get a 404 (Twilio error 11200). Delivery is unaffected; those docs remain at their last recorded status.
+   - After an authorized deployment, run the post-deploy check in `plans/runbook-deploy.md`.
+3. **PR C1 (#174):** no runtime effect until C2 — merged.
+4. **PR C2 (#175):** deploy web (`dashboard` target) only after A is deployed and all A indexes are Ready. No deployment status is inferred from issue/PR merges.
 
 ---
 
 ## Diff estimate & PR slicing
 
-The scope grew. The diff is **about 3,600 changed lines: about 1,550 production, 1,950 tests and 100 docs/config**. That is well over ~600, so this plan splits the work into 4 slices, all under #171. No sub-issue is needed. PR B's description says "Refs #20 (receipts only)" so the #20 owners can see what is now done.
+The scope grew. The diff is **about 3,600 changed lines: about 1,550 production, 1,950 tests and 100 docs/config**. That is well over ~600, so this plan splits the work into 4 child-issue slices under #171. PR B's description says "Refs #20 (receipts only)" so the #20 owners can see what is now done.
 
 | Slice | Content | Prod | Tests | Docs/config | Total | Depends on |
 |---|---|---|---|---|---|---|
-| **A: log data and access** | types, department stamp, not-sent direct sends, `contentSid`, PDPA, rules, indexes | ~260 | ~500 | ~40 | **~800** | none |
-| **B: delivery receipts** | callback endpoint, signature, mapping, provider `statusCallback`, monotonic `recordResult`, rewrite, param | ~350 | ~540 | ~45 | **~935** | A (shared type fields; `contentSid` in the same functions) |
-| **C1: approved copy and helpers** | shared template constant, preview, status | ~370 | ~360 | ~20 | **~750** | none in code; status labels cover B's fields either way |
-| **C2: Messages page** | hook, page, nav, client-card link | ~560 | ~560 | 0 | **~1,120** | A **deployed** (rules and indexes), C1 merged |
+| **A: log data and access (#172)** | types, department stamp, not-sent direct sends, `contentSid`, PDPA, rules, indexes | ~260 | ~500 | ~40 | **~800** | none — merged |
+| **B: delivery receipts (#173)** | callback endpoint, signature, mapping, provider `statusCallback`, monotonic `recordResult`, rewrite, param | ~350 | ~540 | ~45 | **~935** | A merged — satisfied; no A production deployment is required to implement B |
+| **C1: approved copy and helpers (#174)** | shared template constant, preview, status | ~370 | ~360 | ~20 | **~750** | none in code — merged |
+| **C2: Messages page (#175)** | hook, page, nav, client-card link | ~560 | ~560 | 0 | **~1,120** | A deployed (rules and indexes Ready), C1 merged — pending |
 
-- **Order:** A → (B ∥ C1) → C2.
+- **Issue status:** #172 A merged; #173 B in progress; #174 C1 merged; #175 C2 pending.
+- **Order:** A/C1 merged → B ∥ C1 (already merged) → C2 only after A is deployed and all indexes are Ready.
 - C2 doesn't need B. It shows *Delivered* and *Read* as soon as B's callbacks write them.
 - Production code is about 600 lines or less in every slice. Tests make up roughly half of each slice.
 

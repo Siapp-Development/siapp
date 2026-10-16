@@ -22,6 +22,9 @@ export const twilioAuthToken = defineSecret('TWILIO_AUTH_TOKEN');
  */
 export const waSender = defineString('WA_SENDER', { default: '+13604414161' });
 
+/** Public HTTPS callback base URL. Blank in local/test environments. */
+export const waStatusCallbackUrl = defineString('WA_STATUS_CALLBACK_URL', { default: '' });
+
 export interface ITwilioCredentials {
   accountSid: string;
   authToken: string;

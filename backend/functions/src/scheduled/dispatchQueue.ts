@@ -27,6 +27,7 @@ import { logger } from 'firebase-functions';
 import { errorPayload } from '../lib/errors.js';
 import type { IMessageProvider, IQueuedMessage, ISendResult } from '../lib/messaging/provider.js';
 import type { TNotificationTrigger } from '../lib/messaging/contentSids.js';
+import { rankOf } from '../lib/messaging/deliveryStatus.js';
 
 /** Reclaim a claimed-but-unfinished doc after this window (O-4). */
 export const STALE_CLAIM_MS = 5 * 60 * 1000;
@@ -102,7 +103,11 @@ export function claimDecision(data: Record<string, unknown>, nowMs: number): ICl
 }
 
 /** Builds the provider payload from a queue doc. */
-function toQueuedMessage(id: string, data: Record<string, unknown>): IQueuedMessage {
+function toQueuedMessage(
+  id: string,
+  workspaceId: string,
+  data: Record<string, unknown>,
+): IQueuedMessage {
   const rawVariables = data['variables'];
   const variables =
     typeof rawVariables === 'object' && rawVariables !== null
@@ -111,6 +116,7 @@ function toQueuedMessage(id: string, data: Record<string, unknown>): IQueuedMess
   const locale = typeof data['locale'] === 'string' ? (data['locale'] as string) : undefined;
   return {
     id,
+    workspaceId,
     channel: 'whatsapp',
     recipientPhone: data['recipientPhone'] as string,
     templateName: typeof data['templateName'] === 'string' ? (data['templateName'] as string) : '',
@@ -152,27 +158,46 @@ async function claimMessage(
   });
 }
 
-/** Writes the send outcome back onto the doc. */
+/** Writes a provider outcome without overwriting a faster signed receipt. */
 async function recordResult(
+  db: FirebaseFirestore.Firestore,
   ref: FirebaseFirestore.DocumentReference,
   result: ISendResult,
   now: Date,
 ): Promise<void> {
-  if (result.ok) {
-    await ref.update({
-      status: 'sent',
-      providerSid: result.providerSid ?? '',
-      sentAt: Timestamp.fromDate(now),
+  await db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(ref);
+    if (!snapshot.exists) {
+      return;
+    }
+    const current = snapshot.data() ?? {};
+    const storedProviderStatus = current['providerStatus'];
+    const currentRank = rankOf(
+      typeof storedProviderStatus === 'string' && storedProviderStatus.length > 0
+        ? storedProviderStatus
+        : current['status'],
+    );
+
+    if (result.ok) {
+      tx.update(ref, {
+        providerSid: result.providerSid ?? '',
+        ...(result.contentSid !== undefined ? { contentSid: result.contentSid } : {}),
+        ...(currentRank < 2 ? { status: 'sent', sentAt: Timestamp.fromDate(now) } : {}),
+      });
+      return;
+    }
+
+    tx.update(ref, {
       ...(result.contentSid !== undefined ? { contentSid: result.contentSid } : {}),
+      ...(currentRank < 2
+        ? {
+            status: 'failed',
+            errorCode: result.errorCode ?? 'unknown',
+            failedAt: Timestamp.fromDate(now),
+          }
+        : {}),
     });
-  } else {
-    await ref.update({
-      status: 'failed',
-      errorCode: result.errorCode ?? 'unknown',
-      failedAt: Timestamp.fromDate(now),
-      ...(result.contentSid !== undefined ? { contentSid: result.contentSid } : {}),
-    });
-  }
+  });
 }
 
 /**
@@ -208,8 +233,8 @@ export async function sweepMessageQueue(
           stats.skipped += 1;
           continue;
         }
-        const result = await provider.send(toQueuedMessage(messageSnap.id, data));
-        await recordResult(messageSnap.ref, result, now);
+        const result = await provider.send(toQueuedMessage(messageSnap.id, workspaceSnap.id, data));
+        await recordResult(db, messageSnap.ref, result, now);
         if (result.ok) {
           stats.sent += 1;
         } else {

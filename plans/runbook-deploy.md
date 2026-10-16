@@ -114,6 +114,18 @@ First sign-in walks the admin through authenticator-app enrolment, then asks
 them to sign in again with the 6-digit code. See
 [impl-63-admin-mfa.md](impl-63-admin-mfa.md).
 
+## Twilio delivery receipts (#171 PR B)
+
+The signed status callback is served by the `twilioStatusCallback` v2 Function through the apex Hosting rewrite at `/webhooks/twilio/status`. Deploys use the ordinary CD workflow; no manual deployment is authorized by this implementation change. Before enabling sends that use the callback, verify the committed public param in `backend/functions/.env.siapp-prod`: `WA_STATUS_CALLBACK_URL=https://siapp.app/webhooks/twilio/status`. The param must exactly match the public HTTPS URL Twilio calls. Local/emulator configuration leaves it blank unless the operator explicitly sets the Hosting-emulator callback URL for a smoke session.
+
+After deployment is separately authorized and completed:
+
+1. In Twilio Console Monitor, verify there are no `11200` webhook delivery errors for this callback URL.
+2. Send an approved test WhatsApp template to an opted-in test recipient. Confirm the corresponding `workspaces/{wid}/messages/{mid}` document advances from `sent` to `delivered` or `read` without regressing on duplicate/out-of-order callbacks.
+3. Check Cloud Logging for `twilioStatusCallback` warnings/errors; callback logs contain message/workspace IDs only, never recipient phone numbers or message bodies.
+
+This webhook only records outbound delivery receipts. It does not handle inbound messages, STOP, or auto-replies (#20).
+
 ## Failure playbook
 
 - **CI green but Deploy failed** — fix the cause, then re-run via

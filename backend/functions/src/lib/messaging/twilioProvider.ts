@@ -15,20 +15,13 @@ import { logger } from 'firebase-functions';
 
 import type { IMessageProvider, IQueuedMessage, ISendResult } from './provider.js';
 import type { TNotificationTrigger } from './contentSids.js';
+import { buildStatusCallbackUrl } from './deliveryStatus.js';
+import { mapTwilioError } from './twilioError.js';
+export { mapTwilioError } from './twilioError.js';
 
 const WHATSAPP_PREFIX = 'whatsapp:';
 /** Em-dash placeholder for empty declared variables (Twilio rejects blanks). */
 const EMPTY_VAR_PLACEHOLDER = '—';
-
-/** Known Twilio error codes → stable, human-scannable `errorCode` strings. */
-const TWILIO_ERROR_CODES: Record<number, string> = {
-  21211: 'invalid_to_number',
-  63003: 'wa_channel_not_available',
-  63015: 'wa_channel_not_found',
-  63016: 'wa_outside_session_window',
-  63018: 'wa_rate_limited',
-  63021: 'wa_message_undeliverable',
-};
 
 /** Minimal shape of the Twilio message-create result we consume. */
 export interface ITwilioMessageResult {
@@ -41,6 +34,7 @@ export interface ITwilioCreateOptions {
   to: string;
   contentSid: string;
   contentVariables: string;
+  statusCallback?: string;
 }
 
 /**
@@ -61,23 +55,12 @@ export interface ITwilioProviderDeps {
   /** Sender number WITHOUT the `whatsapp:` prefix (e.g. `+13604414161`). */
   sender: string;
   resolveContentSid: TResolveContentSid;
+  statusCallbackBase: string;
 }
 
 /** Builds a real Twilio client from credentials (production factory). */
 export function createTwilioClient(accountSid: string, authToken: string): ITwilioClient {
   return twilio(accountSid, authToken) as unknown as ITwilioClient;
-}
-
-/**
- * Maps a caught Twilio error to a stable `errorCode` string. Falls back to
- * `twilio_<code>` for unmapped numeric codes, else `twilio_error`.
- */
-export function mapTwilioError(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === 'number') {
-    return TWILIO_ERROR_CODES[code] ?? `twilio_${code}`;
-  }
-  return 'twilio_error';
 }
 
 /**
@@ -97,11 +80,13 @@ export class TwilioProvider implements IMessageProvider {
   private readonly client: ITwilioClient;
   private readonly sender: string;
   private readonly resolveContentSid: TResolveContentSid;
+  private readonly statusCallbackBase: string;
 
   constructor(deps: ITwilioProviderDeps) {
     this.client = deps.client;
     this.sender = deps.sender;
     this.resolveContentSid = deps.resolveContentSid;
+    this.statusCallbackBase = deps.statusCallbackBase;
   }
 
   async send(msg: IQueuedMessage): Promise<ISendResult> {
@@ -117,11 +102,17 @@ export class TwilioProvider implements IMessageProvider {
     }
 
     try {
+      const statusCallback = buildStatusCallbackUrl(
+        this.statusCallbackBase,
+        msg.workspaceId,
+        msg.id,
+      );
       const result = await this.client.messages.create({
         from: `${WHATSAPP_PREFIX}${this.sender}`,
         to: `${WHATSAPP_PREFIX}${msg.recipientPhone}`,
         contentSid,
         contentVariables: buildContentVariables(msg.variables),
+        ...(statusCallback !== undefined ? { statusCallback } : {}),
       });
       return { ok: true, providerSid: result.sid, contentSid };
     } catch (error) {
