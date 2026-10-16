@@ -12,12 +12,14 @@
  */
 
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
 import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { isOptedOut } from '../lib/optOut.js';
 import { hasWaConsent } from '../lib/pdpa.js';
+import { buildDirectSendRecord } from '../lib/messaging/directSendRecord.js';
 import { getOrCreateCollaboratorLink, requireCollabLinkIssuer } from './issueCollaboratorLink.js';
 
 /** Mirrors WA_UTILITY_COST_MYR in @siapp/shared. */
@@ -47,11 +49,52 @@ export const sendCollaboratorLink = onCall(async (request) => {
   }
 
   const collaborator = collaboratorSnap.data() ?? {};
+  const collaboratorName = typeof collaborator['name'] === 'string' ? collaborator['name'] : '';
+  const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
+  const phone = typeof collaborator['phone'] === 'string' ? collaborator['phone'] : '';
+  const variablesForToken = (token: string): Record<string, string> => ({
+    firm_name: firmName,
+    collaborator_name: collaboratorName,
+    access_token: token,
+  });
+  const recordNotSent = async (
+    suppressedReason: 'opt_out' | 'no_consent' | 'no_phone',
+  ): Promise<void> => {
+    let messageId: string | undefined;
+    try {
+      const messageRef = db.collection(`workspaces/${workspaceId}/messages`).doc();
+      messageId = messageRef.id;
+      await messageRef.set(
+        buildDirectSendRecord({
+          id: messageRef.id,
+          recipientType: 'collaborator',
+          recipientId: collaboratorId,
+          recipientPhone: phone,
+          templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+          trigger: 'collab_access_link',
+          variables: variablesForToken(''),
+          costEstimateMyr: WA_UTILITY_COST_MYR,
+          relatedTo: { type: 'collaborator', id: collaboratorId },
+          createdAt: Timestamp.now(),
+          suppressedReason,
+        }),
+      );
+    } catch (error) {
+      logger.error('sendCollaboratorLink: failed to write not-sent message record', {
+        workspaceId,
+        messageId,
+        error,
+      });
+    }
+  };
+
   // Respect the same gates as enqueueNotifications (#16 D-035, #26 D2).
   if (isOptedOut(collaborator)) {
+    await recordNotSent('opt_out');
     return { status: 'opted_out' as const };
   }
   if (!hasWaConsent(collaborator)) {
+    await recordNotSent('no_consent');
     return { status: 'no_consent' as const };
   }
 
@@ -59,13 +102,10 @@ export const sendCollaboratorLink = onCall(async (request) => {
   // deliver, and `selectDispatchable` filters empty phones — so enqueueing would
   // strand an undeliverable doc showing "queued". Return BEFORE get-or-create
   // and BEFORE enqueue, mirroring the opt-out / consent gates above.
-  const phone = typeof collaborator['phone'] === 'string' ? collaborator['phone'] : '';
   if (phone === '') {
+    await recordNotSent('no_phone');
     return { status: 'no_phone' as const };
   }
-
-  const collaboratorName = typeof collaborator['name'] === 'string' ? collaborator['name'] : '';
-  const firmName = typeof workspaceSnap.get('name') === 'string' ? workspaceSnap.get('name') : '';
 
   // Durable, reset-only (#127): reuse the collaborator's active link if any —
   // sending over WhatsApp must never rotate an existing valid URL.
@@ -77,28 +117,21 @@ export const sendCollaboratorLink = onCall(async (request) => {
   );
 
   const messageRef = db.collection(`workspaces/${workspaceId}/messages`).doc();
-  await messageRef.set({
-    id: messageRef.id,
-    channel: 'whatsapp',
-    recipientPhone: phone,
-    recipientType: 'collaborator',
-    recipientId: collaboratorId,
-    templateName: COLLAB_ACCESS_LINK_TEMPLATE,
-    // snake_case, token-only (#137, Finding 1/2): keys must match the approved
-    // Meta template's named variables; the value is the bare
-    // `{shortCode}_{secret}` token — the static `https://siapp.app/t/` prefix
-    // is baked into the template body, so no full URL is emitted here.
-    variables: {
-      firm_name: firmName,
-      collaborator_name: collaboratorName,
-      access_token: token,
-    },
-    status: 'queued',
-    trigger: 'collab_access_link',
-    costEstimateMyr: WA_UTILITY_COST_MYR,
-    relatedTo: { type: 'collaborator', id: collaboratorId },
-    createdAt: Timestamp.now(),
-  });
+  await messageRef.set(
+    buildDirectSendRecord({
+      id: messageRef.id,
+      recipientPhone: phone,
+      recipientType: 'collaborator',
+      recipientId: collaboratorId,
+      templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+      // The bare `{shortCode}_{secret}` token is sent; the URL prefix is in the template.
+      variables: variablesForToken(token),
+      trigger: 'collab_access_link',
+      costEstimateMyr: WA_UTILITY_COST_MYR,
+      relatedTo: { type: 'collaborator', id: collaboratorId },
+      createdAt: Timestamp.now(),
+    }),
+  );
 
   // Only a first-ever mint is audited as collab_link.issue; re-surfacing an
   // existing durable link is not (the WhatsApp queue write is the record of

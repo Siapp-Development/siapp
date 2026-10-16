@@ -7,6 +7,7 @@
  * map to snake_case + a token-only `access_token` (bare token, not a URL).
  */
 
+import { logger } from 'firebase-functions';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
@@ -63,6 +64,8 @@ interface IWrites {
 function makeDb(opts: {
   collaborator?: Record<string, unknown>;
   workspace?: Record<string, unknown>;
+  /** #171: make every messages `set` reject (fail-soft not-sent coverage). */
+  failMessageWrites?: boolean;
 }): { db: unknown; writes: IWrites } {
   const writes: IWrites = { messages: [] };
   let auto = 0;
@@ -72,6 +75,9 @@ function makeDb(opts: {
       return {
         id,
         set: (data: Record<string, unknown>) => {
+          if (opts.failMessageWrites === true) {
+            return Promise.reject(new Error('firestore unavailable'));
+          }
           writes.messages.push({ id, data });
           return Promise.resolve();
         },
@@ -114,6 +120,41 @@ const CONSENTED_COLLAB = {
   waConsent: { granted: true },
 };
 
+/**
+ * #171 (H6): a blocked direct send writes exactly ONE not-sent record — the
+ * same envelope as a real send, `suppressed:true` + reason, an EMPTY
+ * access_token (no link is minted), and `restrictedToDepartments: []`.
+ */
+function expectSingleNotSent(
+  writes: IWrites,
+  reason: 'opt_out' | 'no_consent' | 'no_phone',
+  expected: { collaboratorName: string; phone: string },
+): void {
+  expect(writes.messages).toHaveLength(1);
+  const { id, data } = writes.messages[0];
+  expect(data).toEqual({
+    id,
+    channel: 'whatsapp',
+    recipientType: 'collaborator',
+    recipientId: COL,
+    recipientPhone: expected.phone,
+    templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+    trigger: 'collab_access_link',
+    variables: {
+      firm_name: 'Acme Builders',
+      collaborator_name: expected.collaboratorName,
+      access_token: '',
+    },
+    status: 'queued',
+    costEstimateMyr: 0.1,
+    relatedTo: { type: 'collaborator', id: COL },
+    createdAt: expect.anything(),
+    restrictedToDepartments: [],
+    suppressed: true,
+    suppressedReason: reason,
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mintFn.mockResolvedValue({
@@ -150,25 +191,25 @@ describe('sendCollaboratorLink — gates', () => {
     await expect(sendCollaboratorLink.run(request())).rejects.toThrow(/not found/i);
   });
 
-  it('returns opted_out and enqueues nothing for an opted-out collaborator', async () => {
+  it('returns opted_out and writes only a not-sent opt_out record for an opted-out collaborator', async () => {
     const { db, writes } = makeDb({
       collaborator: { name: 'Lim', notificationsOptOut: true },
       workspace: WORKSPACE,
     });
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'opted_out' });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'opt_out', { collaboratorName: 'Lim', phone: '' });
     expect(mintFn).not.toHaveBeenCalled();
   });
 
-  it('returns no_phone and neither mints nor enqueues for a collaborator with no phone', async () => {
+  it('returns no_phone, never mints, and writes only a not-sent no_phone record', async () => {
     const { db, writes } = makeDb({
       collaborator: { name: 'Lim', phone: '', waConsent: { granted: true } },
       workspace: WORKSPACE,
     });
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_phone' });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_phone', { collaboratorName: 'Lim', phone: '' });
     expect(mintFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
@@ -180,18 +221,20 @@ describe('sendCollaboratorLink — gates', () => {
     });
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_phone' });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_phone', { collaboratorName: 'Lim', phone: '' });
     expect(mintFn).not.toHaveBeenCalled();
   });
 
-  it('returns no_consent and enqueues nothing without a waConsent grant', async () => {
+  it('returns no_consent and writes only a not-sent no_consent record without a waConsent grant', async () => {
     const { db, writes } = makeDb({
       collaborator: { name: 'Lim', phone: '+60123' },
       workspace: WORKSPACE,
     });
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_consent' });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_consent', { collaboratorName: 'Lim', phone: '+60123' });
+    expect(mintFn).not.toHaveBeenCalled();
+    expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
   // Gate-ORDER guards: no_phone must sit AFTER opt-out and consent. The opted_out
@@ -204,8 +247,62 @@ describe('sendCollaboratorLink — gates', () => {
     });
     hoisted.db = db;
     expect(await sendCollaboratorLink.run(request())).toEqual({ status: 'no_consent' });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_consent', { collaboratorName: 'Lim', phone: '' });
     expect(mintFn).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendCollaboratorLink — #171 not-sent records', () => {
+  it.each([
+    ['opted_out', 'opt_out', { name: 'Lim', phone: '+60123', notificationsOptOut: true }],
+    ['no_consent', 'no_consent', { name: 'Lim', phone: '+60123' }],
+    ['no_phone', 'no_phone', { name: 'Lim', phone: '', waConsent: { granted: true } }],
+  ] as const)(
+    'fail-soft: a throwing not-sent write still returns %s and logs the error',
+    async (status, _reason, collaborator) => {
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      const { db, writes } = makeDb({
+        collaborator: { ...collaborator },
+        workspace: WORKSPACE,
+        failMessageWrites: true,
+      });
+      hoisted.db = db;
+      await expect(sendCollaboratorLink.run(request())).resolves.toEqual({ status });
+      expect(writes.messages).toHaveLength(0);
+      expect(mintFn).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        'sendCollaboratorLink: failed to write not-sent message record',
+        expect.objectContaining({ workspaceId: WID, messageId: 'msg1' }),
+      );
+      errorSpy.mockRestore();
+    },
+  );
+
+  it('precondition errors write nothing (bad args, role, missing collaborator)', async () => {
+    const cases: { req: CallableRequest; opts: Parameters<typeof makeDb>[0] }[] = [
+      { req: request({ data: { workspaceId: WID } }), opts: {} },
+      { req: request({ role: 'viewer' }), opts: { collaborator: CONSENTED_COLLAB, workspace: WORKSPACE } },
+      { req: request({ noAuth: true }), opts: { collaborator: CONSENTED_COLLAB, workspace: WORKSPACE } },
+      { req: request(), opts: { collaborator: undefined, workspace: WORKSPACE } },
+    ];
+    for (const { req, opts } of cases) {
+      const { db, writes } = makeDb(opts);
+      hoisted.db = db;
+      await expect(sendCollaboratorLink.run(req)).rejects.toThrow(HttpsError);
+      expect(writes.messages).toHaveLength(0);
+    }
+  });
+
+  it('writes one not-sent record per press (attempt log)', async () => {
+    const { db, writes } = makeDb({
+      collaborator: { name: 'Lim', notificationsOptOut: true },
+      workspace: WORKSPACE,
+    });
+    hoisted.db = db;
+    await sendCollaboratorLink.run(request());
+    await sendCollaboratorLink.run(request());
+    expect(writes.messages).toHaveLength(2);
+    expect(writes.messages.map((m) => m.data['suppressedReason'])).toEqual(['opt_out', 'opt_out']);
   });
 });
 
@@ -229,11 +326,43 @@ describe('sendCollaboratorLink — happy path enqueue shape (#137)', () => {
     });
 
     // #137: snake_case keys, token-only value set (was { firmName, collaboratorName, accessLink }).
+    // Key set mirrors the approved collab_access_link placeholders.
     expect(message['variables']).toEqual({
       firm_name: 'Acme Builders',
       collaborator_name: 'Lim Electrical',
       access_token: MINTED_TOKEN,
     });
+  });
+
+  it('#171: the queued doc is unchanged apart from restrictedToDepartments: [] (exact snapshot)', async () => {
+    const { db, writes } = makeDb({ collaborator: CONSENTED_COLLAB, workspace: WORKSPACE });
+    hoisted.db = db;
+
+    await sendCollaboratorLink.run(request());
+
+    expect(writes.messages).toHaveLength(1);
+    const { id, data } = writes.messages[0];
+    expect(data).toEqual({
+      id,
+      channel: 'whatsapp',
+      recipientPhone: '+60123456789',
+      recipientType: 'collaborator',
+      recipientId: COL,
+      templateName: COLLAB_ACCESS_LINK_TEMPLATE,
+      variables: {
+        firm_name: 'Acme Builders',
+        collaborator_name: 'Lim Electrical',
+        access_token: MINTED_TOKEN,
+      },
+      status: 'queued',
+      trigger: 'collab_access_link',
+      costEstimateMyr: 0.1,
+      relatedTo: { type: 'collaborator', id: COL },
+      createdAt: expect.anything(),
+      restrictedToDepartments: [],
+    });
+    expect(data).not.toHaveProperty('suppressed');
+    expect(data).not.toHaveProperty('suppressedReason');
   });
 
   it('emits a BARE access_token, never a full URL', async () => {

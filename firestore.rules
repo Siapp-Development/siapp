@@ -31,6 +31,9 @@ rules_version = '2';
 //   deletes are now DENIED client-side — they go through the deleteTask
 //   callable so task_deleted entries are attributed (Q5)
 // - magicLinks / phoneIndex are server-only (Admin SDK; D-035)
+// - #171 message-log reads are owner/admin/pm only; PMs pass the
+//   restrictedToDepartments gate, while all client writes remain denied
+//   because message docs contain live bearer tokens.
 // - #21 adds: portal principals (custom-token claims `portal.{wid,pid,cid}`,
 //   minted by redeemPortalLink; supersedes data-model principle 4 for the
 //   client portal per D1) get project/phases/milestones reads, client-safe
@@ -1198,8 +1201,12 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // #171: message docs contain live portal/collaborator bearer tokens,
+      // so only the roles that mint/copy those links may read them. PM access
+      // uses the department snapshot; missing (legacy) fields fail closed.
       match /messages/{mid} {
-        allow read: if isFirmMember(wid);
+        allow read: if hasRole(wid, ['owner', 'admin'])
+          || (hasRole(wid, ['pm']) && canSeeRestrictedList(wid, resource.data));
         allow write: if false;
       }
 

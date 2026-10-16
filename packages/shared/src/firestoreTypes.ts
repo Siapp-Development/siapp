@@ -707,6 +707,19 @@ export interface IMessageDoc {
   holdUntil?: Date;
   /** Mirrors the deterministic doc id for due-soon dedupe (#18, D5). */
   dedupeKey?: string;
+  /** Snapshot used by the #171 PM message-log read gate (D-025). */
+  restrictedToDepartments?: string[];
+  /** Twilio provider message id (#133). */
+  providerSid?: string;
+  /** Twilio Content Template ID used for this send (#171). */
+  contentSid?: string;
+  /** Dispatch-attempt bookkeeping (#133). */
+  dispatch?: { claimedAt?: Date; attempts?: number };
+  /** Raw Twilio MessageStatus last applied by the #171 callback. */
+  providerStatus?: string;
+  /** Callback bookkeeping timestamp (#171). */
+  statusUpdatedAt?: Date;
+  /** @deprecated Never written — use providerSid. */
   twilioSid?: string;
   conversationId?: string;
   errorCode?: string;
@@ -715,6 +728,8 @@ export interface IMessageDoc {
   createdAt: Date;
   sentAt?: Date;
   deliveredAt?: Date;
+  failedAt?: Date;
+  readAt?: Date;
 }
 
 /** `/workspaces/{wid}/auditLog/{alid}` */

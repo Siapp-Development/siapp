@@ -1,7 +1,8 @@
 /**
  * #18 notification config rules: the task `notify` map is rules-validated
  * (exactly five bool keys when present); the `messages` queue stays
- * server-only even with the new queue fields; the workspace `notifications`
+ * server-only even with the new queue fields (#171 narrows reads to
+ * owner/admin/pm — see messages.test.ts); the workspace `notifications`
  * map is not client-writable (quiet hours flow through the
  * updateNotificationSettings callable).
  */
@@ -166,9 +167,17 @@ describe('messages queue stays server-only (#18, D3)', () => {
     await assertFails(updateDoc(doc(dbAs('admin'), MESSAGE_PATH), { holdUntil: null }));
   });
 
-  it('still allows member reads, denies cross-workspace reads', async () => {
-    await seedDoc(testEnv, MESSAGE_PATH, queuedMessage('msg1'));
-    await assertSucceeds(getDoc(doc(dbAs('viewer'), MESSAGE_PATH)));
+  // #171 (H1): message docs carry live bearer tokens, so reads narrowed from
+  // any member to owner/admin/pm (pm via the restrictedToDepartments gate).
+  it('allows owner/admin/pm reads, denies viewer and cross-workspace reads (#171)', async () => {
+    await seedDoc(testEnv, MESSAGE_PATH, {
+      ...queuedMessage('msg1'),
+      restrictedToDepartments: [],
+    });
+    for (const role of ['owner', 'admin', 'pm'] as const) {
+      await assertSucceeds(getDoc(doc(dbAs(role), MESSAGE_PATH)));
+    }
+    await assertFails(getDoc(doc(dbAs('viewer'), MESSAGE_PATH)));
     await assertFails(getDoc(doc(dbAs('owner', WKS_B), MESSAGE_PATH)));
   });
 });

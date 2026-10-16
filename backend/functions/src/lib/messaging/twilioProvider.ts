@@ -123,7 +123,7 @@ export class TwilioProvider implements IMessageProvider {
         contentSid,
         contentVariables: buildContentVariables(msg.variables),
       });
-      return { ok: true, providerSid: result.sid };
+      return { ok: true, providerSid: result.sid, contentSid };
     } catch (error) {
       const errorCode = mapTwilioError(error);
       logger.error('TwilioProvider: send failed', {
@@ -131,7 +131,7 @@ export class TwilioProvider implements IMessageProvider {
         trigger: msg.trigger,
         errorCode,
       });
-      return { ok: false, errorCode };
+      return { ok: false, errorCode, contentSid };
     }
   }
 }

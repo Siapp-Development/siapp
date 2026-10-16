@@ -801,3 +801,166 @@ describe('templateVariables — snake_case wire contract (#137/#142)', () => {
     }
   });
 });
+
+describe('planTaskNotifications — #171 D-025 restrictedToDepartments stamp', () => {
+  const blockedTask = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    title: 'Wiring',
+    status: 'blocked',
+    sendWhatsapp: true,
+    assignees: [],
+    blockedReason: 'Awaiting finance approval',
+    ...extra,
+  });
+  const dueSoonTask = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    title: 'Inspection',
+    status: 'todo',
+    sendWhatsapp: true,
+    assignees: [{ type: 'user', id: 'u1', name: 'Alice' }],
+    dueDate: { toDate: () => new Date('2026-07-24T04:00:00Z') },
+    ...extra,
+  });
+  const twoClients = [
+    {
+      id: 'c1',
+      data: { name: 'Ann Lee', phone: '+60111111111', waConsent: { granted: true } },
+      portalToken: 'tokAAAA1111_c2VjcmV0',
+    },
+    {
+      id: 'c2',
+      data: { name: 'Ben Tan', phone: '+60111111111', waConsent: { granted: true } },
+      portalToken: 'tokBBBB2222_c2VjcmV0',
+    },
+    { id: 'c3', data: { name: 'Cai Wong', phone: '+60333333333' } },
+  ];
+
+  it('task_blocked on a restricted task snapshots the task departments', () => {
+    const planned = planTaskNotifications(
+      input({ trigger: 'task_blocked', taskData: blockedTask({ restrictedToDepartments: ['finance'] }) }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data['restrictedToDepartments']).toEqual(['finance']);
+  });
+
+  it('task_blocked keeps only string department ids', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_blocked',
+        taskData: blockedTask({ restrictedToDepartments: ['finance', 7, null, 'site'] }),
+      }),
+    );
+    expect(planned[0].data['restrictedToDepartments']).toEqual(['finance', 'site']);
+  });
+
+  it('task_blocked on an unrestricted task (absent, empty or malformed) stamps []', () => {
+    for (const extra of [{}, { restrictedToDepartments: [] }, { restrictedToDepartments: 'finance' }]) {
+      const planned = planTaskNotifications(
+        input({ trigger: 'task_blocked', taskData: blockedTask(extra) }),
+      );
+      expect(planned[0].data['restrictedToDepartments']).toEqual([]);
+    }
+  });
+
+  it('task_status_change on a restricted task stamps [] (header-only content)', () => {
+    const planned = planTaskNotifications(
+      input({
+        taskData: {
+          title: 'Pour foundation',
+          status: 'in_progress',
+          sendWhatsapp: true,
+          assignees: [],
+          restrictedToDepartments: ['finance'],
+        },
+      }),
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].data['restrictedToDepartments']).toEqual([]);
+  });
+
+  it('task_due_soon on a restricted task stamps []', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask({ restrictedToDepartments: ['finance'] }),
+        memberProfiles: new Map([['u1', { phone: '+60122222222' }]]),
+      }),
+    );
+    expect(planned.length).toBeGreaterThan(0);
+    for (const message of planned) {
+      expect(message.data['restrictedToDepartments']).toEqual([]);
+    }
+  });
+
+  it('multi-client fan-out stamps EVERY record, suppressed ones included', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_blocked',
+        clients: twoClients,
+        taskData: blockedTask({ restrictedToDepartments: ['finance'] }),
+      }),
+    );
+    expect(planned).toHaveLength(3);
+    expect(planned.map((m) => m.data['suppressedReason'])).toEqual([
+      undefined,
+      'duplicate_phone',
+      'no_consent',
+    ]);
+    for (const message of planned) {
+      expect(message.data['restrictedToDepartments']).toEqual(['finance']);
+    }
+    // The same fan-out under status_change stamps [] on every record.
+    const status = planTaskNotifications(
+      input({ clients: twoClients, taskData: { ...blockedTask({ restrictedToDepartments: ['finance'] }), status: 'in_progress' } }),
+    );
+    for (const message of status) {
+      expect(message.data['restrictedToDepartments']).toEqual([]);
+    }
+  });
+
+  it('a draft project (all suppressed) still stamps the blocked departments', () => {
+    const planned = planTaskNotifications(
+      input({
+        trigger: 'task_blocked',
+        taskData: blockedTask({ restrictedToDepartments: ['finance'] }),
+        projectData: { name: 'Bungalow Reno', lifecycle: 'draft', clientIds: ['client1'] },
+      }),
+    );
+    expect(planned.length).toBeGreaterThan(0);
+    for (const message of planned) {
+      expect(message.data).toMatchObject({ suppressed: true, restrictedToDepartments: ['finance'] });
+    }
+  });
+
+  // These key sets mirror the approved WhatsApp templates (WA_APPROVED_TEMPLATES,
+  // added in #171 PR C1). The stamp must not change the variable contract —
+  // in particular task_blocked keeps `blocked_reason`.
+  it('variable key sets per trigger are unchanged (exact)', () => {
+    const keysOf = (message: { data: Record<string, unknown> }): string[] =>
+      Object.keys(message.data['variables'] as Record<string, string>).sort();
+
+    const status = planTaskNotifications(
+      input({ taskData: { title: 'T', status: 'in_progress', sendWhatsapp: true, assignees: [], restrictedToDepartments: ['finance'] } }),
+    );
+    expect(keysOf(status[0])).toEqual(
+      ['firm_name', 'new_status', 'portal_token', 'project_title', 'task_title'],
+    );
+
+    const blocked = planTaskNotifications(
+      input({ trigger: 'task_blocked', taskData: blockedTask({ restrictedToDepartments: ['finance'] }) }),
+    );
+    expect(keysOf(blocked[0])).toEqual(
+      ['blocked_reason', 'firm_name', 'portal_token', 'project_title', 'task_title'],
+    );
+    expect((blocked[0].data['variables'] as Record<string, string>)['blocked_reason']).toBe(
+      'Awaiting finance approval',
+    );
+
+    const dueSoon = planTaskNotifications(
+      input({
+        trigger: 'task_due_soon',
+        taskData: dueSoonTask(),
+        memberProfiles: new Map([['u1', { phone: '+60122222222' }]]),
+      }),
+    );
+    expect(keysOf(dueSoon[0])).toEqual(['due_date', 'firm_name', 'project_title', 'task_title']);
+  });
+});
