@@ -488,29 +488,57 @@ JWT signature is verified server-side; this doc enables fast lookup, revocation,
 
 ### `workspaces/{wid}/messages/{mid}` — outbound WhatsApp/SMS log
 
+Server-written queue/outbox and audit log. Direct-send suppression records are retained as not-sent attempts; `suppressed: true` prevents dispatch and usage counting.
+
 ```typescript
 {
   id: string,
   channel: 'whatsapp' | 'sms',
   recipientPhone: string,
-  recipientType: 'client' | 'collaborator',
+  recipientType: 'client' | 'collaborator' | 'member',
   recipientId: string,
   templateName: string,
   variables: Record<string, string>,
   status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed',
+  trigger: string,
+  suppressed?: boolean,
+  suppressedReason?: 'lifecycle:draft' | 'lifecycle:completed' | 'lifecycle:archived'
+    | 'lifecycle:deleted' | 'opt_out' | 'no_consent' | 'no_recipient'
+    | 'no_phone' | 'duplicate_phone' | 'billing',
+  holdUntil?: Timestamp,
+  dedupeKey?: string,
+  restrictedToDepartments?: string[], // PM message-log gate; task_blocked snapshot, [] otherwise
+  providerSid?: string,               // empty under NoopProvider
+  /** @deprecated never written; use providerSid */
   twilioSid?: string,
-  conversationId?: string,     // Twilio conversation grouping
+  contentSid?: string,                // template version actually used
+  dispatch?: { claimedAt?: Timestamp, attempts?: number },
+  providerStatus?: string,            // raw Twilio callback status (PR B)
+  statusUpdatedAt?: Timestamp,
+  conversationId?: string,
   errorCode?: string,
   costEstimateMyr: number,
-  relatedTo?: {                // back-pointer for activity feed
-    type: 'task' | 'project' | 'milestone',
-    id: string
-  },
+  relatedTo?: { type: 'task' | 'project' | 'milestone' | 'collaborator', id: string },
   createdAt: Timestamp,
   sentAt?: Timestamp,
-  deliveredAt?: Timestamp
+  deliveredAt?: Timestamp,
+  failedAt?: Timestamp,
+  readAt?: Timestamp
 }
 ```
+
+Direct project-portal and collaborator-link sends write this same envelope. If blocked by opt-out, missing consent/phone, a duplicate phone, or a missing recipient record, the doc is `suppressed: true`, remains `status: 'queued'` as an audit-only not-sent record, carries the matching `suppressedReason`, has `restrictedToDepartments: []`, and stores an empty link-token variable. Existing callable return values remain unchanged; those records are written fail-soft.
+
+**Read access (#171, H1/D-025):** owner and admin may read all message docs. PM reads additionally pass `canSeeRestrictedList` against `restrictedToDepartments`; new `task_blocked` records snapshot the task's department restrictions, while other triggers and direct sends use `[]`. Legacy records without the field are not visible to PMs. Viewers and all client writes are denied. This protects portal/collaborator bearer tokens in `variables`.
+
+**Composite indexes (#171; all `collectionGroup: messages`, `queryScope: COLLECTION`):**
+
+1. `recipientType ASC, createdAt DESC`
+2. `recipientType ASC, recipientId ASC, createdAt DESC`
+3. `recipientType ASC, restrictedToDepartments ASC, createdAt DESC`
+4. `recipientType ASC, recipientId ASC, restrictedToDepartments ASC, createdAt DESC`
+
+The first two support owner/admin queries; the latter two support PM queries constrained to `restrictedToDepartments == []`. `recipientType in [...]` uses the same composite indexes as equality.
 
 ### `workspaces/{wid}/auditLog/{alid}`
 

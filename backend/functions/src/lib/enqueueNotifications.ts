@@ -245,6 +245,13 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
   const lifecycle = input.projectData?.['lifecycle'];
   const published = lifecycle === 'published';
   const baseVariables = templateVariables(input);
+  // Client templates with task content must carry the task's departments, or
+  // the message-log read rules must change with the template's content scope.
+  const rawDepartments = input.taskData['restrictedToDepartments'];
+  const restrictedToDepartments =
+    input.trigger === 'task_blocked' && Array.isArray(rawDepartments)
+      ? rawDepartments.filter((department): department is string => typeof department === 'string')
+      : [];
   const holdUntil = holdUntilFor(input.now, input.quietHours);
   const dedupeDate = mytDateString(input.now);
   // #142/#157: only these CLIENT-facing templates carry a per-client portal
@@ -299,6 +306,7 @@ export function planTaskNotifications(input: IPlanTaskNotificationsInput): IPlan
         variables,
         status: 'queued',
         trigger: input.trigger,
+        restrictedToDepartments,
         ...(suppressedReason !== null
           ? { suppressed: true, suppressedReason }
           : holdUntil !== null

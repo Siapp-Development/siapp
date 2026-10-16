@@ -18,6 +18,7 @@
  */
 
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { assertWorkspaceActive } from '../lib/workspaceStatus.js';
@@ -25,6 +26,7 @@ import { callableRequestMeta, writeAuditLog } from '../lib/auditLog.js';
 import { isOptedOut, normalizePhoneKey } from '../lib/optOut.js';
 import { hasWaConsent } from '../lib/pdpa.js';
 import { mytDateString } from '../lib/quietHours.js';
+import { buildDirectSendRecord } from '../lib/messaging/directSendRecord.js';
 import { resolveProjectClients } from '../lib/projectClients.js';
 import {
   getOrCreateClientPortalLink,
@@ -113,29 +115,71 @@ export const sendPortalLink = onCall(async (request) => {
     expiresAt?: string;
   }> = [];
   const sentPhones = new Set<string>();
+  const clientVariables = (clientName: string, portalToken: string): Record<string, string> => ({
+    firm_name: firmName,
+    client_first_name: firstNameOf(clientName),
+    project_title: projectTitle,
+    project_due_date: projectDueDate,
+    portal_token: portalToken,
+  });
+  const recordNotSent = async (
+    clientId: string,
+    clientName: string,
+    phone: string,
+    suppressedReason: 'opt_out' | 'no_consent' | 'no_phone' | 'duplicate_phone' | 'no_recipient',
+  ): Promise<void> => {
+    let messageId: string | undefined;
+    try {
+      const messageRef = db.collection(`workspaces/${workspaceId}/messages`).doc();
+      messageId = messageRef.id;
+      await messageRef.set(
+        buildDirectSendRecord({
+          id: messageRef.id,
+          recipientType: 'client',
+          recipientId: clientId,
+          recipientPhone: phone,
+          templateName: PROJECT_WELCOME_TEMPLATE,
+          trigger: 'project_welcome',
+          variables: clientVariables(clientName, ''),
+          costEstimateMyr: WA_UTILITY_COST_MYR,
+          relatedTo: { type: 'project', id: projectId },
+          createdAt: Timestamp.now(),
+          suppressedReason,
+        }),
+      );
+    } catch (error) {
+      logger.error('sendPortalLink: failed to write not-sent message record', {
+        workspaceId,
+        messageId,
+        error,
+      });
+    }
+  };
 
   for (const clientRef of clients) {
     const clientSnap = await db.doc(`workspaces/${workspaceId}/clients/${clientRef.id}`).get();
     if (!clientSnap.exists) {
-      // Dangling denorm ref — nothing to send to, skip silently.
+      // Dangling denorm ref: record the attempted send without adding a result.
+      await recordNotSent(clientRef.id, clientRef.name, '', 'no_recipient');
       continue;
     }
     const client = clientSnap.data() ?? {};
     const clientName = typeof client['name'] === 'string' ? client['name'] : clientRef.name;
+    // Normalize once for the record, empty-phone gate and duplicate-phone key.
+    const phone = normalizePhoneKey(typeof client['phone'] === 'string' ? client['phone'] : '');
 
     if (isOptedOut(client)) {
+      await recordNotSent(clientRef.id, clientName, phone, 'opt_out');
       results.push({ clientId: clientRef.id, clientName, status: 'opted_out' });
       continue;
     }
     if (!hasWaConsent(client)) {
+      await recordNotSent(clientRef.id, clientName, phone, 'no_consent');
       results.push({ clientId: clientRef.id, clientName, status: 'no_consent' });
       continue;
     }
-    // #157/D4: normalize the phone ONCE and use it for both the empty-phone gate
-    // and the queued `recipientPhone`, so whitespace-only values become
-    // 'no_phone' and the enqueued send matches the de-dupe key exactly.
-    const phone = normalizePhoneKey(typeof client['phone'] === 'string' ? client['phone'] : '');
     if (phone === '') {
+      await recordNotSent(clientRef.id, clientName, phone, 'no_phone');
       results.push({ clientId: clientRef.id, clientName, status: 'no_phone' });
       continue;
     }
@@ -143,6 +187,7 @@ export const sendPortalLink = onCall(async (request) => {
     if (sentPhones.has(phone)) {
       // D4: this number already received the link via another client on the
       // project — do not mint or enqueue a duplicate send.
+      await recordNotSent(clientRef.id, clientName, phone, 'duplicate_phone');
       results.push({ clientId: clientRef.id, clientName, status: 'duplicate_phone' });
       continue;
     }
@@ -159,29 +204,21 @@ export const sendPortalLink = onCall(async (request) => {
     );
 
     const messageRef = db.collection(`workspaces/${workspaceId}/messages`).doc();
-    await messageRef.set({
-      id: messageRef.id,
-      channel: 'whatsapp',
-      recipientPhone: phone,
-      recipientType: 'client',
-      recipientId: clientRef.id,
-      templateName: PROJECT_WELCOME_TEMPLATE,
-      // snake_case, token-only (#137, Finding 1/2): keys ARE the wire contract.
-      // #157/D9: each message personalizes with THIS client's own first name and
-      // embeds THIS client's own token — no cross-client leakage.
-      variables: {
-        firm_name: firmName,
-        client_first_name: firstNameOf(clientName),
-        project_title: projectTitle,
-        project_due_date: projectDueDate,
-        portal_token: token,
-      },
-      status: 'queued',
-      trigger: 'project_welcome',
-      costEstimateMyr: WA_UTILITY_COST_MYR,
-      relatedTo: { type: 'project', id: projectId },
-      createdAt: Timestamp.now(),
-    });
+    await messageRef.set(
+      buildDirectSendRecord({
+        id: messageRef.id,
+        recipientPhone: phone,
+        recipientType: 'client',
+        recipientId: clientRef.id,
+        templateName: PROJECT_WELCOME_TEMPLATE,
+        trigger: 'project_welcome',
+        // Each send personalizes with THIS client's name and token.
+        variables: clientVariables(clientName, token),
+        costEstimateMyr: WA_UTILITY_COST_MYR,
+        relatedTo: { type: 'project', id: projectId },
+        createdAt: Timestamp.now(),
+      }),
+    );
 
     // Mirror sendCollaboratorLink audit: only a first-ever mint is audited.
     if (created) {

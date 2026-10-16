@@ -154,6 +154,7 @@ export type TSuppressedReason =
   | 'no_consent'
   | 'no_recipient'
   | 'no_phone'
+  | 'duplicate_phone'
   | 'billing';
 
 // Admin audit-log action kinds (#10 admin panel; #24 adds status_change)

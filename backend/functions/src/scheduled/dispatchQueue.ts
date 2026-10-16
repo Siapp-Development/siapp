@@ -163,12 +163,14 @@ async function recordResult(
       status: 'sent',
       providerSid: result.providerSid ?? '',
       sentAt: Timestamp.fromDate(now),
+      ...(result.contentSid !== undefined ? { contentSid: result.contentSid } : {}),
     });
   } else {
     await ref.update({
       status: 'failed',
       errorCode: result.errorCode ?? 'unknown',
       failedAt: Timestamp.fromDate(now),
+      ...(result.contentSid !== undefined ? { contentSid: result.contentSid } : {}),
     });
   }
 }

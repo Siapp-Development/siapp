@@ -116,3 +116,94 @@ describe('redactMessagePii (D6)', () => {
     expect(update).toBeNull();
   });
 });
+
+describe('redactMessagePii — #171 key-based name slots (F3)', () => {
+  it('redacts client_first_name even though it is only the first word of a multi-word name', () => {
+    const update = redactMessagePii(
+      {
+        recipientPhone: '+60123456789',
+        variables: {
+          firm_name: 'Acme Builders',
+          client_first_name: 'Aminah',
+          project_title: 'Bungalow Reno',
+          portal_token: 'abcdEFGH2345_c2VjcmV0',
+        },
+      },
+      { name: 'Aminah binti Ali', phone: '+60123456789' },
+    );
+    expect(update).toEqual({
+      recipientPhone: PDPA_REDACTED,
+      variables: {
+        firm_name: 'Acme Builders',
+        client_first_name: PDPA_REDACTED,
+        project_title: 'Bungalow Reno',
+        portal_token: 'abcdEFGH2345_c2VjcmV0',
+      },
+    });
+  });
+
+  it('redacts a stale collaborator_name after the collaborator was renamed', () => {
+    const update = redactMessagePii(
+      {
+        recipientPhone: '+60199999999',
+        variables: {
+          firm_name: 'Acme',
+          collaborator_name: 'Lim Electrical (old)',
+          access_token: 't',
+        },
+      },
+      { name: 'Lim Electrical Sdn Bhd', phone: '+60123456789' },
+    );
+    expect(update).toEqual({
+      recipientPhone: PDPA_REDACTED,
+      variables: { firm_name: 'Acme', collaborator_name: PDPA_REDACTED, access_token: 't' },
+    });
+  });
+
+  it('redacts an empty name slot on a not-sent record (no_recipient: empty phone)', () => {
+    const update = redactMessagePii(
+      { recipientPhone: '', variables: { client_first_name: '', portal_token: '' } },
+      { name: 'Aminah binti Ali', phone: null },
+    );
+    expect(update).toEqual({
+      variables: { client_first_name: PDPA_REDACTED, portal_token: '' },
+    });
+  });
+
+  it('is idempotent: a second pass over the redacted doc returns null', () => {
+    const subject = { name: 'Aminah binti Ali', phone: '+60123456789' };
+    const original = {
+      recipientPhone: '+60123456789',
+      variables: {
+        client_first_name: 'Aminah',
+        collaborator_name: 'Someone Else',
+        clientName: 'Aminah binti Ali',
+        contact: '+60123456789',
+        firm_name: 'Acme',
+      },
+    };
+    const first = redactMessagePii(original, subject);
+    expect(first).not.toBeNull();
+    const redacted = { ...original, ...first };
+    expect(redactMessagePii(redacted, subject)).toBeNull();
+  });
+
+  it('still redacts other keys by value equality and leaves unrelated keys', () => {
+    const update = redactMessagePii(
+      {
+        recipientPhone: PDPA_REDACTED,
+        variables: { task_title: 'Aminah binti Ali', note: 'Call +60123456789', firm_name: 'Acme' },
+      },
+      { name: 'Aminah binti Ali', phone: '+60123456789' },
+    );
+    expect(update).toEqual({
+      variables: { task_title: PDPA_REDACTED, note: 'Call +60123456789', firm_name: 'Acme' },
+    });
+  });
+
+  it('does not touch the input object (returns a copy)', () => {
+    const variables = { client_first_name: 'Aminah' };
+    redactMessagePii({ variables }, { name: 'Aminah binti Ali', phone: null });
+    expect(variables).toEqual({ client_first_name: 'Aminah' });
+  });
+});

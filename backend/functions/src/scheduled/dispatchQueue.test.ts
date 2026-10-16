@@ -230,6 +230,58 @@ describe('sweepMessageQueue (fake db)', () => {
     expect(doc['providerSid']).toBeUndefined();
   });
 
+  it('#171 A4: stamps contentSid on sent when the provider reports one', async () => {
+    store.messages = [{ id: 'm1', data: dispatchableDoc() }];
+    const { provider } = stubProvider(() =>
+      Promise.resolve({ ok: true, providerSid: 'SM1', contentSid: 'HXwelcome' }),
+    );
+
+    await sweepMessageQueue(NOW, provider);
+
+    const doc = store.messages[0].data;
+    expect(doc['status']).toBe('sent');
+    expect(doc['contentSid']).toBe('HXwelcome');
+  });
+
+  it('#171 A4: stamps contentSid on failed when the provider reports one', async () => {
+    store.messages = [{ id: 'm1', data: dispatchableDoc() }];
+    const { provider } = stubProvider(() =>
+      Promise.resolve({ ok: false, errorCode: 'wa_outside_session_window', contentSid: 'HXwelcome' }),
+    );
+
+    await sweepMessageQueue(NOW, provider);
+
+    const doc = store.messages[0].data;
+    expect(doc['status']).toBe('failed');
+    expect(doc['errorCode']).toBe('wa_outside_session_window');
+    expect(doc['contentSid']).toBe('HXwelcome');
+  });
+
+  it('#171 A4: writes no contentSid key when absent (no_content_sid / NoopProvider)', async () => {
+    store.messages = [
+      { id: 'fail', data: dispatchableDoc({ recipientPhone: '+60111111111' }) },
+      { id: 'noop', data: dispatchableDoc({ recipientPhone: '+60122222222' }) },
+    ];
+    const { provider } = stubProvider((msg) =>
+      Promise.resolve(
+        msg.recipientPhone === '+60111111111'
+          ? { ok: false, errorCode: 'no_content_sid' }
+          : { ok: true, providerSid: '' },
+      ),
+    );
+
+    await sweepMessageQueue(NOW, provider);
+
+    const failed = store.messages.find((m) => m.id === 'fail')?.data ?? {};
+    const sent = store.messages.find((m) => m.id === 'noop')?.data ?? {};
+    expect(failed['status']).toBe('failed');
+    expect(failed['errorCode']).toBe('no_content_sid');
+    expect(failed).not.toHaveProperty('contentSid');
+    expect(sent['status']).toBe('sent');
+    expect(sent['providerSid']).toBe('');
+    expect(sent).not.toHaveProperty('contentSid');
+  });
+
   it('skips a doc already claimed within the stale window (no double-send)', async () => {
     store.messages = [
       {

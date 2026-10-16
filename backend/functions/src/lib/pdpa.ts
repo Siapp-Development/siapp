@@ -88,9 +88,19 @@ export function redactMessagePii(
     const variables = { ...(rawVariables as Record<string, unknown>) };
     let changed = false;
     for (const [key, value] of Object.entries(variables)) {
+      // These are name slots, not reliable copies of the current subject name:
+      // client_first_name may be partial and collaborator_name may be stale.
+      if (key === 'client_first_name' || key === 'collaborator_name') {
+        if (value !== PDPA_REDACTED) {
+          variables[key] = PDPA_REDACTED;
+          changed = true;
+        }
+        continue;
+      }
       if (
         typeof value === 'string' &&
         value !== '' &&
+        value !== PDPA_REDACTED &&
         (value === subject.name || (subject.phone !== null && value === subject.phone))
       ) {
         variables[key] = PDPA_REDACTED;

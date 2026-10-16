@@ -8,6 +8,7 @@
  * ENQUEUE contract: the snake_case, token-only `variables` map.
  */
 
+import { logger } from 'firebase-functions';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
@@ -125,6 +126,54 @@ function request(
 
 const resolveFn = getOrCreateClientPortalLink as unknown as Mock;
 
+type TNotSentReason = 'opt_out' | 'no_consent' | 'no_phone' | 'duplicate_phone' | 'no_recipient';
+
+/**
+ * #171 (H6): the exact not-sent record for a blocked client — the same
+ * envelope as a real send with `portal_token: ''`, `suppressed:true` + reason,
+ * and `restrictedToDepartments: []`.
+ */
+function notSentRecord(
+  id: string,
+  reason: TNotSentReason,
+  expected: { clientId?: string; firstName: string; phone: string; dueDate?: string },
+): Record<string, unknown> {
+  return {
+    id,
+    channel: 'whatsapp',
+    recipientType: 'client',
+    recipientId: expected.clientId ?? CID,
+    recipientPhone: expected.phone,
+    templateName: PROJECT_WELCOME_TEMPLATE,
+    trigger: 'project_welcome',
+    variables: {
+      firm_name: 'Acme Builders',
+      client_first_name: expected.firstName,
+      project_title: 'Bungalow Reno',
+      project_due_date:
+        expected.dueDate ?? mytDateString(new Date('2026-07-15T00:00:00.000Z')),
+      portal_token: '',
+    },
+    status: 'queued',
+    costEstimateMyr: 0.1,
+    relatedTo: { type: 'project', id: PID },
+    createdAt: expect.anything(),
+    restrictedToDepartments: [],
+    suppressed: true,
+    suppressedReason: reason,
+  };
+}
+
+function expectSingleNotSent(
+  writes: IWrites,
+  reason: TNotSentReason,
+  expected: { clientId?: string; firstName: string; phone: string },
+): void {
+  expect(writes.messages).toHaveLength(1);
+  const { id, data } = writes.messages[0];
+  expect(data).toEqual(notSentRecord(id, reason, expected));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   resolveFn.mockResolvedValue({
@@ -206,20 +255,23 @@ describe('sendPortalLink — D-027 gate', () => {
     await expect(sendPortalLink.run(request())).rejects.toThrow(/link a client/i);
   });
 
-  it('skips a missing linked client doc (dangling denorm ref) — no send, no error', async () => {
+  it('skips a missing linked client doc (dangling denorm ref) — no send, no error, no result', async () => {
     const { db, writes } = makeDb({
-      project: PUBLISHED_PROJECT,
+      project: { ...PUBLISHED_PROJECT, clientNameDenorm: 'Ahmad Rahman' },
       workspace: WORKSPACE,
       client: undefined,
     });
     hoisted.db = db;
     expect(await sendPortalLink.run(request())).toEqual({ results: [] });
-    expect(writes.messages).toHaveLength(0);
+    // #171: the attempt is logged as no_recipient with an empty phone, and the
+    // name comes from the project's denormalized client ref.
+    expectSingleNotSent(writes, 'no_recipient', { firstName: 'Ahmad', phone: '' });
+    expect(resolveFn).not.toHaveBeenCalled();
   });
 });
 
-describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
-  it('returns opted_out and enqueues NOTHING for an opted-out client', async () => {
+describe('sendPortalLink — consent / opt-out gates (not-sent record, no enqueue)', () => {
+  it('returns opted_out and writes only a not-sent record for an opted-out client', async () => {
     const { db, writes } = makeDb({
       project: PUBLISHED_PROJECT,
       workspace: WORKSPACE,
@@ -230,12 +282,12 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     const result = await sendPortalLink.run(request());
 
     expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'opted_out' }] });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'opt_out', { firstName: 'Ahmad', phone: '+60123456789' });
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
 
-  it('returns no_consent and enqueues NOTHING for a client without waConsent', async () => {
+  it('returns no_consent and writes only a not-sent record for a client without waConsent', async () => {
     const { db, writes } = makeDb({
       project: PUBLISHED_PROJECT,
       workspace: WORKSPACE,
@@ -246,7 +298,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     const result = await sendPortalLink.run(request());
 
     expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }] });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_consent', { firstName: 'Ahmad', phone: '+60123456789' });
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
@@ -262,7 +314,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     const result = await sendPortalLink.run(request());
 
     expect(result).toEqual({ results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }] });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_phone', { firstName: 'Ahmad', phone: '' });
     expect(resolveFn).not.toHaveBeenCalled();
     expect(auditMock.writeAuditLog).not.toHaveBeenCalled();
   });
@@ -278,7 +330,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(await sendPortalLink.run(request())).toEqual({
       results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }],
     });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_phone', { firstName: 'Ahmad', phone: '' });
     expect(resolveFn).not.toHaveBeenCalled();
   });
 
@@ -293,7 +345,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(await sendPortalLink.run(request())).toEqual({
       results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_phone' }],
     });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_phone', { firstName: 'Ahmad', phone: '' });
     expect(resolveFn).not.toHaveBeenCalled();
   });
 
@@ -307,7 +359,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(await sendPortalLink.run(request())).toEqual({
       results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }],
     });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_consent', { firstName: 'Ahmad', phone: '+60123456789' });
   });
 
   // Gate-ORDER guards: the no_phone gate must sit AFTER opt-out and consent, so a
@@ -323,7 +375,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(await sendPortalLink.run(request())).toEqual({
       results: [{ clientId: CID, clientName: 'Ahmad', status: 'opted_out' }],
     });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'opt_out', { firstName: 'Ahmad', phone: '' });
     expect(resolveFn).not.toHaveBeenCalled();
   });
 
@@ -337,7 +389,7 @@ describe('sendPortalLink — consent / opt-out gates (no enqueue)', () => {
     expect(await sendPortalLink.run(request())).toEqual({
       results: [{ clientId: CID, clientName: 'Ahmad', status: 'no_consent' }],
     });
-    expect(writes.messages).toHaveLength(0);
+    expectSingleNotSent(writes, 'no_consent', { firstName: 'Ahmad', phone: '' });
     expect(resolveFn).not.toHaveBeenCalled();
   });
 });
@@ -389,6 +441,44 @@ describe('sendPortalLink — happy path enqueue shape', () => {
       project_due_date: mytDateString(new Date('2026-07-15T00:00:00.000Z')),
       portal_token: MINTED_TOKEN,
     });
+  });
+
+  it('#171: the queued doc is unchanged apart from restrictedToDepartments: [] (exact snapshot)', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: CONSENTED_CLIENT,
+    });
+    hoisted.db = db;
+
+    await sendPortalLink.run(request());
+
+    expect(writes.messages).toHaveLength(1);
+    const { id, data } = writes.messages[0];
+    expect(data).toEqual({
+      id,
+      channel: 'whatsapp',
+      recipientPhone: '+60123456789',
+      recipientType: 'client',
+      recipientId: CID,
+      templateName: PROJECT_WELCOME_TEMPLATE,
+      // Key set mirrors the approved project_welcome placeholders.
+      variables: {
+        firm_name: 'Acme Builders',
+        client_first_name: 'Ahmad',
+        project_title: 'Bungalow Reno',
+        project_due_date: mytDateString(new Date('2026-07-15T00:00:00.000Z')),
+        portal_token: MINTED_TOKEN,
+      },
+      status: 'queued',
+      trigger: 'project_welcome',
+      costEstimateMyr: 0.1,
+      relatedTo: { type: 'project', id: PID },
+      createdAt: expect.anything(),
+      restrictedToDepartments: [],
+    });
+    expect(data).not.toHaveProperty('suppressed');
+    expect(data).not.toHaveProperty('suppressedReason');
   });
 
   it('emits a BARE portal_token (the fresh mint), never a full URL', async () => {
@@ -490,6 +580,8 @@ function makeMultiDb(opts: {
   project: Record<string, unknown>;
   workspace?: Record<string, unknown>;
   clients: Record<string, Record<string, unknown>>;
+  /** #171: reject `set` for suppressed (not-sent) records only. */
+  failNotSentWrites?: boolean;
 }): { db: unknown; writes: IWrites } {
   const writes: IWrites = { messages: [] };
   let auto = 0;
@@ -499,6 +591,9 @@ function makeMultiDb(opts: {
       return {
         id,
         set: (data: Record<string, unknown>) => {
+          if (opts.failNotSentWrites === true && data['suppressed'] === true) {
+            return Promise.reject(new Error('firestore unavailable'));
+          }
           writes.messages.push({ id, data });
           return Promise.resolve();
         },
@@ -588,8 +683,164 @@ describe('sendPortalLink — multi-client fan-out + shared-phone de-dupe (D1/D3/
         { clientId: 'c2', clientName: 'Ben Tan', status: 'duplicate_phone' },
       ],
     });
-    // Only ONE message actually enqueued to the shared number.
+    // Only ONE message actually enqueued to the shared number; #171 logs the
+    // second client's attempt as a not-sent duplicate_phone record.
+    expect(writes.messages).toHaveLength(2);
+    expect(writes.messages[0].data['recipientId']).toBe('c1');
+    expect(writes.messages[0].data).not.toHaveProperty('suppressed');
+    expect(writes.messages[1].data).toEqual(
+      notSentRecord(writes.messages[1].id, 'duplicate_phone', {
+        clientId: 'c2',
+        firstName: 'Ben',
+        phone: '+60123456789',
+      }),
+    );
+    // No link minted for the duplicate.
+    expect(resolveFn).toHaveBeenCalledTimes(1);
+    expect(resolveFn).not.toHaveBeenCalledWith(db, WID, PID, 'c2', 'u-owner');
+  });
+});
+
+describe('sendPortalLink — #171 not-sent records (H6)', () => {
+  const MIXED_PROJECT = {
+    lifecycle: 'published',
+    clientId: 'c1',
+    clientIds: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'],
+    clients: [
+      { id: 'c1', name: 'Ann Lee' },
+      { id: 'c2', name: 'Ben Tan' },
+      { id: 'c3', name: 'Cai Wong' },
+      { id: 'c4', name: 'Dee Ong' },
+      { id: 'c5', name: 'Eve Lim' },
+      { id: 'c6', name: 'Fay Goh' },
+    ],
+    name: 'Bungalow Reno',
+    targetEndDate: { toDate: () => new Date('2026-07-15T00:00:00.000Z') },
+  };
+  const MIXED_CLIENTS = {
+    c1: { name: 'Ann Lee', phone: '+60111111111', waConsent: { granted: true } },
+    c2: { name: 'Ben Tan', phone: '+60222222222', waConsent: { granted: true }, notificationsOptOut: true },
+    c3: { name: 'Cai Wong', phone: '+60333333333' },
+    c4: { name: 'Dee Ong', phone: '', waConsent: { granted: true } },
+    c5: { name: 'Eve Lim', phone: '+60111111111', waConsent: { granted: true } },
+    // c6 has no client doc (dangling ref) → no_recipient
+  };
+  const EXPECTED_RESULTS = [
+    {
+      clientId: 'c1',
+      clientName: 'Ann Lee',
+      status: 'queued',
+      expiresAt: '2026-06-01T00:00:00.000Z',
+    },
+    { clientId: 'c2', clientName: 'Ben Tan', status: 'opted_out' },
+    { clientId: 'c3', clientName: 'Cai Wong', status: 'no_consent' },
+    { clientId: 'c4', clientName: 'Dee Ong', status: 'no_phone' },
+    { clientId: 'c5', clientName: 'Eve Lim', status: 'duplicate_phone' },
+  ];
+
+  it('writes exactly one not-sent record per gate and returns the unchanged results', async () => {
+    const { db, writes } = makeMultiDb({
+      project: MIXED_PROJECT,
+      workspace: WORKSPACE,
+      clients: MIXED_CLIENTS,
+    });
+    hoisted.db = db;
+
+    const result = await sendPortalLink.run(request());
+
+    expect(result).toEqual({ results: EXPECTED_RESULTS });
+    expect(writes.messages).toHaveLength(6);
+    const [queued, ...notSent] = writes.messages;
+    expect(queued.data).not.toHaveProperty('suppressed');
+    expect(queued.data['restrictedToDepartments']).toEqual([]);
+    expect(notSent.map((m) => [m.data['recipientId'], m.data['suppressedReason']])).toEqual([
+      ['c2', 'opt_out'],
+      ['c3', 'no_consent'],
+      ['c4', 'no_phone'],
+      ['c5', 'duplicate_phone'],
+      ['c6', 'no_recipient'],
+    ]);
+    for (const message of notSent) {
+      expect(message.data).toMatchObject({
+        suppressed: true,
+        status: 'queued',
+        restrictedToDepartments: [],
+      });
+      expect((message.data['variables'] as Record<string, string>)['portal_token']).toBe('');
+    }
+    // c6 (dangling) has no phone; others keep the normalized phone.
+    expect(notSent[4].data['recipientPhone']).toBe('');
+    expect(notSent[4].data['variables']).toMatchObject({ client_first_name: 'Fay' });
+    // Only the eligible client ever gets a link.
+    expect(resolveFn).toHaveBeenCalledTimes(1);
+    expect(resolveFn).toHaveBeenCalledWith(db, WID, PID, 'c1', 'u-owner');
+  });
+
+  it('fail-soft: throwing not-sent writes never change the results or block the real send', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { db, writes } = makeMultiDb({
+      project: MIXED_PROJECT,
+      workspace: WORKSPACE,
+      clients: MIXED_CLIENTS,
+      failNotSentWrites: true,
+    });
+    hoisted.db = db;
+
+    await expect(sendPortalLink.run(request())).resolves.toEqual({ results: EXPECTED_RESULTS });
+    // Only the queued send was persisted.
     expect(writes.messages).toHaveLength(1);
     expect(writes.messages[0].data['recipientId']).toBe('c1');
+    expect(errorSpy).toHaveBeenCalledTimes(5);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'sendPortalLink: failed to write not-sent message record',
+      expect.objectContaining({ workspaceId: WID, messageId: expect.any(String) }),
+    );
+    errorSpy.mockRestore();
+  });
+
+  it('normalizes the not-sent recipientPhone like the queued send (whitespace trimmed)', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: ' +60123456789 ' },
+    });
+    hoisted.db = db;
+    await sendPortalLink.run(request());
+    expectSingleNotSent(writes, 'no_consent', { firstName: 'Ahmad', phone: '+60123456789' });
+  });
+
+  it('precondition errors write nothing (args, auth, role, not-found, draft, no client)', async () => {
+    const cases: { req: CallableRequest; opts: IFakeOpts }[] = [
+      { req: request({ data: { workspaceId: WID } }), opts: {} },
+      { req: request({ noAuth: true }), opts: { project: PUBLISHED_PROJECT, workspace: WORKSPACE } },
+      { req: request({ role: 'viewer' }), opts: { project: PUBLISHED_PROJECT, workspace: WORKSPACE } },
+      { req: request(), opts: { project: undefined, workspace: WORKSPACE } },
+      {
+        req: request(),
+        opts: { project: { lifecycle: 'draft', clientId: CID, name: 'D' }, workspace: WORKSPACE },
+      },
+      {
+        req: request(),
+        opts: { project: { lifecycle: 'published', clientId: '', name: 'P' }, workspace: WORKSPACE },
+      },
+    ];
+    for (const { req, opts } of cases) {
+      const { db, writes } = makeDb({ ...opts, client: CONSENTED_CLIENT });
+      hoisted.db = db;
+      await expect(sendPortalLink.run(req)).rejects.toThrow(HttpsError);
+      expect(writes.messages).toHaveLength(0);
+    }
+  });
+
+  it('writes one not-sent record per press (attempt log)', async () => {
+    const { db, writes } = makeDb({
+      project: PUBLISHED_PROJECT,
+      workspace: WORKSPACE,
+      client: { name: 'Ahmad', phone: '+60123456789', notificationsOptOut: true },
+    });
+    hoisted.db = db;
+    await sendPortalLink.run(request());
+    await sendPortalLink.run(request());
+    expect(writes.messages.map((m) => m.data['suppressedReason'])).toEqual(['opt_out', 'opt_out']);
   });
 });

@@ -156,6 +156,7 @@ async function enqueueQuotaAlert(
       },
       status: 'queued',
       trigger: 'wa_quota_90',
+      restrictedToDepartments: [],
       ...(ownerId === '' || ownerPhone === null
         ? { suppressed: true, suppressedReason: ownerId === '' ? 'no_recipient' : 'no_phone' }
         : holdUntil !== null

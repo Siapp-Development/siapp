@@ -50,7 +50,8 @@ describe('TwilioProvider.send — success path', () => {
 
     const result = await provider.send(baseMessage());
 
-    expect(result).toEqual({ ok: true, providerSid: 'SM123' });
+    // #171 A4: the resolved Content SID is reported back for the log.
+    expect(result).toEqual({ ok: true, providerSid: 'SM123', contentSid: 'HXabc123' });
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith({
       from: 'whatsapp:+13604414161',
@@ -93,6 +94,8 @@ describe('TwilioProvider.send — missing ContentSid (O-7)', () => {
     const result = await provider.send(baseMessage());
 
     expect(result).toEqual({ ok: false, errorCode: 'no_content_sid' });
+    // #171 A4: no SID was resolved, so none is reported.
+    expect(result).not.toHaveProperty('contentSid');
     expect(create).not.toHaveBeenCalled();
   });
 });
@@ -108,7 +111,12 @@ describe('TwilioProvider.send — Twilio errors are mapped, never rethrown', () 
 
     const result = await provider.send(baseMessage());
 
-    expect(result).toEqual({ ok: false, errorCode: 'wa_outside_session_window' });
+    // #171 A4: the attempted Content SID is still reported on a Twilio error.
+    expect(result).toEqual({
+      ok: false,
+      errorCode: 'wa_outside_session_window',
+      contentSid: 'HXabc',
+    });
   });
 
   it('maps a known undeliverable error (63021)', async () => {
@@ -121,7 +129,11 @@ describe('TwilioProvider.send — Twilio errors are mapped, never rethrown', () 
 
     const result = await provider.send(baseMessage());
 
-    expect(result).toEqual({ ok: false, errorCode: 'wa_message_undeliverable' });
+    expect(result).toEqual({
+      ok: false,
+      errorCode: 'wa_message_undeliverable',
+      contentSid: 'HXabc',
+    });
   });
 
   it('does not rethrow even for an unmapped error code', async () => {
@@ -135,6 +147,35 @@ describe('TwilioProvider.send — Twilio errors are mapped, never rethrown', () 
     await expect(provider.send(baseMessage())).resolves.toEqual({
       ok: false,
       errorCode: 'twilio_99999',
+      contentSid: 'HXabc',
+    });
+  });
+});
+
+describe('TwilioProvider.send — contentSid stamp (#171 A4)', () => {
+  it('reports the SID resolved for THIS trigger/locale, on success and on error', async () => {
+    const resolve = vi.fn((trigger: TNotificationTrigger) =>
+      trigger === 'project_welcome' ? 'HXwelcome' : 'HXother',
+    );
+    const ok = new TwilioProvider({
+      client: makeClient(() => Promise.resolve({ sid: 'SM1' })).client,
+      sender: SENDER,
+      resolveContentSid: resolve,
+    });
+    await expect(ok.send(baseMessage({ trigger: 'project_welcome' }))).resolves.toMatchObject({
+      ok: true,
+      contentSid: 'HXwelcome',
+    });
+
+    const failing = new TwilioProvider({
+      client: makeClient(() => Promise.reject(Object.assign(new Error('x'), { code: 21211 }))).client,
+      sender: SENDER,
+      resolveContentSid: resolve,
+    });
+    await expect(failing.send(baseMessage({ trigger: 'collab_access_link' }))).resolves.toEqual({
+      ok: false,
+      errorCode: 'invalid_to_number',
+      contentSid: 'HXother',
     });
   });
 });

@@ -30,6 +30,8 @@ export interface ISendResult {
   ok: boolean;
   /** Provider message id (Twilio SID) on success. */
   providerSid?: string;
+  /** Twilio Content Template ID resolved for this attempt. */
+  contentSid?: string;
   errorCode?: string;
 }
 
