@@ -1,5 +1,13 @@
 # WhatsApp Content Templates — v1 (EN)
 
+> [!IMPORTANT]
+> Superseded for the approved production templates by
+> [packages/shared/src/whatsappTemplates.ts](../packages/shared/src/whatsappTemplates.ts).
+> The current source of truth for the approved wording is the shared constant
+> keyed by trigger. This plan remains useful as historical draft context for
+> unapproved templates such as `task_assigned`, `need_help`, `inbound_auto_reply`
+> and `wa_quota_90`.
+
 Draft template pack for Twilio Content Template Builder, covering every `TNotificationTrigger` in [packages/shared/src/enums.ts](../packages/shared/src/enums.ts). Variable sets mirror `TTemplateVars` in [packages/shared/src/notificationTypes.ts](../packages/shared/src/notificationTypes.ts) so the dispatcher (#19) can map 1:1.
 
 **Conventions**
@@ -15,6 +23,9 @@ Draft template pack for Twilio Content Template Builder, covering every `TNotifi
 ---
 
 ## 1. `siapp_project_welcome_v1_en`
+
+> Superseded by the approved entry in
+> [packages/shared/src/whatsappTemplates.ts](../packages/shared/src/whatsappTemplates.ts).
 
 Trigger: `project_welcome` · Recipient: client · Vars: `IProjectWelcomeVars`
 
@@ -63,6 +74,9 @@ Note: `dueDate` is optional in the type. Twilio requires every declared variable
 
 ## 3. `siapp_task_status_change_v1_en`
 
+> Superseded by the approved entry in
+> [packages/shared/src/whatsappTemplates.ts](../packages/shared/src/whatsappTemplates.ts).
+
 Trigger: `task_status_change` · Recipient: client · Vars: `ITaskStatusChangeVars`
 
 > Update from {{firm_name}} on *{{project_title}}*:
@@ -86,6 +100,9 @@ Trigger: `task_status_change` · Recipient: client · Vars: `ITaskStatusChangeVa
 
 ## 4. `siapp_task_due_soon_v1_en`
 
+> Superseded by the approved entry in
+> [packages/shared/src/whatsappTemplates.ts](../packages/shared/src/whatsappTemplates.ts).
+
 Trigger: `task_due_soon` · Recipient: client or internal · Vars: `ITaskDueSoonVars`
 
 > Reminder from {{firm_name}}:
@@ -107,6 +124,9 @@ Trigger: `task_due_soon` · Recipient: client or internal · Vars: `ITaskDueSoon
 
 ## 5. `siapp_task_blocked_v1_en`
 
+> Superseded by the approved entry in
+> [packages/shared/src/whatsappTemplates.ts](../packages/shared/src/whatsappTemplates.ts).
+
 Trigger: `task_blocked` · Recipient: client · Vars: `ITaskBlockedVars`
 
 > Update from {{firm_name}} on *{{project_title}}*:
@@ -122,7 +142,7 @@ Trigger: `task_blocked` · Recipient: client · Vars: `ITaskBlockedVars`
 | `task_title` | `taskTitle` | Piling works |
 | `portal_link` | ⚠️ not in `ITaskBlockedVars` — add `portalLink` (same gap as #3) | https://siapp.app/p/abc123 |
 
-Copy decision: client-facing blocked message says "on hold", **not** "blocked", and deliberately omits the internal block reason (may name a collaborator or internal issue — access-control doc warns notification bodies can leak restricted content).
+Copy decision: client-facing blocked message says "on hold", **not** "blocked".
 
 ---
 

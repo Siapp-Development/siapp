@@ -1,7 +1,8 @@
 /**
  * Notification payload types — variables passed to WhatsApp template sends.
  * Every template variable set lives here so both the API and the front-end
- * can share the shapes.
+ * can share the shapes. The approved human wording lives separately in
+ * `whatsappTemplates.ts`.
  */
 
 import type { TNotificationTrigger } from './enums.ts';
