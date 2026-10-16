@@ -5,3 +5,4 @@ export * from './enums.ts';
 export * from './firestoreTypes.ts';
 export * from './notificationTypes.ts';
 export * from './uploads.ts';
+export * from './whatsappTemplates.ts';
