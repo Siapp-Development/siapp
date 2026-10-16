@@ -149,6 +149,8 @@ Built once, used by every route. Documented in [decisions-log D-022](./decisions
   2. `onWrite` Cloud Function on live entries enqueues a **Cloud Tasks** task. Re-checks lifecycle at enqueue time (race-safety) and respects workspace quiet hours by setting `scheduleTime` accordingly.
   3. Cloud Run handler sends via Twilio with idempotency key.
   4. Twilio status callback → webhook → updates the message doc with delivery + read state.
+
+The outbound status-receipt endpoint is a public, Twilio-signature-verified v2 `onRequest` Cloud Function in `asia-southeast1` (Cloud Run-backed), reached at `https://siapp.app/webhooks/twilio/status` through the apex Hosting rewrite. The callback URL carries only signed workspace/message IDs; the handler writes monotonically to that workspace message document. This is receipts-only: inbound messages, STOP handling, and auto-replies remain in #20 and are not implemented here.
 - **Lifecycle transitions trigger one-time messages:** `draft → published` fires a welcome WA to the client + first-assignment WA to pre-assigned collaborators; `published → completed` fires a handover WA. Idempotent on `project.publishedAt` / `project.completedAt` so re-runs are safe.
 - **Inbound (D-035 — notification-only at MVP):** inbound messages to Siapp's sender number are **not** routed into tasks. The Twilio inbound webhook does exactly three things:
   1. **Status callbacks** — delivery/read receipts update the message doc (unchanged).

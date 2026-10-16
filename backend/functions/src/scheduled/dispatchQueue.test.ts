@@ -163,12 +163,22 @@ describe('claimDecision (pure)', () => {
   });
 
   it('skips a recently-claimed doc (in flight, < stale window)', () => {
-    const data = { status: 'queued', dispatch: { claimedAt: tsOffset(-(STALE_CLAIM_MS - 1000)), attempts: 1 } };
-    expect(claimDecision(data, NOW_MS)).toEqual({ claim: false, nextAttempts: 1, reason: 'in_flight' });
+    const data = {
+      status: 'queued',
+      dispatch: { claimedAt: tsOffset(-(STALE_CLAIM_MS - 1000)), attempts: 1 },
+    };
+    expect(claimDecision(data, NOW_MS)).toEqual({
+      claim: false,
+      nextAttempts: 1,
+      reason: 'in_flight',
+    });
   });
 
   it('reclaims a stale claim (>= stale window) and increments attempts', () => {
-    const data = { status: 'queued', dispatch: { claimedAt: tsOffset(-STALE_CLAIM_MS), attempts: 1 } };
+    const data = {
+      status: 'queued',
+      dispatch: { claimedAt: tsOffset(-STALE_CLAIM_MS), attempts: 1 },
+    };
     expect(claimDecision(data, NOW_MS)).toEqual({ claim: true, nextAttempts: 2, reason: 'ok' });
   });
 
@@ -201,7 +211,9 @@ describe('sweepMessageQueue (fake db)', () => {
 
   it('claims then marks a dispatchable doc sent with providerSid', async () => {
     store.messages = [{ id: 'm1', data: dispatchableDoc() }];
-    const { provider, send } = stubProvider(() => Promise.resolve({ ok: true, providerSid: 'SM999' }));
+    const { provider, send } = stubProvider(() =>
+      Promise.resolve({ ok: true, providerSid: 'SM999' }),
+    );
 
     const stats = await sweepMessageQueue(NOW, provider);
 
@@ -218,7 +230,9 @@ describe('sweepMessageQueue (fake db)', () => {
 
   it('marks a doc failed with errorCode when the provider reports failure', async () => {
     store.messages = [{ id: 'm1', data: dispatchableDoc() }];
-    const { provider } = stubProvider(() => Promise.resolve({ ok: false, errorCode: 'wa_message_undeliverable' }));
+    const { provider } = stubProvider(() =>
+      Promise.resolve({ ok: false, errorCode: 'wa_message_undeliverable' }),
+    );
 
     const stats = await sweepMessageQueue(NOW, provider);
 
@@ -246,7 +260,11 @@ describe('sweepMessageQueue (fake db)', () => {
   it('#171 A4: stamps contentSid on failed when the provider reports one', async () => {
     store.messages = [{ id: 'm1', data: dispatchableDoc() }];
     const { provider } = stubProvider(() =>
-      Promise.resolve({ ok: false, errorCode: 'wa_outside_session_window', contentSid: 'HXwelcome' }),
+      Promise.resolve({
+        ok: false,
+        errorCode: 'wa_outside_session_window',
+        contentSid: 'HXwelcome',
+      }),
     );
 
     await sweepMessageQueue(NOW, provider);
@@ -289,7 +307,9 @@ describe('sweepMessageQueue (fake db)', () => {
         data: dispatchableDoc({ dispatch: { claimedAt: tsOffset(-1000), attempts: 1 } }),
       },
     ];
-    const { provider, send } = stubProvider(() => Promise.resolve({ ok: true, providerSid: 'SM1' }));
+    const { provider, send } = stubProvider(() =>
+      Promise.resolve({ ok: true, providerSid: 'SM1' }),
+    );
 
     const stats = await sweepMessageQueue(NOW, provider);
 
@@ -304,7 +324,9 @@ describe('sweepMessageQueue (fake db)', () => {
       { id: 'sms', data: dispatchableDoc({ channel: 'sms' }) },
       { id: 'held', data: dispatchableDoc({ holdUntil: tsOffset(60_000) }) },
     ];
-    const { provider, send } = stubProvider(() => Promise.resolve({ ok: true, providerSid: 'SMx' }));
+    const { provider, send } = stubProvider(() =>
+      Promise.resolve({ ok: true, providerSid: 'SMx' }),
+    );
 
     const stats = await sweepMessageQueue(NOW, provider);
 
@@ -338,7 +360,9 @@ describe('sweepMessageQueue (fake db)', () => {
     store.messages = [
       { id: 'm1', data: dispatchableDoc({ trigger: 'task_assigned', variables: { name: 'Zed' } }) },
     ];
-    const { provider, send } = stubProvider(() => Promise.resolve({ ok: true, providerSid: 'SM1' }));
+    const { provider, send } = stubProvider(() =>
+      Promise.resolve({ ok: true, providerSid: 'SM1' }),
+    );
 
     await sweepMessageQueue(NOW, provider);
 
@@ -348,4 +372,76 @@ describe('sweepMessageQueue (fake db)', () => {
     expect(sent.recipientPhone).toBe('+60123456789');
     expect(sent.variables).toEqual({ name: 'Zed' });
   });
+});
+
+describe('dispatcher vs receipt race (#173 B5)', () => {
+  beforeEach(() => {
+    store.messages = [];
+  });
+
+  it.each(['sent', 'delivered', 'undelivered', 'failed', 'read'])(
+    'success preserves an earlier signed %s receipt and stamps SIDs',
+    async (providerStatus) => {
+      const data = dispatchableDoc();
+      store.messages = [{ id: 'm1', data }];
+      const receipt = {
+        status: providerStatus === 'undelivered' ? 'failed' : providerStatus,
+        providerStatus,
+        providerSid: 'SMtest',
+        statusUpdatedAt: tsOffset(-1000),
+        sentAt: tsOffset(-3000),
+        deliveredAt: tsOffset(-2000),
+        readAt: tsOffset(-1000),
+        failedAt: tsOffset(-2000),
+        errorCode: 'receipt_error',
+      };
+      const { provider, send } = stubProvider(async () => {
+        Object.assign(data, receipt);
+        return { ok: true, providerSid: 'SMtest', contentSid: 'HXtest' };
+      });
+      await sweepMessageQueue(NOW, provider);
+      expect(data).toMatchObject({ ...receipt, contentSid: 'HXtest' });
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'w1', id: 'm1' }));
+    },
+  );
+
+  it.each(['sent', 'delivered', 'undelivered', 'failed', 'read'])(
+    'SDK error preserves an earlier signed %s receipt and its error/times',
+    async (providerStatus) => {
+      const data = dispatchableDoc();
+      store.messages = [{ id: 'm1', data }];
+      const receipt = {
+        status: providerStatus === 'undelivered' ? 'failed' : providerStatus,
+        providerStatus,
+        providerSid: 'SMreceipt',
+        statusUpdatedAt: tsOffset(-1000),
+        sentAt: tsOffset(-3000),
+        deliveredAt: tsOffset(-2000),
+        readAt: tsOffset(-1000),
+        failedAt: tsOffset(-2000),
+        errorCode: 'receipt_error',
+      };
+      const { provider } = stubProvider(async () => {
+        Object.assign(data, receipt);
+        return { ok: false, errorCode: 'sdk_timeout', contentSid: 'HXtest' };
+      });
+      await sweepMessageQueue(NOW, provider);
+      expect(data).toMatchObject({ ...receipt, contentSid: 'HXtest' });
+    },
+  );
+
+  it.each(['delivered', 'read'])(
+    'success preserves legacy %s without providerStatus',
+    async (status) => {
+      const data = dispatchableDoc();
+      store.messages = [{ id: 'm1', data }];
+      const { provider } = stubProvider(async () => {
+        Object.assign(data, { status, deliveredAt: tsOffset(-1000) });
+        return { ok: true, providerSid: 'SMtest', contentSid: 'HXtest' };
+      });
+      await sweepMessageQueue(NOW, provider);
+      expect(data).toMatchObject({ status, providerSid: 'SMtest', contentSid: 'HXtest' });
+      expect(data).not.toHaveProperty('sentAt');
+    },
+  );
 });

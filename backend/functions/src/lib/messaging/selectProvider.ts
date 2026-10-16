@@ -10,7 +10,7 @@
 
 import { logger } from 'firebase-functions';
 
-import { readTwilioCredentials } from './twilioConfig.js';
+import { readTwilioCredentials, waStatusCallbackUrl } from './twilioConfig.js';
 import { resolveContentSid } from './contentSids.js';
 import { createTwilioClient, TwilioProvider } from './twilioProvider.js';
 import { NoopProvider, type IMessageProvider } from './provider.js';
@@ -37,5 +37,6 @@ export function selectProvider(): IMessageProvider {
     client: createTwilioClient(credentials.accountSid, credentials.authToken),
     sender: credentials.sender,
     resolveContentSid,
+    statusCallbackBase: waStatusCallbackUrl.value(),
   });
 }
